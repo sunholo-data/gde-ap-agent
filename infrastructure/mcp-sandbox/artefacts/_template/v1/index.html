@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ARTEFACT_TITLE}}</title>
+<!--
+  MCP App artefact template (v1).
+
+  Copy this directory to name your artefact:
+    `cp -r infrastructure/mcp-sandbox/artefacts/_template/v1 \
+            infrastructure/mcp-sandbox/artefacts/<name>/v1`
+  Then edit:
+    - <title> and <h1> tags
+    - The "params" line in the header
+    - <canvas id="viz"> physics / rendering in <script>
+    - The results markers list + their compute functions
+    - ARTEFACT_NAME constant (used as postMessage namespace)
+    - Self-test at the bottom (?test=1)
+
+  Rules enforced by the harness (ADR-013 + MCP Apps spec):
+    1. Single self-contained file, =< 200 KB total.
+    2. NO external resources: no script-src http, no img-src http, no
+       network fetch. The host's CSP blocks these even if you try.
+    3. NO nested iframe. frame-src 'none'.
+    4. Speak JSON-RPC 2.0 to the host (via the sandbox proxy).
+       See the rpcNotify / rpcRequest helpers below — ~30 lines, no SDK.
+    5. Complete the ui/initialize handshake on load before sending
+       any application notifications.
+    6. Respond to ping requests with an empty result object.
+
+  See docs/ops/mcp-apps-iframe-guide.md for the full host-side story.
+-->
+<style>
+  :root {
+    --bg: #fafaf9;
+    --fg: #1c1917;
+    --muted: #78716c;
+    --border: #e7e5e4;
+    --accent: #1e40af;
+    --accent-soft: #dbeafe;
+    --hidden: #d6d3d1;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--fg);
+    font-size: 14px; line-height: 1.4;
+  }
+  body { padding: 12px; }
+  header { margin-bottom: 8px; }
+  header h1 { font-size: 15px; margin: 0 0 2px; font-weight: 600; }
+  header .params { color: var(--muted); font-size: 12px; }
+  main {
+    display: grid; grid-template-columns: 1fr; gap: 10px;
+  }
+  @media (min-width: 720px) {
+    main { grid-template-columns: 2fr 1fr; }
+  }
+  .canvas-wrap {
+    background: white; border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px;
+  }
+  canvas { width: 100%; height: auto; display: block; touch-action: none; }
+  .panel {
+    background: white; border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px;
+  }
+  .panel h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); margin: 0 0 8px; font-weight: 600;
+  }
+  .controls .row { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+  .controls label { font-size: 12px; min-width: 30px; }
+  .controls input[type="range"] { flex: 1; }
+  .controls .value { font-variant-numeric: tabular-nums; min-width: 55px; text-align: right; font-size: 12px; }
+  .buttons { display: flex; gap: 6px; margin-top: 8px; }
+  button {
+    font: inherit; font-size: 12px; padding: 6px 10px;
+    background: var(--accent-soft); color: var(--accent);
+    border: 1px solid transparent; border-radius: 4px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .markers .row {
+    display: flex; align-items: baseline; gap: 6px; margin: 6px 0;
+    padding: 6px; border-radius: 4px; background: #f5f5f4;
+  }
+  .markers .label { flex: 1; font-size: 12px; }
+  .markers .value {
+    font-variant-numeric: tabular-nums; font-weight: 600;
+    color: var(--hidden); min-width: 60px; text-align: right;
+  }
+  .markers .value.revealed { color: var(--accent); }
+  .markers button.vis {
+    font-size: 11px; padding: 3px 8px;
+    background: transparent; color: var(--muted); border: 1px solid var(--border);
+  }
+  .markers button.vis.revealed { color: var(--accent); border-color: var(--accent); }
+  .pedagogy {
+    margin-top: 8px; padding: 8px;
+    background: #fef3c7; border-left: 3px solid #f59e0b;
+    font-size: 11px; color: #78350f;
+    border-radius: 0 4px 4px 0;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>{{ARTEFACT_TITLE}}</h1>
+  <div class="params">
+    <!-- TODO: list the problem's given parameters -->
+    param₁ = X &nbsp;·&nbsp; param₂ = Y
+  </div>
+</header>
+<main>
+  <section class="canvas-wrap">
+    <canvas id="viz" width="600" height="320" aria-label="Visualisation"></canvas>
+  </section>
+  <aside>
+    <div class="panel controls">
+      <h2>Controls</h2>
+      <!-- TODO: sliders for adjustable parameters -->
+      <div class="row">
+        <label for="p1">p₁</label>
+        <input id="p1" type="range" min="0" max="100" value="50">
+        <span class="value" id="p1-out">50</span>
+      </div>
+      <div class="buttons">
+        <button id="play" type="button">▶ Play</button>
+        <button id="pause" type="button" class="ghost">⏸ Pause</button>
+        <button id="reset" type="button" class="ghost">↺ Reset</button>
+      </div>
+    </div>
+    <div class="panel markers" style="margin-top: 10px;">
+      <h2>Results</h2>
+      <!-- TODO: one row per answer-marker. data-marker is the postMessage key. -->
+      <div class="row">
+        <span class="label">Example result</span>
+        <span class="value" data-value-for="example">—</span>
+        <button class="vis" type="button" data-marker="example">Show</button>
+      </div>
+      <p class="pedagogy">
+        Values are hidden intentionally. Calculate them first — then reveal to check.
+      </p>
+    </div>
+  </aside>
+</main>
+<script>
+  "use strict";
+
+  // ─── MCP Apps JSON-RPC helpers (DO NOT REMOVE) ──────────────────────────
+  // Implements the MCP Apps spec wire format (JSON-RPC 2.0 over postMessage).
+  // Per spec line 426: "Note that you don't need an SDK to talk MCP with
+  // the host" — these ~30 lines are all you need.
+  //
+  // The sandbox proxy has a real origin (allow-same-origin on its iframe).
+  // Auth is origin-based on the host side; we send to "*" here because we
+  // don't know the host origin from inside the sandbox.
+  const ARTEFACT_NAME = "{{ARTEFACT_NAME}}";
+  let _nextId = 1;
+  // Queue of notifications to replay after ui/initialize completes.
+  const _pendingNotifications = [];
+  let _initialized = false;
+
+  function rpcNotify(method, params) {
+    const msg = { jsonrpc: "2.0", method, params };
+    if (!_initialized && method !== "ui/initialize") {
+      _pendingNotifications.push(msg);
+      return;
+    }
+    try { window.parent.postMessage(msg, "*"); } catch (_) {}
+  }
+
+  function rpcRequest(method, params) {
+    const id = _nextId++;
+    return new Promise((resolve, reject) => {
+      const listener = (e) => {
+        if (!e.data || e.data.id !== id) return;
+        window.removeEventListener("message", listener);
+        if (e.data.error) reject(new Error(e.data.error.message || "rpc error"));
+        else resolve(e.data.result);
+      };
+      window.addEventListener("message", listener);
+      try { window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*"); }
+      catch (err) { window.removeEventListener("message", listener); reject(err); }
+    });
+  }
+
+  function rpcOnNotification(method, handler) {
+    window.addEventListener("message", (e) => {
+      if (!e.data || e.data.jsonrpc !== "2.0") return;
+      if (e.data.method !== method) return;
+      handler(e.data.params ?? {});
+    });
+  }
+
+  // Ping responder — spec line 508 requires responding to ping.
+  rpcOnNotification("ping", () => {});
+  window.addEventListener("message", (e) => {
+    if (!e.data || e.data.jsonrpc !== "2.0" || e.data.method !== "ping") return;
+    if (e.data.id == null) return;
+    try { window.parent.postMessage({ jsonrpc: "2.0", id: e.data.id, result: {} }, "*"); }
+    catch (_) {}
+  });
+
+  // ui/initialize handshake (must complete before sending application notifications).
+  rpcRequest("ui/initialize", {
+    protocolVersion: "2026-01-26",
+    capabilities: {},
+    clientInfo: { name: ARTEFACT_NAME, version: "1.0.0" },
+  }).then((result) => {
+    _initialized = true;
+    rpcNotify("ui/notifications/initialized", { clientInfo: { name: ARTEFACT_NAME, version: "1.0.0" } });
+    // Flush any notifications that were queued before init completed.
+    _pendingNotifications.forEach((msg) => {
+      try { window.parent.postMessage(msg, "*"); } catch (_) {}
+    });
+    _pendingNotifications.length = 0;
+    // Optional: use result.hostContext (theme, displayMode, locale) to style the artefact.
+    void result;
+  }).catch((err) => {
+    console.error("[artefact] ui/initialize failed:", err);
+    _initialized = true; // degrade gracefully
+  });
+
+  // ─── State ──────────────────────────────────────────────────────────────
+  let p1 = 50;
+  let t = 0;
+  let playing = false;
+  let lastFrameMs = 0;
+  const revealed = { example: false };
+
+  // ─── Physics / computation ──────────────────────────────────────────────
+  // TODO: replace with the actual physics for the problem.
+  function compute(t, params) {
+    return { x: t, y: Math.sin(t) * params.p1 };
+  }
+  function results(params) {
+    // TODO: return the answer-markers as a {key: value} dict.
+    return { example: params.p1 * 0.42 };
+  }
+
+  // ─── DOM ────────────────────────────────────────────────────────────────
+  const canvas = document.getElementById("viz");
+  const ctx = canvas.getContext("2d");
+  const p1Out = document.getElementById("p1-out");
+
+  function fitCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.width * 0.55 * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function drawWorld() {
+    // TODO: replace with the actual visualisation.
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = "#1e40af";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i <= 200; i++) {
+      const tt = i / 20;
+      const p = compute(tt, { p1 });
+      const px = (i / 200) * w;
+      const py = h / 2 - p.y;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  function updateMarkers() {
+    const r = results({ p1 });
+    document.querySelectorAll(".markers [data-value-for]").forEach((el) => {
+      const m = el.dataset.valueFor;
+      if (!revealed[m]) { el.textContent = "—"; el.classList.remove("revealed"); }
+      else { el.textContent = r[m].toFixed(2); el.classList.add("revealed"); }
+    });
+    document.querySelectorAll(".markers button.vis").forEach((b) => {
+      const m = b.dataset.marker;
+      b.classList.toggle("revealed", !!revealed[m]);
+      b.textContent = revealed[m] ? "Hide" : "Show";
+    });
+  }
+
+  function render() {
+    fitCanvas();
+    drawWorld();
+    p1Out.textContent = p1.toString();
+  }
+
+  // ─── Animation loop ─────────────────────────────────────────────────────
+  function tick(ms) {
+    if (!lastFrameMs) lastFrameMs = ms;
+    const dt = (ms - lastFrameMs) / 1000;
+    lastFrameMs = ms;
+    if (playing) { t += dt; render(); }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ─── Event wiring ───────────────────────────────────────────────────────
+  document.getElementById("p1").addEventListener("input", (e) => {
+    p1 = parseFloat(e.target.value);
+    // RULE: dragging a slider resets revealed values so the student must
+    // recompute per parameter set. Don't remove without explicit consent.
+    Object.keys(revealed).forEach((k) => { revealed[k] = false; });
+    updateMarkers();
+    render();
+    rpcNotify("ui/update-model-context", {
+      structuredContent: { kind: "param.change", param: "p1", value: p1 },
+    });
+  });
+  document.getElementById("play").addEventListener("click", () => {
+    playing = true; lastFrameMs = 0;
+    rpcNotify("ui/update-model-context", { structuredContent: { kind: "play" } });
+  });
+  document.getElementById("pause").addEventListener("click", () => {
+    playing = false;
+    rpcNotify("ui/update-model-context", { structuredContent: { kind: "pause" } });
+  });
+  document.getElementById("reset").addEventListener("click", () => {
+    t = 0; playing = false; lastFrameMs = 0; render();
+    rpcNotify("ui/update-model-context", { structuredContent: { kind: "reset" } });
+  });
+  document.querySelectorAll(".markers button.vis").forEach((b) => {
+    b.addEventListener("click", () => {
+      const m = b.dataset.marker;
+      revealed[m] = !revealed[m];
+      updateMarkers(); render();
+      rpcNotify("ui/update-model-context", {
+        structuredContent: {
+          kind: "show_value",
+          marker: m,
+          revealed: revealed[m],
+          value: revealed[m] ? results({ p1 })[m] : null,
+        },
+      });
+    });
+  });
+  window.addEventListener("resize", render);
+  render();
+  updateMarkers();
+  rpcNotify("ui/update-model-context", { structuredContent: { kind: "open" } });
+
+  // ─── Self-test (URL: ?test=1) ───────────────────────────────────────────
+  // Load with ?test=1 and check `document.title` for "TEST PASS".
+  // The smoke script (if configured) checks this path per artefact.
+  if (new URLSearchParams(window.location.search).get("test") === "1") {
+    const r = results({ p1: 50 });
+    const expected = 21; // TODO: replace with the actual expected value
+    const ok = Math.abs(r.example - expected) < 0.01;
+    document.title = ok ? "TEST PASS — {{ARTEFACT_TITLE}}" : "TEST FAIL — {{ARTEFACT_TITLE}}";
+    if (!ok) console.error("Self-test failed: example=" + r.example + " expected " + expected);
+    else console.log("Self-test PASS: example=" + r.example);
+  }
+</script>
+</body>
+</html>

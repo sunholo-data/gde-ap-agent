@@ -1,0 +1,237 @@
+# Aitana Platform v6 -- Cloud Build configuration
+# Branch-based deployment: main -> dev, test -> test, prod -> production
+# Multi-container Cloud Run: frontend (main) + backend (sidecar)
+#
+# Substitutions are managed by Terraform (see infrastructure repo)
+
+substitutions:
+  _SERVICE_NAME: aitana-v6-frontend
+  _REGION: terraform_managed
+  _BUILD_FOLDER: .
+  _ARTIFACT_REGISTRY_REPO_URL_CLIENT: terraform_managed
+  _PROJECT_ID: terraform_managed
+  _FIREBASE_BUCKET: '${_PROJECT_ID}.firebasestorage.app'
+  # Firebase helper image is built by v5's trigger-dev-firebase and tagged per-env
+  # (dev/test/prod), not per-branch. v6 main -> dev; test/prod triggers override.
+  _FIREBASE_TAG: dev
+  # Admin seed allowlist — SA emails permitted to call
+  # /api/admin/seed-platform-skills. Terraform-managed per env.
+  _ADMIN_SEED_ALLOWED_SAS: terraform_managed
+  # Sprint 1.7 M4: separate-origin sandbox proxy URL for MCP App iframes.
+  # Baked into the Next.js bundle at build time (NEXT_PUBLIC_*).
+  # See _MCP_SANDBOX_URL below — moved to the fork-ergonomics block.
+  # Cloud Build log bucket. Defaults to a project-local bucket so fresh
+  # forks don't hit the Aitana-owned multivac-deploy-aitana-logging-bucket.
+  # Run scripts/bootstrap-gcp-project.sh to create it before first deploy.
+  # Terraform can override per env (docs/ops/gotchas.md #6).
+  _LOG_BUCKET: 'gs://${_PROJECT_ID}-cloudbuild-logs'
+  # Channel feature flags — set to 'true' to wire the Secret Manager secret
+  # and activate the channel. Leave 'false' (default) and the secret need
+  # not exist; the channel simply won't start (docs/ops/gotchas.md #5).
+  _ENABLE_ANTHROPIC: 'true'
+  _ENABLE_TELEGRAM: 'false'
+  _ENABLE_WHATSAPP: 'false'
+  _ENABLE_EMAIL: 'false'
+  # Platform skill owner email. Set to the admin email for this deployment.
+  # Forks MUST override this — leaving it empty causes the backend to refuse
+  # to start rather than silently using the Aitana fallback (item #3).
+  _PLATFORM_OWNER_EMAIL: ''
+  # MCP sandbox iframe URL. Leave blank to disable MCP Apps gracefully
+  # (item #12). Forks set this to their own deployed mcp-sandbox URL.
+  _MCP_SANDBOX_URL: ''
+
+tags: ['${_PROJECT_ID}', '${_SERVICE_NAME}']
+
+options:
+  logging: GCS_ONLY
+logsBucket: '${_LOG_BUCKET}'
+
+steps:
+  # --- Firebase rules ---
+  - name: '${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/sunholo-llmops/firebase:${_FIREBASE_TAG}'
+    waitFor: ['-']
+    id: 'deploy-firebase-rules'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        firebase &&
+        firebase -P ${_PROJECT_ID} --json deploy --only firestore:rules,firestore:indexes --force
+
+  # --- Get Firebase config from Secret Manager ---
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'get-firebase-config'
+    waitFor: ['-']
+    entrypoint: 'bash'
+    args:
+      - './get-firebase-config.sh'
+    env:
+      - '_PROJECT_ID=$_PROJECT_ID'
+
+  # --- Build frontend ---
+  - name: 'gcr.io/cloud-builders/docker'
+    id: build-frontend
+    waitFor: ['get-firebase-config']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        ARGS=$$(cat /workspace/docker_args)
+        docker build $$ARGS \
+          --build-arg NEXT_PUBLIC_MCP_SANDBOX_URL=${_MCP_SANDBOX_URL} \
+          -t ${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/ui:${BRANCH_NAME} \
+          -f frontend/Dockerfile \
+          frontend/
+
+  # --- Build backend ---
+  - name: 'gcr.io/cloud-builders/docker'
+    id: build-backend
+    waitFor: ['-']
+    dir: ${_BUILD_FOLDER}/backend
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'FIREBASE_BUCKET=${_FIREBASE_BUCKET}'
+      - '--build-arg'
+      - 'GOOGLE_CLOUD_PROJECT=${_PROJECT_ID}'
+      - '--build-arg'
+      - 'GOOGLE_CLOUD_LOCATION=${_REGION}'
+      - '-t'
+      - '${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/backend:${BRANCH_NAME}'
+      - '.'
+
+  # --- Push images ---
+  - name: 'gcr.io/cloud-builders/docker'
+    id: push-frontend
+    waitFor: ['build-frontend']
+    args: ['push', '${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/ui:${BRANCH_NAME}']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: push-backend
+    waitFor: ['build-backend']
+    args: ['push', '${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/backend:${BRANCH_NAME}']
+
+  # --- Deploy to Cloud Run (multi-container) ---
+  # Uses bash so channel secrets can be conditionally included based on
+  # _ENABLE_* substitution flags (see docs/ops/gotchas.md #5).
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    waitFor: ['push-frontend', 'push-backend']
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        # Always-required sidecar secrets (ADK agent engine)
+        SECRETS="AGENT_ENGINE_ID=AGENT_ENGINE_ID:latest"
+        # AI model key — almost always needed; set _ENABLE_ANTHROPIC=false to skip
+        if [ "${_ENABLE_ANTHROPIC}" = "true" ]; then
+          SECRETS="$${SECRETS},ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest"
+        fi
+        # Channel secrets — only wired when the channel is enabled
+        if [ "${_ENABLE_TELEGRAM}" = "true" ]; then
+          SECRETS="$${SECRETS},TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest"
+        fi
+        if [ "${_ENABLE_WHATSAPP}" = "true" ]; then
+          SECRETS="$${SECRETS},TWILIO_ACCOUNT_SID=TWILIO_ACCOUNT_SID:latest,TWILIO_AUTH_TOKEN=TWILIO_AUTH_TOKEN:latest"
+        fi
+        if [ "${_ENABLE_EMAIL}" = "true" ]; then
+          SECRETS="$${SECRETS},MAILGUN_API_KEY=MAILGUN_API_KEY:latest,MAILGUN_WEBHOOK_SECRET=MAILGUN_WEBHOOK_SECRET:latest"
+        fi
+        gcloud run deploy ${_SERVICE_NAME} \
+          --region=${_REGION} \
+          --project=${_PROJECT_ID} \
+          --platform=managed \
+          --allow-unauthenticated \
+          --max-instances=3 \
+          --session-affinity \
+          --container=main \
+          --image=${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/ui:${BRANCH_NAME} \
+          --port=8080 \
+          --memory=2Gi \
+          --cpu=1 \
+          --set-env-vars=BACKEND_URL=http://127.0.0.1:1956 \
+          --container=sidecar \
+          --image=${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/backend:${BRANCH_NAME} \
+          --memory=4Gi \
+          --cpu=2 \
+          --startup-probe=tcpSocket.port=1956,periodSeconds=5,failureThreshold=24,timeoutSeconds=5 \
+          --set-secrets="$${SECRETS}" \
+          --set-env-vars=TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886 \
+          --set-env-vars=GOOGLE_CLOUD_PROJECT=${_PROJECT_ID} \
+          --set-env-vars=GOOGLE_CLOUD_LOCATION=${_REGION} \
+          --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=True \
+          --set-env-vars=ADK_ARTIFACT_BUCKET=${_PROJECT_ID}-artifacts \
+          --set-env-vars=LOGS_BUCKET_NAME=${_PROJECT_ID}-aitana-v6-logs \
+          --set-env-vars=GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY=true \
+          --set-env-vars=OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true \
+          --set-env-vars=ADMIN_SEED_ALLOWED_SAS=${_ADMIN_SEED_ALLOWED_SAS} \
+          --set-env-vars=PLATFORM_OWNER_EMAIL=${_PLATFORM_OWNER_EMAIL}
+
+  # --- Post-deploy smoke: fail the build if any critical endpoint is not 200 ---
+  # Per CLAUDE.md: no feature lands with manual-only verification. This step
+  # protects against sidecar-silently-not-running bugs like FE-BRINGUP-1
+  # (see docs/ops/deployed-urls.md for background).
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: smoke-deployed
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        set -e
+        URL=$(gcloud run services describe ${_SERVICE_NAME} \
+          --project=${_PROJECT_ID} --region=${_REGION} \
+          --format='value(status.url)')
+        echo "Smoking $${URL}"
+        fail=0
+        # Public endpoints — expect 200
+        for path in "/" "/api/health" "/api/proxy/health" "/api/proxy/api/skills/marketplace"; do
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 20 "$${URL}$${path}") || code=000
+          body=$(head -c 200 /tmp/body)
+          if [ "$${code}" = "200" ]; then
+            echo "OK   $${path} -> 200"
+          else
+            echo "FAIL $${path} -> $${code} body=$${body}"
+            fail=1
+          fi
+        done
+        # Auth-protected — expect 401 without token (not Next 404 — FE-BRINGUP-1 guard)
+        for path in "/api/proxy/api/skills" "/api/proxy/api/auth/whoami"; do
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 20 "$${URL}$${path}") || code=000
+          body=$(head -c 200 /tmp/body)
+          if [ "$${code}" = "401" ]; then
+            echo "OK   $${path} -> 401 (auth required)"
+          else
+            echo "FAIL $${path} -> $${code} (expected 401) body=$${body}"
+            fail=1
+          fi
+        done
+        exit $${fail}
+
+  # --- Platform-skill seed (via sidecar proxy). Idempotent. Fails build on error.
+  # Uses the GCE metadata-server identity endpoint — this works under any SA
+  # (user-managed or default), unlike `gcloud auth print-identity-token`.
+  # include_email=true is required: the backend allowlist check needs the email
+  # claim (see docs/ops/gotchas.md #13 #14 and docs/ops/platform-skills.md).
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: seed-platform-skills
+    waitFor: ['smoke-deployed']
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        URL=$(gcloud run services describe ${_SERVICE_NAME} \
+          --project=${_PROJECT_ID} --region=${_REGION} \
+          --format='value(status.url)')
+        TOKEN=$(curl -sf \
+          "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=$${URL}&format=full&include_email=true" \
+          -H "Metadata-Flavor: Google")
+        code=$(curl -sS -o /tmp/seed -w '%{http_code}' --max-time 60 \
+          -X POST -H "Authorization: Bearer $${TOKEN}" \
+          "$${URL}/api/proxy/api/admin/seed-platform-skills") || code=000
+        body=$(head -c 300 /tmp/seed)
+        echo "seed-platform-skills -> $${code} body=$${body}"
+        if [ "$${code}" != "200" ]; then
+          echo "ERROR: seed step returned $${code} — marketplace will be empty" >&2
+          exit 1
+        fi

@@ -1,0 +1,9 @@
+# CLI default backend URLs per environment.
+# Forks: update these values after deploying your own Cloud Run services.
+# Override at runtime with env vars: AIPLATFORM_API_URL (global) or
+# AIPLATFORM_API_URL_{ENV} (per-env, e.g. AIPLATFORM_API_URL_DEV).
+environments:
+  local: "http://localhost:1956"
+  dev: ""    # set AIPLATFORM_API_URL_DEV to your deployed dev backend
+  test: ""   # set AIPLATFORM_API_URL_TEST to your deployed test backend
+  prod: ""   # set AIPLATFORM_API_URL_PROD to your deployed prod backend

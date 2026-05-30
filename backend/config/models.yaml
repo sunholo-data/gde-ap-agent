@@ -1,0 +1,123 @@
+# Aitana v6 Model Registry
+# Last updated: 2026-04-22
+#
+# Canonical model IDs for the three supported providers.
+# Used by: skill creation UI, agent factory, compaction config.
+#
+# Source of truth for model IDs / context window sizes:
+#   ~/.ailang/models.yml (eval harness — updated as new models release)
+#
+# Tiers:
+#   default — fast daily use; selected when skill has no explicit model
+#   smart   — best capability per provider; selected for complex tasks
+#   fast    — cheapest / lowest latency; selected for high-volume sub-tasks
+
+models:
+
+  # ─── Google Gemini ────────────────────────────────────────────────────────
+  # Primary provider; ADK runs on Vertex AI (GOOGLE_GENAI_USE_VERTEXAI=True).
+  # 1M token context window on all Gemini 3.x models.
+
+  gemini-3-flash:
+    api_name: "gemini-3-flash-preview"
+    provider: google
+    tier: default
+    context_window: 1_000_000
+    max_output_tokens: 65_536
+    description: "Gemini 3 Flash — fast, 1M context, outperforms 2.5 Pro"
+
+  gemini-3-1-pro:
+    api_name: "gemini-3.1-pro-preview"
+    provider: google
+    tier: smart
+    context_window: 1_000_000
+    max_output_tokens: 65_536
+    description: "Gemini 3.1 Pro — advanced reasoning, beats Opus 4.6 on 13/16 benchmarks"
+
+  gemini-2-5-flash:
+    api_name: "gemini-2.5-flash"
+    provider: google
+    tier: fast
+    context_window: 1_000_000
+    max_output_tokens: 65_536
+    description: "Gemini 2.5 Flash — stable fallback if 3.x preview unavailable"
+
+  # ─── Anthropic Claude ─────────────────────────────────────────────────────
+  # 200K context window standard; 1M available in beta for Opus 4.7.
+  # ADK wiring: Claude(model="claude-sonnet-4-6") via LiteLLM.
+
+  claude-sonnet-4-6:
+    api_name: "claude-sonnet-4-6"
+    provider: anthropic
+    tier: default
+    context_window: 200_000
+    max_output_tokens: 64_000
+    description: "Claude Sonnet 4.6 — best Claude speed/intelligence balance (Feb 2026)"
+
+  claude-opus-4-7:
+    api_name: "claude-opus-4-7"
+    provider: anthropic
+    tier: smart
+    context_window: 200_000
+    max_output_tokens: 64_000
+    description: "Claude Opus 4.7 — Anthropic flagship (Apr 2026)"
+
+  claude-haiku-4-5:
+    api_name: "claude-haiku-4-5-20251001"
+    provider: anthropic
+    tier: fast
+    context_window: 200_000
+    max_output_tokens: 64_000
+    description: "Claude Haiku 4.5 — cheapest Claude, high-volume sub-tasks"
+
+  # ─── OpenAI ───────────────────────────────────────────────────────────────
+  # ADK wiring: LiteLlm("openai/gpt-5.4") etc.
+  # GPT-5.4 has a 1M context window; GPT-5.1 variants are 400K.
+
+  gpt-5-4:
+    api_name: "gpt-5.4"
+    provider: openai
+    tier: smart
+    context_window: 1_000_000
+    max_output_tokens: 128_000
+    description: "GPT-5.4 — OpenAI flagship, 1M context, native computer-use (Mar 2026)"
+
+  gpt-5-1-instant:
+    api_name: "gpt-5.1-chat-latest"
+    provider: openai
+    tier: default
+    context_window: 400_000
+    max_output_tokens: 128_000
+    description: "GPT-5.1 Instant — fast, adaptive reasoning"
+
+# ─── Provider defaults ────────────────────────────────────────────────────
+# Model used when a skill specifies a provider but no explicit model ID.
+
+defaults:
+  google: "gemini-3-flash"       # api_name: gemini-3-flash-preview
+  anthropic: "claude-sonnet-4-6" # api_name: claude-sonnet-4-6
+  openai: "gpt-5-1-instant"      # api_name: gpt-5.1-chat-latest
+
+# ─── Platform default ─────────────────────────────────────────────────────
+# Applied when no provider/model is specified at all.
+# Must be a google model (primary provider on Vertex AI).
+
+platform_default: "gemini-3-flash"
+
+# ─── Compaction context windows ───────────────────────────────────────────
+# EventsCompactionConfig on App (not Agent/Runner).
+# Larger context = compact less often.
+# See backend/adk/session.py get_compaction_config().
+
+compaction:
+  large_context:   # ≥ 1M tokens: compact every 10 turns, overlap 3
+    models: ["gemini-", "gpt-5.4"]
+    interval: 10
+    overlap: 3
+  small_context:   # 200K–400K tokens: compact every 5 turns, overlap 2
+    models: ["claude-", "gpt-5"]
+    interval: 5
+    overlap: 2
+  default:
+    interval: 5
+    overlap: 2

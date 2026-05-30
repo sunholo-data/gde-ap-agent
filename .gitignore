@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/.venv/
+cli/.venv/
+cli/dist/
+cli/build/
+__pycache__/
+*.pyc
+
+# Build
+frontend/.next/
+frontend/out/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+frontend/.env.local
+backend/.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+.coverage.*
+frontend/coverage/
+backend/.coverage*
+
+# Firebase
+firebase_local/
+
+# SSL certs (local dev)
+backend/certs/
+*.crt
+*.key
+*.pem
+
+# Ruff cache
+backend/.ruff_cache/
+
+# TypeScript
+tsconfig.tsbuildinfo
+
+# Claude Code local settings
+**/.claude/settings.local.json
+
+# Debug
+/debug_images/
+.claude/scheduled_tasks.lock
+backend/aitana_platform/
+
+# Locked agent worktrees from parallel sub-agent execution. The harness
+# manages these; they're never committed and shouldn't block sanitize.
+.claude/worktrees/
