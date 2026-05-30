@@ -63,6 +63,11 @@ def seed_local_fixture() -> None:
         for skill in _demo_skills(now):
             client.collection("skills").document(skill["skillId"]).set(skill)
 
+    # ---- Accounts-Payable multi-agent bundle (GDE Track 3) ---------------
+    # Seeded per-skill (not gated on the empty-collection check above) so the
+    # AP bundle appears even on a fixture that already has the demo skills.
+    _seed_ap_skills(now)
+
     # ---- demo document ---------------------------------------------------
     documents = list(client.collection("documents").stream())
     if not documents:
@@ -109,6 +114,62 @@ def seed_local_fixture() -> None:
 
     counts = client.snapshot_size() if hasattr(client, "snapshot_size") else {}
     logger.info("LOCAL_MODE fixture seeded: %s", counts)
+
+
+# Accounts-Payable multi-agent bundle — seeded from the on-disk templates so
+# the orchestrator + specialists show up in the LOCAL_MODE picker. Order is
+# cosmetic; the orchestrator wires the rest via subSkills.
+_AP_SKILL_NAMES = ("ap-orchestrator", "docparse", "ap-validator", "ap-poster")
+
+
+def _seed_ap_skills(now: float) -> None:
+    """Seed the AP skill bundle from disk templates. Idempotent per skill_id.
+
+    Each template is inserted with ``skill_id == slug == name`` (a stable id),
+    owned by the workshop user and marked public so it appears in the
+    LOCAL_MODE picker. Pinning the id to the name also lets the orchestrator's
+    ``subSkills`` resolve directly via ``get_skill`` — and the name-fallback in
+    ``adk/agent.py`` covers cloud seeding where ids are random UUIDs.
+    """
+    from pathlib import Path
+
+    from admin.platform_seed import _parse_template
+    from db import firestore as fs
+
+    templates_root = Path(__file__).resolve().parent.parent / "skills" / "templates"
+    for name in _AP_SKILL_NAMES:
+        skill_md = templates_root / name / "SKILL.md"
+        if not skill_md.exists():
+            logger.warning("seed_local_fixture: AP template %s missing; skipping", skill_md)
+            continue
+        if fs.get_document("skills", name) is not None:
+            continue
+        try:
+            parsed = _parse_template(skill_md)
+        except Exception as e:  # noqa: BLE001 — a bad template shouldn't block boot
+            logger.warning("seed_local_fixture: failed to parse %s: %s", skill_md, e)
+            continue
+        fs.set_document(
+            "skills",
+            name,
+            {
+                "skillId": name,
+                "slug": name,
+                "name": parsed["name"],
+                "displayName": parsed["name"],
+                "description": parsed["description"],
+                "instructions": parsed["instructions"],
+                "skillMetadata": parsed["metadata"],
+                "ownerId": WORKSHOP_USER_UID,
+                "ownerEmail": WORKSHOP_USER_EMAIL,
+                "accessControl": {"type": "public"},
+                "tags": ["gde", "accounts-payable"],
+                "featured": True,
+                "usageCount": 0,
+                "createdAt": now,
+                "updatedAt": now,
+            },
+        )
 
 
 def _demo_skills(now: float) -> list[dict]:

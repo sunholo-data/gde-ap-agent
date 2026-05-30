@@ -116,6 +116,18 @@ if [ -f "$ENV_FILE" ]; then
         echo "[dev-local] Using Vertex AI via ADC."
         echo "[dev-local]   For Express Mode (no GCP touch): set GEMINI_API_KEY in backend/.env."
     fi
+
+    # Vertex AI needs a project + region for the Gemini LLM client. LOCAL_MODE
+    # unset GOOGLE_CLOUD_PROJECT above (to keep Firestore/Sessions in-memory),
+    # so re-establish project + location HERE, solely for the LLM. Firestore +
+    # Sessions stay stubbed because is_local_mode() forces in-memory regardless
+    # of the project env. Override via VERTEX_PROJECT / GOOGLE_CLOUD_LOCATION in
+    # backend/.env (both survive the LOCAL_MODE unset above).
+    if [ "${GOOGLE_GENAI_USE_VERTEXAI:-}" = "True" ] || [ "${GOOGLE_GENAI_USE_VERTEXAI:-}" = "true" ]; then
+        export GOOGLE_CLOUD_PROJECT="${VERTEX_PROJECT:-ailang-multivac-dev}"
+        export GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION:-global}"
+        echo "[dev-local]   Vertex project=$GOOGLE_CLOUD_PROJECT location=$GOOGLE_CLOUD_LOCATION (ADC)."
+    fi
 fi
 
 FRONTEND_PORT=3456

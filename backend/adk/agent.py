@@ -64,7 +64,7 @@ from adk.tools import resolve_mcp_tools, resolve_tools
 from auth.access_context import AccessContext
 from auth.firebase_auth import User
 from db.models import SkillConfig
-from skills.skill_config import get_skill
+from skills.skill_config import find_by_name, get_skill
 from tools.structured_extraction import structured_extraction_callback
 
 logger = logging.getLogger(__name__)
@@ -323,7 +323,10 @@ def create_agent(
 
     sub_agents: list[LlmAgent] = []
     for sub_id in md.sub_skills:
-        sub = get_skill(sub_id)
+        # subSkills may reference a sub-skill by its Firestore skill_id OR,
+        # for hand-authored templates that can't know generated ids, by its
+        # name. Try id first, then fall back to a name lookup.
+        sub = get_skill(sub_id) or find_by_name(sub_id)
         if sub is None:
             logger.warning(
                 "sub-skill %r referenced by %r not found; skipping",

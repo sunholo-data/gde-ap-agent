@@ -128,6 +128,33 @@ def find_by_slug(owner_id: str, slug: str) -> SkillConfig | None:
     return config
 
 
+def find_by_name(name: str) -> SkillConfig | None:
+    """Resolve a skill by its ``name`` field — used to wire ``subSkills`` by name.
+
+    ``SkillConfig.skill_metadata.sub_skills`` lists skill *names* in
+    hand-authored templates (e.g. ``subSkills: [docparse, ap-validator]``),
+    but :func:`get_skill` keys on the Firestore ``skill_id`` (a UUID assigned
+    at seed time). This bridges the two: when a sub-skill reference is not a
+    known id, the agent factory falls back to this name lookup so a multi-agent
+    graph can be authored declaratively without knowing generated ids.
+
+    Returns the first matching skill (names are expected to be unique among the
+    canonical/platform skills that participate in multi-agent graphs), or
+    ``None`` if no skill has that name. Caches the resolved config under its
+    ``skill_id`` so a follow-up :func:`get_skill` hits the cache.
+    """
+    docs = fs.query_documents(
+        COLLECTION,
+        filters=[("name", "==", name)],
+        limit=1,
+    )
+    if not docs:
+        return None
+    config = _from_firestore(docs[0])
+    _cache_set(config.skill_id, config)
+    return config
+
+
 def update_skill(skill_id: str, updates: dict[str, Any]) -> SkillConfig | None:
     """Update specific fields on a skill. Returns updated config or None if not found."""
     existing = get_skill(skill_id)
