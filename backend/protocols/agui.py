@@ -37,7 +37,7 @@ def mount_skill_endpoint(
     session_service: BaseSessionService | None = None,
     memory_service: BaseMemoryService | None = None,
     artifact_service: BaseArtifactService | None = None,
-    app_name: str = "aitana_platform",
+    app_name: str = "gde_ap_agent",
 ) -> None:
     """Wrap an ADK agent in ag-ui-adk and mount it as an AG-UI SSE endpoint.
 

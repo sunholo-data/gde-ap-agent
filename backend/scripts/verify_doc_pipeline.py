@@ -49,7 +49,7 @@ async def main() -> None:
 
         async def save_artifact(self, filename: str, artifact, **_kw):
             version = await artifact_svc.save_artifact(
-                app_name="aitana_platform",
+                app_name="gde_ap_agent",
                 user_id="test-user",
                 session_id="test-session-001",
                 filename=filename,
@@ -81,7 +81,7 @@ async def main() -> None:
     # --- Verify artifact is readable (what load_artifacts_tool does) ---
     print("Artifact readback (simulating load_artifacts_tool):")
     artifact = await artifact_svc.load_artifact(
-        app_name="aitana_platform",
+        app_name="gde_ap_agent",
         user_id="test-user",
         session_id="test-session-001",
         filename="doc:test-doc-001.json",

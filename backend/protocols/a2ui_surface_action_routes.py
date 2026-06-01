@@ -234,7 +234,7 @@ async def post_surface_action(
     # Write via ADK's append_event(state_delta) pattern. Author "user"
     # so ADK doesn't warn about "system" author events (same as
     # iframe-context).
-    # ADK sessions are keyed by ("aitana_platform", user_id, session_id) —
+    # ADK sessions are keyed by ("gde_ap_agent", user_id, session_id) —
     # build_agui_adk_agent passes the canonical APP_NAME, NOT the skill_id,
     # so we must look up under the same key. The 7-gate session-index check
     # above already proves this caller can access this session under this

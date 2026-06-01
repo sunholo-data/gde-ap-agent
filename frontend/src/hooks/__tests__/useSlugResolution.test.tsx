@@ -95,13 +95,13 @@ describe("useSlugResolution", () => {
     // never firing the fetch.
     mockFetch.mockReturnValue(makeResponse({ skillId: "abc-123" }));
     const { result } = renderHook(() =>
-      useSlugResolution(["%40aitana-platform", "general-assistant"]),
+      useSlugResolution(["%40gde-ap-agent", "general-assistant"]),
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.notFound).toBe(false);
     expect(result.current.skillId).toBe("abc-123");
     expect(mockFetch).toHaveBeenCalledWith(
-      "/api/proxy/api/skills/by-slug/aitana-platform/general-assistant",
+      "/api/proxy/api/skills/by-slug/gde-ap-agent/general-assistant",
     );
   });
 

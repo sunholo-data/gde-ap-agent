@@ -10,9 +10,9 @@ interface UseUserSkillsReturn {
   error: string | null;
 }
 
-// Sentinel ownerId for skills shipped by Aitana Labs (the five defaults
-// available to every tenant). Mirrored from backend/skills/platform.py.
-const PLATFORM_OWNER_UID = "aitana-platform";
+// Sentinel ownerId for platform skills shipped with this fork.
+// Mirrored from backend/skills/platform.py.
+const PLATFORM_OWNER_UID = "gde-ap-agent";
 
 /**
  * Returns the skills shown in the SkillsBar: the user's own skills plus the

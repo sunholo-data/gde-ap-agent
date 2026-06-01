@@ -160,7 +160,7 @@ class TestHappyPath:
         """Regression for the bug found during sprint 2.10 follow-up live
         smoke: the route was passing `app_name=idx.skill_id` to
         `session_service.get_session`, but ADK keys sessions under the
-        canonical `APP_NAME = "aitana_platform"` (set by
+        canonical `APP_NAME = "gde_ap_agent"` (set by
         build_agui_adk_agent). Wrong key → 404 every time → action POST
         silently broken. Mock check guards the storage key shape."""
         mock_get_index.return_value = _make_index(skill_id="some-skill")
@@ -175,7 +175,7 @@ class TestHappyPath:
         # The session lookup MUST use APP_NAME, not the skill id.
         svc.get_session.assert_awaited_once()
         kwargs = svc.get_session.await_args.kwargs
-        assert kwargs["app_name"] == "aitana_platform"
+        assert kwargs["app_name"] == "gde_ap_agent"
         assert kwargs["app_name"] != "some-skill"
 
     @patch("protocols.a2ui_surface_action_routes.get_session_service")

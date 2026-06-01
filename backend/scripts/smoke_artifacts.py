@@ -21,7 +21,7 @@ async def main() -> None:
     part = Part(inline_data=Blob(data=payload, mime_type="application/json"))
 
     ver = await svc.save_artifact(
-        app_name="aitana_platform",
+        app_name="gde_ap_agent",
         user_id="smoke-user",
         session_id="smoke-session",
         filename="smoke.json",
@@ -30,7 +30,7 @@ async def main() -> None:
     print(f"Written version {ver}")
 
     read = await svc.load_artifact(
-        app_name="aitana_platform",
+        app_name="gde_ap_agent",
         user_id="smoke-user",
         session_id="smoke-session",
         filename="smoke.json",

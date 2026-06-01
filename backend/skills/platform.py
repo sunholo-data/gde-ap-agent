@@ -18,4 +18,4 @@ renaming it requires coordinated updates across Firestore rules, Cloud
 Build seed steps, and frontend "Fork to customize" UI copy.
 """
 
-PLATFORM_OWNER_UID: str = "aitana-platform"
+PLATFORM_OWNER_UID: str = "gde-ap-agent"

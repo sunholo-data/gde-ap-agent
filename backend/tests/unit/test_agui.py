@@ -153,7 +153,7 @@ def test_mount_forwards_explicit_services(dummy_agent: Agent) -> None:
         assert kwargs["artifact_service"] is artifact_service
         assert kwargs["use_in_memory_services"] is True
         assert kwargs["use_thread_id_as_session_id"] is True
-        assert kwargs["app_name"] == "aitana_platform"
+        assert kwargs["app_name"] == "gde_ap_agent"
 
 
 def test_mount_defaults_to_session_singletons(dummy_agent: Agent) -> None:

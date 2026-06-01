@@ -56,6 +56,6 @@ root_agent = Agent(
 
 app = App(
     root_agent=root_agent,
-    name="aitana_platform",
+    name="gde_ap_agent",
     events_compaction_config=get_compaction_config("gemini-2.5-flash"),
 )

@@ -244,4 +244,4 @@ def test_mcp_initialize_via_http_mount_returns_jsonrpc_result():
     # Streamable-HTTP returns an SSE-framed JSON-RPC response. The body
     # always includes the serverInfo we registered on the FastMCP instance.
     assert '"serverInfo"' in resp.text
-    assert '"aitana-platform"' in resp.text
+    assert '"gde-ap-agent"' in resp.text

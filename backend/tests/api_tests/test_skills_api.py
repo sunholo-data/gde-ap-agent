@@ -192,7 +192,7 @@ def test_delete_skill_not_found(client):
 
 # === Platform-owned skills: read-only guard ===
 #
-# Platform-owned skills have ownerId == "aitana-platform" and
+# Platform-owned skills have ownerId == "gde-ap-agent" and
 # accessControl.type == "public" so every user can see them, but nobody
 # except the sentinel owner (which has no Firebase identity) can mutate
 # them. The guard fires BEFORE is_skill_owner so the 403 message is
@@ -201,7 +201,7 @@ def test_delete_skill_not_found(client):
 _PLATFORM_SKILL_KWARGS = {
     "name": "doc-extraction",
     "skillId": "platform-doc-extract",
-    "ownerId": "aitana-platform",
+    "ownerId": "gde-ap-agent",
     "ownerEmail": "platform@aitanalabs.com",
     "accessControl": {"type": "public"},
 }
@@ -213,7 +213,7 @@ def test_get_platform_skill_is_visible(client):
         mock_get.return_value = _make_config(**_PLATFORM_SKILL_KWARGS)
         resp = client.get("/api/skills/platform-doc-extract")
         assert resp.status_code == 200
-        assert resp.json()["ownerId"] == "aitana-platform"
+        assert resp.json()["ownerId"] == "gde-ap-agent"
 
 
 def test_put_platform_skill_returns_fork_to_customize(client):

@@ -64,7 +64,7 @@ function ownSkill(overrides: Partial<Skill> = {}): Skill {
 function platformSkill(overrides: Partial<Skill> = {}): Skill {
   return {
     ...SKILL,
-    ownerId: "aitana-platform",
+    ownerId: "gde-ap-agent",
     skillId: "plat-1",
     name: "general-assistant",
     accessControl: { type: "public" },
@@ -76,7 +76,7 @@ function platformSkill(overrides: Partial<Skill> = {}): Skill {
 function makeRouter(own: Skill[], platform: Skill[]) {
   return (input: string) => {
     if (input.includes("ownerId=uid-1")) return makeResponse(own);
-    if (input.includes("ownerId=aitana-platform")) return makeResponse(platform);
+    if (input.includes("ownerId=gde-ap-agent")) return makeResponse(platform);
     return makeResponse([], false);
   };
 }
@@ -106,7 +106,7 @@ describe("useUserSkills", () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(mockFetch).toHaveBeenCalledWith(
-      "/api/proxy/api/skills?ownerId=aitana-platform",
+      "/api/proxy/api/skills?ownerId=gde-ap-agent",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     // Own skills come first, platform skills last.

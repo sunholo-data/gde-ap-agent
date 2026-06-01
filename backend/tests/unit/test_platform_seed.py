@@ -47,7 +47,7 @@ def _make_config(name: str, **overrides) -> SkillConfig:
     defaults = {
         "name": name,
         "skillId": f"platform-{name}",
-        "ownerId": "aitana-platform",
+        "ownerId": "gde-ap-agent",
         "ownerEmail": "platform@aitanalabs.com",
         "accessControl": {"type": "public"},
     }
@@ -97,7 +97,7 @@ def test_seed_empty_firestore_creates_all(tmp_path):
     # Verify each create call sets the right owner + access
     for call in mock_create.call_args_list:
         kwargs = call.kwargs
-        assert kwargs["owner_id"] == "aitana-platform"
+        assert kwargs["owner_id"] == "gde-ap-agent"
         assert kwargs["owner_email"]  # non-empty — value comes from PLATFORM_OWNER_EMAIL env
         assert kwargs["accessControl"] == {"type": "public"}
 
@@ -216,7 +216,7 @@ def test_seed_raises_when_platform_owner_email_unset(tmp_path, monkeypatch):
 
 def test_seed_sets_slug_at_creation(tmp_path):
     """Each newly seeded skill must have a slug — otherwise the friendly
-    URL /chat/@aitana-platform/{slug} 404s and we have to backfill in every
+    URL /chat/@gde-ap-agent/{slug} 404s and we have to backfill in every
     fresh environment. Regression for the bug where test/prod were cut
     without slugs and the marketplace links broke."""
     _fake_template_dir(tmp_path, "general-assistant")

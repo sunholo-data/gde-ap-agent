@@ -32,7 +32,7 @@ from google.adk.artifacts import BaseArtifactService
 from google.adk.memory import BaseMemoryService
 from google.adk.sessions import BaseSessionService
 
-APP_NAME = "aitana_platform"
+APP_NAME = "gde_ap_agent"
 _DEFAULT_APP_NAME = APP_NAME  # backwards-compat alias
 
 

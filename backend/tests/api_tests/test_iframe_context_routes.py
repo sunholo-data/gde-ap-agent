@@ -156,7 +156,7 @@ class TestHappyPath:
         """Regression for the latent bug found during sprint 2.10
         follow-up live smoke. The route was passing
         `app_name=idx.skill_id` to `session_service.get_session`, but
-        ADK keys sessions under canonical `APP_NAME = "aitana_platform"`
+        ADK keys sessions under canonical `APP_NAME = "gde_ap_agent"`
         (set by build_agui_adk_agent). Wrong key → 404 every time →
         iframe-context POST silently broken in production. Earlier mocked
         tests passed because the MagicMock returned a session regardless
@@ -176,7 +176,7 @@ class TestHappyPath:
 
         svc.get_session.assert_awaited_once()
         kwargs = svc.get_session.await_args.kwargs
-        assert kwargs["app_name"] == "aitana_platform"
+        assert kwargs["app_name"] == "gde_ap_agent"
         assert kwargs["app_name"] != "some-skill"
 
     @patch("protocols.iframe_context_routes.get_session_service")

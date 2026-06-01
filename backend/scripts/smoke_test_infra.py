@@ -148,7 +148,7 @@ def test_agent_engine() -> str:
         agent_engine_id=agent_engine_id,
     )
     user_id = f"smoke-{uuid.uuid4().hex[:8]}"
-    app_name = "aitana_platform"
+    app_name = "gde_ap_agent"
 
     # create
     import asyncio

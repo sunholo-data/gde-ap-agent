@@ -14,8 +14,8 @@ def test_agent_stream() -> None:
     """Test that the root agent returns valid streaming responses."""
 
     session_service = InMemorySessionService()
-    session = session_service.create_session_sync(user_id="test_user", app_name="aitana-platform")
-    runner = Runner(agent=root_agent, session_service=session_service, app_name="aitana-platform")
+    session = session_service.create_session_sync(user_id="test_user", app_name="gde_ap_agent")
+    runner = Runner(agent=root_agent, session_service=session_service, app_name="gde_ap_agent")
 
     message = types.Content(role="user", parts=[types.Part.from_text(text="Hello, what can you help with?")])
 

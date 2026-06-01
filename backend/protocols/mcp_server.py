@@ -97,7 +97,7 @@ def _make_skill_tool(skill: SkillConfig):
 # --- Server ---
 
 mcp = FastMCP(
-    "aitana-platform",
+    "gde-ap-agent",
     stateless_http=True,
     # Serve at the sub-app's root so that mounting at "/mcp" in FastAPI
     # yields POST /mcp (not /mcp/mcp — which was the default).

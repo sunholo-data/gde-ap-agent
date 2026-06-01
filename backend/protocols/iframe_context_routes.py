@@ -251,7 +251,7 @@ async def post_iframe_context(
     # ag_ui_adk's session_manager.update_session_state. We use author
     # "user" (not "system") because ADK's _find_agent_to_run logs a
     # warning for "system" author events.
-    # ADK sessions are keyed by ("aitana_platform", user_id, session_id) —
+    # ADK sessions are keyed by ("gde_ap_agent", user_id, session_id) —
     # build_agui_adk_agent passes the canonical APP_NAME, NOT the skill_id.
     # (Latent bug fixed 2026-05-18: lookups under skill_id always returned
     # None in production; mocked tests didn't catch it. The 7-gate session-

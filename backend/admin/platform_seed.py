@@ -169,7 +169,7 @@ def seed(templates_root: Path | None = None) -> SeedSummary:
 
         try:
             # Generate slug at creation time so the friendly URL
-            # /chat/@aitana-platform/{slug} works without a follow-up
+            # /chat/@gde-ap-agent/{slug} works without a follow-up
             # backfill. unique_slug guards against collisions if a
             # template name slugifies to the same value as another
             # platform skill (defensive — current templates don't).
