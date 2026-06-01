@@ -1,54 +1,43 @@
-# Aitana Platform v6 -- Cloud Build configuration
-# Branch-based deployment: main -> dev, test -> test, prod -> production
+# GDE AP Agent -- Cloud Build configuration
 # Multi-container Cloud Run: frontend (main) + backend (sidecar)
+# Deployed via Multivac terraform (infrastructure/environments/common/terraform.tfvars).
+# Branch convention: dev branch -> multivac-internal-dev
 #
-# Substitutions are managed by Terraform (see infrastructure repo)
+# Substitutions are injected by Terraform triggers in multivac-deploy.
 
 substitutions:
-  _SERVICE_NAME: aitana-v6-frontend
+  _SERVICE_NAME: gde-ap-agent
   _REGION: terraform_managed
   _BUILD_FOLDER: .
-  _ARTIFACT_REGISTRY_REPO_URL_CLIENT: terraform_managed
+  # Multivac terraform provides _ARTIFACT_REGISTRY_REPO_URL (not the _CLIENT suffix).
+  _ARTIFACT_REGISTRY_REPO_URL: terraform_managed
   _PROJECT_ID: terraform_managed
   _FIREBASE_BUCKET: '${_PROJECT_ID}.firebasestorage.app'
-  # Firebase helper image is built by v5's trigger-dev-firebase and tagged per-env
-  # (dev/test/prod), not per-branch. v6 main -> dev; test/prod triggers override.
+  # Firebase helper image lives in multivac-deploy/llm-ops/sunholo-llmops/firebase.
   _FIREBASE_TAG: dev
-  # Admin seed allowlist — SA emails permitted to call
-  # /api/admin/seed-platform-skills. Terraform-managed per env.
+  # Admin seed allowlist — SA emails permitted to call /api/admin/seed-platform-skills.
   _ADMIN_SEED_ALLOWED_SAS: terraform_managed
-  # Sprint 1.7 M4: separate-origin sandbox proxy URL for MCP App iframes.
-  # Baked into the Next.js bundle at build time (NEXT_PUBLIC_*).
-  # See _MCP_SANDBOX_URL below — moved to the fork-ergonomics block.
-  # Cloud Build log bucket. Defaults to a project-local bucket so fresh
-  # forks don't hit the Aitana-owned multivac-deploy-aitana-logging-bucket.
-  # Run scripts/bootstrap-gcp-project.sh to create it before first deploy.
-  # Terraform can override per env (docs/ops/gotchas.md #6).
-  _LOG_BUCKET: 'gs://${_PROJECT_ID}-cloudbuild-logs'
-  # Channel feature flags — set to 'true' to wire the Secret Manager secret
-  # and activate the channel. Leave 'false' (default) and the secret need
-  # not exist; the channel simply won't start (docs/ops/gotchas.md #5).
+  # Channel feature flags — leave 'false' until Secret Manager secrets exist.
   _ENABLE_ANTHROPIC: 'true'
   _ENABLE_TELEGRAM: 'false'
   _ENABLE_WHATSAPP: 'false'
   _ENABLE_EMAIL: 'false'
-  # Platform skill owner email. Set to the admin email for this deployment.
-  # Forks MUST override this — leaving it empty causes the backend to refuse
-  # to start rather than silently using the Aitana fallback (item #3).
+  # Set to 'true' when AGENT_ENGINE_ID secret exists in Secret Manager.
+  # Leave 'false' to fall back to in-memory ADK sessions (fine for demo).
+  _ENABLE_AGENT_ENGINE: 'false'
+  # Platform skill owner email. Terraform sets this per environment.
   _PLATFORM_OWNER_EMAIL: ''
-  # MCP sandbox iframe URL. Leave blank to disable MCP Apps gracefully
-  # (item #12). Forks set this to their own deployed mcp-sandbox URL.
+  # MCP sandbox iframe URL. Leave blank to disable MCP Apps.
   _MCP_SANDBOX_URL: ''
 
 tags: ['${_PROJECT_ID}', '${_SERVICE_NAME}']
 
 options:
-  logging: GCS_ONLY
-logsBucket: '${_LOG_BUCKET}'
+  logging: CLOUD_LOGGING_ONLY
 
 steps:
   # --- Firebase rules ---
-  - name: '${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/sunholo-llmops/firebase:${_FIREBASE_TAG}'
+  - name: '${_ARTIFACT_REGISTRY_REPO_URL}/sunholo-llmops/firebase:${_FIREBASE_TAG}'
     waitFor: ['-']
     id: 'deploy-firebase-rules'
     entrypoint: bash
@@ -79,7 +68,7 @@ steps:
         ARGS=$$(cat /workspace/docker_args)
         docker build $$ARGS \
           --build-arg NEXT_PUBLIC_MCP_SANDBOX_URL=${_MCP_SANDBOX_URL} \
-          -t ${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/ui:${BRANCH_NAME} \
+          -t ${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}/ui:${BRANCH_NAME} \
           -f frontend/Dockerfile \
           frontend/
 
@@ -97,19 +86,19 @@ steps:
       - '--build-arg'
       - 'GOOGLE_CLOUD_LOCATION=${_REGION}'
       - '-t'
-      - '${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/backend:${BRANCH_NAME}'
+      - '${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}/backend:${BRANCH_NAME}'
       - '.'
 
   # --- Push images ---
   - name: 'gcr.io/cloud-builders/docker'
     id: push-frontend
     waitFor: ['build-frontend']
-    args: ['push', '${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/ui:${BRANCH_NAME}']
+    args: ['push', '${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}/ui:${BRANCH_NAME}']
 
   - name: 'gcr.io/cloud-builders/docker'
     id: push-backend
     waitFor: ['build-backend']
-    args: ['push', '${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/backend:${BRANCH_NAME}']
+    args: ['push', '${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}/backend:${BRANCH_NAME}']
 
   # --- Deploy to Cloud Run (multi-container) ---
   # Uses bash so channel secrets can be conditionally included based on
@@ -121,11 +110,15 @@ steps:
       - '-c'
       - |
         set -euo pipefail
-        # Always-required sidecar secrets (ADK agent engine)
-        SECRETS="AGENT_ENGINE_ID=AGENT_ENGINE_ID:latest"
+        SECRETS=""
+        # ADK agent engine — only wired when secret exists and flag is true
+        if [ "${_ENABLE_AGENT_ENGINE}" = "true" ]; then
+          SECRETS="AGENT_ENGINE_ID=AGENT_ENGINE_ID:latest"
+        fi
         # AI model key — almost always needed; set _ENABLE_ANTHROPIC=false to skip
         if [ "${_ENABLE_ANTHROPIC}" = "true" ]; then
-          SECRETS="$${SECRETS},ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest"
+          SEP=$${SECRETS:+,}
+          SECRETS="$${SECRETS}$${SEP}ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest"
         fi
         # Channel secrets — only wired when the channel is enabled
         if [ "${_ENABLE_TELEGRAM}" = "true" ]; then
@@ -145,17 +138,17 @@ steps:
           --max-instances=3 \
           --session-affinity \
           --container=main \
-          --image=${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/ui:${BRANCH_NAME} \
+          --image=${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}/ui:${BRANCH_NAME} \
           --port=8080 \
           --memory=2Gi \
           --cpu=1 \
           --set-env-vars=BACKEND_URL=http://127.0.0.1:1956 \
           --container=sidecar \
-          --image=${_ARTIFACT_REGISTRY_REPO_URL_CLIENT}/${_SERVICE_NAME}/backend:${BRANCH_NAME} \
+          --image=${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}/backend:${BRANCH_NAME} \
           --memory=4Gi \
           --cpu=2 \
           --startup-probe=tcpSocket.port=1956,periodSeconds=5,failureThreshold=24,timeoutSeconds=5 \
-          --set-secrets="$${SECRETS}" \
+          $${SECRETS:+--set-secrets="$${SECRETS}"} \
           --set-env-vars=TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886 \
           --set-env-vars=GOOGLE_CLOUD_PROJECT=${_PROJECT_ID} \
           --set-env-vars=GOOGLE_CLOUD_LOCATION=${_REGION} \

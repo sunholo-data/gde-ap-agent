@@ -52,17 +52,7 @@ _log = logging.getLogger(__name__)
 # Startup guard: log resolved GCP project so misconfiguration (e.g. shell-level
 # GCP_PROJECT pointing at the v5 project) is immediately visible in server output.
 _resolved_project = resolve_gcp_project() or "(unset)"
-_expected_prefix = "aitana-multivac"
-if not _resolved_project.startswith(_expected_prefix):
-    _log.warning(
-        "STARTUP WARNING: GCP project is %r — expected a project starting with %r. "
-        "Firestore, GCS, and ADK will use the wrong project. "
-        "Check that GCP_PROJECT and GOOGLE_CLOUD_PROJECT are set correctly in .env.",
-        _resolved_project,
-        _expected_prefix,
-    )
-else:
-    _log.info("GCP project: %s", _resolved_project)
+_log.info("GCP project: %s", _resolved_project)
 
 # Touch the singleton here so the upload endpoint and ADK runner share the same instance.
 get_artifact_service()
