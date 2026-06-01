@@ -11,7 +11,6 @@ interface DocTabsBarProps {
   onClose: (id: string) => void;
   onToggleInclude: (id: string) => void;
   onToggleBrowser: () => void;
-  onUploadClick: () => void;
 }
 
 export function DocTabsBar({
@@ -22,7 +21,6 @@ export function DocTabsBar({
   onClose,
   onToggleInclude,
   onToggleBrowser,
-  onUploadClick,
 }: DocTabsBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -69,19 +67,6 @@ export function DocTabsBar({
         ))}
       </div>
 
-      {/* Upload button */}
-      <button
-        type="button"
-        onClick={onUploadClick}
-        className="shrink-0 border-l px-2 text-muted-foreground hover:bg-accent"
-        title="Upload document"
-        aria-label="Upload document"
-      >
-        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-          <path d="M8 11V3M5 6l3-3 3 3" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M2 13h12" strokeLinecap="round" />
-        </svg>
-      </button>
     </div>
   );
 }

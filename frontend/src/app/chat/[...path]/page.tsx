@@ -226,7 +226,6 @@ function ChatShell({
   const router = useRouter();
   const [draft, setDraft] = useState("");
   const [showDocBrowser, setShowDocBrowser] = useState(true);
-  const [showUpload, setShowUpload] = useState(false);
   const [openTabs, setOpenTabs] = useState<DocTabData[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const lastUserMessageRef = useRef<string>("");
@@ -483,7 +482,6 @@ function ChatShell({
         onClose={handleTabClose}
         onToggleInclude={handleTabToggleInclude}
         onToggleBrowser={() => setShowDocBrowser((v) => !v)}
-        onUploadClick={() => setShowUpload((v) => !v)}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -502,11 +500,9 @@ function ChatShell({
               </div>
             </div>
             <DocListView uid={user.uid} onDocClick={handleDocClick} />
-            {showUpload && (
-              <div className="border-t">
-                <UploadDropZone skillId={skillId} />
-              </div>
-            )}
+            <div className="border-t">
+              <UploadDropZone skillId={skillId} />
+            </div>
             {/* MULTI-SURFACE-A2UI M3: sidebar surface mount — only visible
                 when agent populates the surface. Sits below the doc list +
                 upload zone so it doesn't disturb the existing sidebar UX. */}

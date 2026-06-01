@@ -156,7 +156,6 @@ export default function FileBrowserDevPage() {
               onClose={handleTabClose}
               onToggleInclude={handleTabToggleInclude}
               onToggleBrowser={() => { setShowBrowser((v) => !v); logEvent("Toggled browser"); }}
-              onUploadClick={() => logEvent("Upload button clicked")}
             />
             <div className="p-3 text-xs text-muted-foreground">
               Active tab: <strong>{activeTabId || "none"}</strong> · Browser visible: <strong>{String(showBrowser)}</strong> · {tabs.length} open tab(s)
@@ -313,7 +312,6 @@ export default function FileBrowserDevPage() {
                 onClose={handleTabClose}
                 onToggleInclude={handleTabToggleInclude}
                 onToggleBrowser={() => setShowBrowser((v) => !v)}
-                onUploadClick={() => logEvent("Upload clicked")}
               />
               <div className="flex-1 p-4 text-xs text-muted-foreground">
                 {activeTabId ? (
