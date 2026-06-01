@@ -35,6 +35,7 @@ import { A2UISurfaceMount } from "@/components/protocols/A2UISurfaceMount";
 import { DocumentPanel } from "@/components/document/DocumentPanel";
 import { LatencyHUD } from "@/components/dev/LatencyHUD";
 import { VendorGlobePanel } from "@/components/workspace/VendorGlobePanel";
+import { APDashboardPanel } from "@/components/workspace/APDashboardPanel";
 
 /**
  * MULTI-SURFACE-A2UI M3 — chat page surface mounts.
@@ -230,6 +231,7 @@ function ChatShell({
   const [openTabs, setOpenTabs] = useState<DocTabData[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [globeContext, setGlobeContext] = useState<{ vendor: string; country: string; amount?: number } | null>(null);
+  const [dashboardOpen, setDashboardOpen] = useState(false);
   const lastUserMessageRef = useRef<string>("");
 
   // Session routing: read ?session= from URL, allow programmatic navigation
@@ -346,6 +348,10 @@ function ChatShell({
           country: String(event.context.country ?? ""),
           amount: typeof event.context.amount === "number" ? event.context.amount : undefined,
         });
+        return;
+      }
+      if (event.actionName === "show_ap_dashboard") {
+        setDashboardOpen(true);
         return;
       }
       void sendMessage(
@@ -544,7 +550,7 @@ function ChatShell({
         )}
 
         {/* M4: Vendor globe — shown when ap-orchestrator fires show_vendor_globe */}
-        {!activeTabId && globeContext && (
+        {!activeTabId && globeContext && !dashboardOpen && (
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-r md:max-w-xl">
             <VendorGlobePanel
               vendor={globeContext.vendor}
@@ -552,6 +558,13 @@ function ChatShell({
               amount={globeContext.amount}
               onClose={() => setGlobeContext(null)}
             />
+          </div>
+        )}
+
+        {/* M5: AP analytics dashboard — shown when show_ap_dashboard fires */}
+        {!activeTabId && dashboardOpen && (
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-r md:max-w-xl">
+            <APDashboardPanel onClose={() => setDashboardOpen(false)} />
           </div>
         )}
 

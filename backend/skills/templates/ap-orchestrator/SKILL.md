@@ -75,7 +75,8 @@ the following JSON structure (fill in values from the workflow; do not omit this
     "updateComponents": {
       "surfaceId": "workspace",
       "components": [
-        {"id": "root", "component": "Column", "children": ["header", "divider1", "meta", "divider2", "items", "divider3", "footer", "map_btn"]},
+        {"id": "root", "component": "Column", "children": ["header", "divider1", "meta", "divider2", "items", "divider3", "footer", "actions"]},
+        {"id": "actions", "component": "Row", "children": ["map_btn", "dashboard_btn"]},
         {"id": "header", "component": "Row", "children": ["vendor_label", "status_label"]},
         {"id": "vendor_label", "component": "Text", "text": {"path": "/vendor"}, "variant": "h2"},
         {"id": "status_label", "component": "Text", "text": {"path": "/status"}, "variant": "h3"},
@@ -105,7 +106,8 @@ the following JSON structure (fill in values from the workflow; do not omit this
         {"id": "total_val", "component": "Text", "text": {"path": "/total"}, "variant": "h3"},
         {"id": "verdict_text", "component": "Text", "text": {"path": "/verdict"}, "variant": "body"},
         {"id": "action_text", "component": "Text", "text": {"path": "/action"}, "variant": "caption"},
-        {"id": "map_btn", "component": "Button", "label": "🌍 View Vendor on Map", "action": "show_vendor_globe", "context": {"vendor": {"path": "/vendor"}, "country": {"path": "/vendorCountry"}, "amount": {"path": "/totalAmount"}}}
+        {"id": "map_btn", "component": "Button", "label": "🌍 View Vendor on Map", "action": "show_vendor_globe", "context": {"vendor": {"path": "/vendor"}, "country": {"path": "/vendorCountry"}, "amount": {"path": "/totalAmount"}}},
+        {"id": "dashboard_btn", "component": "Button", "label": "📊 AP Analytics", "action": "show_ap_dashboard", "context": {}}
       ]
     }
   },

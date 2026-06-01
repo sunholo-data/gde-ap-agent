@@ -22,9 +22,10 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --no-audit --no-fund
 
-# Copy source + entry points.
+# Copy source + entry points + static artefacts.
 COPY src ./src
 COPY sandbox.html serve.ts ./
+COPY artefacts ./artefacts
 
 # Build the browser bundle (esbuild → public/sandbox.js + sandbox.html copy).
 RUN npm run build

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>AP Analytics</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #0d1420; color: #e8e8e8; font-family: system-ui, sans-serif; overflow: hidden; }
+    #app { display: flex; flex-direction: column; height: 100%; padding: 10px; gap: 8px; }
+    .header { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+    .header h1 { font-size: 13px; font-weight: 700; color: #e8a800; letter-spacing: 0.5px; }
+    .stats { display: flex; gap: 8px; }
+    .stat { flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(232,168,0,0.2); border-radius: 6px; padding: 6px 10px; }
+    .stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 18px; font-weight: 700; color: #e8a800; line-height: 1.2; }
+    .charts { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; flex: 1; min-height: 0; }
+    .chart-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; overflow: hidden; }
+    .chart-card.full-width { grid-column: span 2; }
+    .chart-title { font-size: 10px; font-weight: 600; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; flex-shrink: 0; }
+    .chart-wrap { flex: 1; position: relative; min-height: 0; }
+    canvas { width: 100% !important; height: 100% !important; }
+    .empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #555; font-size: 11px; font-style: italic; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <h1>AP Analytics Dashboard</h1>
+  </div>
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Invoices</div>
+      <div class="stat-value" id="stat-count">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Total Value</div>
+      <div class="stat-value" id="stat-total">$0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Approved</div>
+      <div class="stat-value" id="stat-approved">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Exceptions</div>
+      <div class="stat-value" id="stat-exceptions">0</div>
+    </div>
+  </div>
+  <div class="charts">
+    <div class="chart-card full-width">
+      <div class="chart-title">Invoice Aging (days)</div>
+      <div class="chart-wrap"><canvas id="aging-chart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Top Vendors by Value</div>
+      <div class="chart-wrap"><canvas id="vendor-chart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">GL Code Distribution</div>
+      <div class="chart-wrap"><canvas id="gl-chart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  // --- Tiny Chart.js subset — bar + horizontal-bar + doughnut, no CDN ---
+  // We implement these ourselves to avoid CDN dependencies (CSP/offline).
+  // Minimal but functional: axis labels, grid, tooltips via title attr.
+
+  const GOLD = "#e8a800";
+  const GOLD_DIM = "rgba(232,168,0,0.6)";
+  const NAVY = "#1a2a6c";
+  const COLORS = [
+    "#e8a800","#4fc3f7","#81c784","#ef5350","#ab47bc",
+    "#26c6da","#ffca28","#ff7043","#66bb6a","#42a5f5",
+  ];
+
+  function clearCanvas(canvas) {
+    const ctx = canvas.getContext("2d");
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.parentElement.clientWidth;
+    const h = canvas.parentElement.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+
+  function drawBar(canvas, labels, values, color) {
+    const { ctx, w, h } = clearCanvas(canvas);
+    if (!values.length) { ctx.fillStyle="#555"; ctx.font="11px system-ui"; ctx.fillText("No data", w/2-20, h/2); return; }
+    const pad = { top:8, right:8, bottom:24, left:36 };
+    const cw = w - pad.left - pad.right;
+    const ch = h - pad.top - pad.bottom;
+    const max = Math.max(...values, 1);
+    const bw = cw / labels.length;
+
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = pad.top + ch - (ch * i / 4);
+      ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
+      ctx.fillStyle = "#555"; ctx.font = "9px system-ui"; ctx.textAlign = "right";
+      ctx.fillText(Math.round(max * i / 4), pad.left - 3, y + 3);
+    }
+
+    labels.forEach((lbl, i) => {
+      const x = pad.left + i * bw;
+      const bh = (values[i] / max) * ch;
+      const by = pad.top + ch - bh;
+      ctx.fillStyle = Array.isArray(color) ? color[i % color.length] : color;
+      ctx.fillRect(x + 2, by, bw - 4, bh);
+      ctx.fillStyle = "#999"; ctx.font = "9px system-ui"; ctx.textAlign = "center";
+      const short = lbl.length > 8 ? lbl.slice(0,7)+"…" : lbl;
+      ctx.fillText(short, x + bw/2, h - 4);
+    });
+  }
+
+  function drawHorizontalBar(canvas, labels, values) {
+    const { ctx, w, h } = clearCanvas(canvas);
+    if (!values.length) { ctx.fillStyle="#555"; ctx.font="11px system-ui"; ctx.fillText("No data", w/2-20, h/2); return; }
+    const pad = { top:4, right:8, bottom:4, left:4 };
+    const max = Math.max(...values, 1);
+    const rowH = (h - pad.top - pad.bottom) / labels.length;
+    labels.forEach((lbl, i) => {
+      const y = pad.top + i * rowH;
+      const labelW = Math.min(w * 0.4, 72);
+      ctx.fillStyle = "#aaa"; ctx.font = "9px system-ui"; ctx.textAlign = "left";
+      const short = lbl.length > 12 ? lbl.slice(0,11)+"…" : lbl;
+      ctx.fillText(short, 0, y + rowH * 0.65);
+      const barW = (values[i] / max) * (w - labelW - 8 - pad.right);
+      ctx.fillStyle = COLORS[i % COLORS.length];
+      ctx.fillRect(labelW, y + 3, barW, rowH - 8);
+      ctx.fillStyle="#ccc"; ctx.font="9px system-ui"; ctx.textAlign="left";
+      ctx.fillText("$"+fmtNum(values[i]), labelW + barW + 3, y + rowH * 0.65);
+    });
+  }
+
+  function drawDonut(canvas, labels, values) {
+    const { ctx, w, h } = clearCanvas(canvas);
+    if (!values.length) { ctx.fillStyle="#555"; ctx.font="11px system-ui"; ctx.fillText("No data", w/2-20, h/2); return; }
+    const total = values.reduce((a,b)=>a+b, 0);
+    const cx = w * 0.4, cy = h / 2;
+    const r = Math.min(cx, h/2) * 0.85;
+    const inner = r * 0.55;
+    let start = -Math.PI / 2;
+    values.forEach((v, i) => {
+      const angle = (v / total) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, r, start, start + angle);
+      ctx.closePath();
+      ctx.fillStyle = COLORS[i % COLORS.length];
+      ctx.fill();
+      start += angle;
+    });
+    ctx.beginPath(); ctx.arc(cx, cy, inner, 0, Math.PI*2); ctx.fillStyle="#0d1420"; ctx.fill();
+    ctx.fillStyle="#e8a800"; ctx.font="bold 11px system-ui"; ctx.textAlign="center";
+    ctx.fillText(values.length+" codes", cx, cy+4);
+
+    const lx = w * 0.78;
+    const lyStart = (h - labels.length * 14) / 2;
+    labels.forEach((lbl, i) => {
+      const ly = lyStart + i * 14;
+      ctx.fillStyle = COLORS[i % COLORS.length];
+      ctx.fillRect(lx - 18, ly, 10, 10);
+      ctx.fillStyle="#ccc"; ctx.font="9px system-ui"; ctx.textAlign="left";
+      const short = lbl.length > 8 ? lbl.slice(0,7)+"…" : lbl;
+      ctx.fillText(short, lx - 5, ly + 9);
+    });
+  }
+
+  function fmtNum(n) {
+    if (n >= 1_000_000) return (n/1_000_000).toFixed(1)+"M";
+    if (n >= 1_000) return (n/1_000).toFixed(0)+"K";
+    return String(Math.round(n));
+  }
+
+  // --- Data model ---
+  let invoices = [];
+
+  // Seed demo data so the dashboard looks good before live data arrives
+  const DEMO = [
+    { vendor:"Acme Corp", country:"US", amount:12400, glCode:"5200-OPEX", daysOld:5, status:"approved" },
+    { vendor:"Nordic Tech", country:"SE", amount:8750, glCode:"5100-IT", daysOld:15, status:"approved" },
+    { vendor:"Berlin Parts", country:"DE", amount:22000, glCode:"5300-MFG", daysOld:32, status:"needs_review" },
+    { vendor:"SG Logistics", country:"SG", amount:4300, glCode:"5400-SHIP", daysOld:8, status:"approved" },
+    { vendor:"Tokyo Semi", country:"JP", amount:67000, glCode:"5300-MFG", daysOld:45, status:"exception" },
+    { vendor:"UK Services", country:"GB", amount:9500, glCode:"5200-OPEX", daysOld:3, status:"approved" },
+  ];
+  invoices = [...DEMO];
+
+  function updateStats() {
+    document.getElementById("stat-count").textContent = invoices.length;
+    const total = invoices.reduce((s,i)=>s+i.amount, 0);
+    document.getElementById("stat-total").textContent = "$"+fmtNum(total);
+    document.getElementById("stat-approved").textContent = invoices.filter(i=>i.status==="approved").length;
+    document.getElementById("stat-exceptions").textContent = invoices.filter(i=>i.status==="exception"||i.status==="needs_review").length;
+  }
+
+  function updateCharts() {
+    updateStats();
+
+    // Aging buckets: 0-7, 8-14, 15-30, 31-60, 60+
+    const buckets = ["0-7d","8-14d","15-30d","31-60d","60+d"];
+    const bucketVals = [0,0,0,0,0];
+    invoices.forEach(inv => {
+      const d = inv.daysOld ?? 0;
+      if (d <= 7) bucketVals[0]++;
+      else if (d <= 14) bucketVals[1]++;
+      else if (d <= 30) bucketVals[2]++;
+      else if (d <= 60) bucketVals[3]++;
+      else bucketVals[4]++;
+    });
+    drawBar(document.getElementById("aging-chart"), buckets, bucketVals, [
+      "#4fc3f7","#81c784",GOLD,"#ef5350","#b71c1c"
+    ]);
+
+    // Top 5 vendors by total amount
+    const vendorMap = {};
+    invoices.forEach(inv => {
+      vendorMap[inv.vendor] = (vendorMap[inv.vendor]||0) + inv.amount;
+    });
+    const vendors = Object.entries(vendorMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    drawHorizontalBar(
+      document.getElementById("vendor-chart"),
+      vendors.map(v=>v[0]),
+      vendors.map(v=>v[1])
+    );
+
+    // GL code donut
+    const glMap = {};
+    invoices.forEach(inv => {
+      const gl = inv.glCode || "Unknown";
+      glMap[gl] = (glMap[gl]||0) + inv.amount;
+    });
+    const gls = Object.entries(glMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    drawDonut(
+      document.getElementById("gl-chart"),
+      gls.map(g=>g[0]),
+      gls.map(g=>g[1])
+    );
+  }
+
+  updateCharts();
+  window.addEventListener("resize", updateCharts);
+
+  // --- MCP Apps protocol ---
+  function reply(id, result) {
+    window.parent.postMessage(
+      { jsonrpc: "2.0", id, result, __platformTransport: true },
+      "*"
+    );
+  }
+
+  window.addEventListener("message", (event) => {
+    const msg = event.data;
+    if (!msg || !msg.jsonrpc) return;
+
+    if (msg.method === "ui/initialize") {
+      reply(msg.id, {
+        protocolVersion: "2026-01-26",
+        capabilities: {},
+        serverInfo: { name: "ap-dashboard", version: "1.0" },
+      });
+      return;
+    }
+
+    if (msg.method === "ping") { reply(msg.id, {}); return; }
+
+    // Receive invoice data from the host
+    if (msg.method === "ui/update-data" && msg.params) {
+      const p = msg.params;
+      if (p.reset) { invoices = []; }
+      if (p.invoice) {
+        const inv = p.invoice;
+        const existing = invoices.find(i => i.vendor === inv.vendor && i.invoiceNumber === inv.invoiceNumber);
+        if (existing) {
+          Object.assign(existing, inv);
+        } else {
+          invoices.push({ daysOld: 0, glCode: "Unknown", status: "pending", ...inv });
+        }
+      }
+      if (p.invoices && Array.isArray(p.invoices)) {
+        invoices = p.invoices.map(inv => ({ daysOld: 0, glCode: "Unknown", status: "pending", ...inv }));
+      }
+      updateCharts();
+      return;
+    }
+  });
+</script>
+</body>
+</html>
