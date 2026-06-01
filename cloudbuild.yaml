@@ -176,10 +176,16 @@ steps:
           --project=${_PROJECT_ID} --region=${_REGION} \
           --format='value(status.url)')
         echo "Smoking $${URL}"
+        # Wait for the new revision to finish cold-start initialisation.
+        # Cloud Run marks a revision Ready once the startup probe passes
+        # (TCP port open), but the Python/FastAPI process may still be
+        # loading model clients. 30 s is enough to avoid false 000 timeouts.
+        echo "Waiting 30s for cold-start initialisation..."
+        sleep 30
         fail=0
         # Public endpoints — expect 200
         for path in "/" "/api/health" "/api/proxy/health" "/api/proxy/api/skills/marketplace"; do
-          code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 20 "$${URL}$${path}") || code=000
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 45 "$${URL}$${path}") || code=000
           body=$(head -c 200 /tmp/body)
           if [ "$${code}" = "200" ]; then
             echo "OK   $${path} -> 200"
@@ -190,7 +196,7 @@ steps:
         done
         # Auth-protected — expect 401 without token (not Next 404 — FE-BRINGUP-1 guard)
         for path in "/api/proxy/api/skills" "/api/proxy/api/auth/whoami"; do
-          code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 20 "$${URL}$${path}") || code=000
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 45 "$${URL}$${path}") || code=000
           body=$(head -c 200 /tmp/body)
           if [ "$${code}" = "401" ]; then
             echo "OK   $${path} -> 401 (auth required)"

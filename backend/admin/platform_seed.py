@@ -42,6 +42,7 @@ DEFAULT_TEMPLATES_ROOT = Path(__file__).resolve().parent.parent / "skills" / "te
 class SeedSummary:
     created: int = 0
     skipped: int = 0
+    purged: int = 0
     failed: list[str] = field(default_factory=list)
     tool_permissions_wildcard_seeded: bool = False
 
@@ -49,6 +50,7 @@ class SeedSummary:
         return {
             "created": self.created,
             "skipped": self.skipped,
+            "purged": self.purged,
             "failed": self.failed,
             "tool_permissions_wildcard_seeded": self.tool_permissions_wildcard_seeded,
         }
@@ -138,16 +140,46 @@ def _resolve_owner_email() -> str:
 def seed(templates_root: Path | None = None) -> SeedSummary:
     """Seed platform skills from disk templates. Idempotent by `name`.
 
-    Returns a SeedSummary counting created/skipped/failed entries. A
-    malformed template surfaces in `failed` rather than aborting the run
-    — the Cloud Build step runs non-fatally and we prefer to partially
-    seed over blocking a deploy.
+    Also purges any platform-owned skills in Firestore whose names are
+    NOT present in the current template set — this keeps Firestore in
+    sync when templates are deleted from the repo (e.g. when a fork
+    removes non-AP defaults). The purge fires before upserts.
+
+    Returns a SeedSummary counting created/skipped/purged/failed entries.
     """
     owner_email = _resolve_owner_email()
     root = templates_root or DEFAULT_TEMPLATES_ROOT
     summary = SeedSummary()
     summary.tool_permissions_wildcard_seeded = _ensure_tool_permissions_wildcard()
     existing = _existing_platform_skill_names()
+
+    # Build the set of names that *should* exist after this seed.
+    template_names: set[str] = set()
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        skill_md = child / "SKILL.md"
+        if not skill_md.exists():
+            continue
+        try:
+            parsed = _parse_template(skill_md)
+            template_names.add(parsed["name"])
+        except Exception:  # noqa: BLE001 — parse errors handled below
+            pass
+
+    # Purge platform skills that are no longer in templates.
+    stale = existing - template_names
+    for name in stale:
+        try:
+            configs = skill_config.list_skills(owner_id=PLATFORM_OWNER_UID, limit=200)
+            for cfg in configs:
+                if cfg.name == name:
+                    skill_config.delete_skill(cfg.skillId)
+                    logger.info("platform_seed: purged stale platform skill %r (%s)", name, cfg.skillId)
+                    summary.purged += 1
+                    break
+        except Exception as e:  # noqa: BLE001
+            logger.warning("platform_seed: failed to purge %s: %s", name, e)
 
     for child in sorted(root.iterdir()):
         if not child.is_dir():
