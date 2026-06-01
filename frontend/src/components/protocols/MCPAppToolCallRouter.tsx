@@ -42,7 +42,7 @@ import {
  * to the local dev port (3457). See docs/design/v6.1.0/mcp-sandbox-separate-origin.md.
  */
 const SANDBOX_PROXY_URL =
-  process.env.NEXT_PUBLIC_MCP_SANDBOX_URL ?? "http://localhost:3457/sandbox.html";
+  process.env.NEXT_PUBLIC_MCP_SANDBOX_URL || "http://localhost:3457/sandbox.html";
 
 interface ToolDef {
   name: string;
