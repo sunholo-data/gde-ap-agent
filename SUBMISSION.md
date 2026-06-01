@@ -6,6 +6,20 @@
 
 ---
 
+## Live Demo
+
+**URL:** https://gde-ap-agent-blqtqfexwa-ew.a.run.app
+
+**Demo flow:**
+1. Select the **AP Orchestrator** skill from the left bar
+2. Type (or upload) an invoice: e.g. `"Process this invoice: Vendor: Acme GmbH (Germany), INV-2026-042, €8,500, NET 30, GL 5200-OPEX"`
+3. Watch the **4-step pipeline visualizer** animate: Intake → Extract → Validate → Post
+4. The **Invoice Review Card** renders in the workspace pane with all fields, verdict, and action
+5. Click **🌍 View Vendor on Map** — a rotating 3D canvas globe shows London HQ → vendor location arc
+6. Click **📊 AP Analytics** — an inline dashboard shows invoice aging, vendor bar, GL donut
+
+---
+
 ## What Was Built
 
 An **Accounts-Payable multi-agent system** that turns an incoming vendor invoice into a trustworthy posting decision with a complete audit trail — built on Google ADK, Gemini 2.5 Pro/Flash, and the open-source [`ai-protocol-platform`](https://github.com/sunholo-data/ai-protocol-platform) template.
@@ -18,6 +32,32 @@ The headline artifact is four declarative skill files and ~80 lines of wiring:
 | `docparse` | Gemini 2.5 Flash | Extraction — turns a raw invoice file into clean, typed fields using `ailang-parse` for structured formats |
 | `ap-validator` | Gemini 2.5 Flash | Grounded validation — checks extracted fields against the vendor master, open POs, and approval policy via Vertex AI Search |
 | `ap-poster` | Gemini 2.5 Flash | Action — posts a clean invoice or escalates with a written audit trail |
+
+---
+
+## Visual + UX Highlights (Competition Polish Sprint)
+
+| Feature | Implementation |
+|---------|---------------|
+| AP/Finance theme | Navy+gold CSS custom properties (`--primary: hsl(43 96% 46%)`) |
+| Pipeline step visualizer | `APPipelineSteps.tsx` — live 4-step progress bar driven by AG-UI `TOOL_CALL_START/END` events |
+| Invoice review card | A2UI v0.9 `updateComponents` tree pushed from `ap-orchestrator/SKILL.md`; renders in workspace pane |
+| Vendor geography globe | MCP App artefact — 100% canvas, 50-country lat/lng table, animated arc from London HQ |
+| AP analytics dashboard | MCP App artefact — aging bar, vendor bar, GL donut; canvas-only, no CDN |
+| MCP sandbox | Separate-origin Cloud Run service (`mcp-sandbox-374404277595.europe-west1.run.app`) per MCP Apps spec |
+
+### Protocol Chain (end-to-end)
+
+```
+User types invoice text
+   → AG-UI SSE stream fires TOOL_CALL_START per sub-agent (pipeline visualizer advances)
+   → ap-orchestrator finishes → calls send_a2ui_json_to_client
+   → A2UI createSurface + updateComponents renders Invoice Review Card in workspace
+   → User clicks "🌍 View Vendor on Map" Button
+   → A2UI action "show_vendor_globe" fires → setGlobeContext state
+   → StaticArtefactFrame fetches /artefacts/vendor-globe/index.html from sandbox origin
+   → postMessage ui/initialize handshake → ui/update-data push → globe animates to vendor country
+```
 
 ---
 

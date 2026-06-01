@@ -1,19 +1,27 @@
-# Sunholo AI Protocol Platform v6
+# GDE AP Agent
 
-Open-source AI protocol platform — Skills + AG-UI + A2UI + MCP Apps + A2A on Google ADK.
+**AI-Powered Accounts Payable** — autonomous multi-agent invoice processing on Google ADK.
 
+Built for the [Google for Startups AI Agents Challenge, Track 3](./SUBMISSION.md). Live demo: https://gde-ap-agent-blqtqfexwa-ew.a.run.app
+
+> Built on the open-source [ai-protocol-platform](https://github.com/sunholo-data/ai-protocol-platform) template (Skills + AG-UI + A2UI + MCP Apps + A2A on Google ADK).
+>
 > 🚀 **New here?** Start with [**WORKSHOP.md**](./WORKSHOP.md) — clone, set
 > `LOCAL_MODE=1`, run `make dev`, working chat UI in under 30 minutes with
-> zero GCP credentials. Use this for university courses, workshop attendees,
-> or quick exploration of the protocol stack.
+> zero GCP credentials.
 
-## What's New in v6
+## AP Agent Pipeline
 
-- **Skills replace Assistants** — clearer user-facing abstraction
-- **Google ADK** — native agent orchestration (replaces Sunholo framework)
-- **Protocol-native** — AG-UI, A2UI, MCP Apps, A2A, MCP
-- **Three model providers** — Gemini, Claude, OpenAI
-- **OpenTelemetry** — native observability from ADK
+```
+ap-orchestrator (Gemini 2.5 Pro)
+    ↓ docparse      — invoice field extraction
+    ↓ ap-validator  — grounded validation vs vendor master + POs
+    ↓ ap-poster     — post clean or escalate exceptions
+```
+
+**Visual features**: Navy+gold AP theme · live pipeline step visualizer · A2UI invoice review card · MCP App vendor globe · MCP App analytics dashboard
+
+See [SUBMISSION.md](./SUBMISSION.md) for full details and live demo URL.
 
 ## Quick Start
 
