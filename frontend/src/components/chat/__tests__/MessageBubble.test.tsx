@@ -46,9 +46,11 @@ describe("MessageBubble — bot variant", () => {
     expect(screen.getByText("test-skill")).toBeInTheDocument();
   });
 
-  it("applies orange left border", () => {
+  it("applies a left border to the bot bubble", () => {
     const { container } = render(<MessageBubble message={botMsg()} {...baseProps} />);
-    expect(container.querySelector(".border-orange-400")).toBeInTheDocument();
+    // border class uses CSS var (border-primary/50) — check the element has any border-l class
+    const bubble = container.querySelector("[class*='border-l-']");
+    expect(bubble).toBeInTheDocument();
   });
 
   it("renders bot avatar image with branded alt text", () => {

@@ -15,6 +15,7 @@
 import React, { useEffect } from "react";
 import { A2UIRenderer } from "@/components/protocols/A2UIRenderer";
 import { MCPAppToolCallRouter } from "@/components/protocols/MCPAppToolCallRouter";
+import { APPipelineSteps } from "@/components/chat/APPipelineSteps";
 import { BrandAvatar } from "@/components/chat/BrandAvatar";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { InlineCitation } from "@/components/chat/InlineCitation";
@@ -165,15 +166,20 @@ export const MessageBubble = React.memo(function MessageBubble({
       );
     }
 
+    const isAPOrchestrator = skillId === "ap-orchestrator";
+
     return (
       <div className="flex items-start gap-3">
         <BrandAvatar />
         <div className="flex max-w-[80%] flex-col gap-1">
           <div className="flex items-baseline gap-2">
-            <span className="text-xs font-medium text-orange-600">{skillId}</span>
+            <span className="text-xs font-medium text-primary">{skillId}</span>
             <span className="text-xs text-muted-foreground">{time}</span>
           </div>
-          <div className="space-y-2 rounded-[2px_8px_8px_8px] border-l-[3px] border-orange-400 bg-[hsl(0,0%,98%)] px-3 py-2 text-sm">
+          {isAPOrchestrator && (
+            <APPipelineSteps toolCalls={toolCalls} isStreaming={!!message.content && nonA2uiCalls.some((tc) => tc.status === "running")} />
+          )}
+          <div className="space-y-2 rounded-[2px_8px_8px_8px] border-l-[3px] border-primary/50 bg-muted/30 px-3 py-2 text-sm">
             {message.content && (
               <ChatMarkdown content={message.content} navigateToBlock={navigateToBlock} />
             )}
