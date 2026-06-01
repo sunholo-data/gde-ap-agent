@@ -25,7 +25,7 @@ export function DocTabsBar({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="flex items-stretch border-b border-white/[0.07] bg-[hsl(222,47%,4%)]">
+    <div className="flex items-stretch border-b border-border bg-background">
       {/* Browser toggle */}
       <button
         type="button"

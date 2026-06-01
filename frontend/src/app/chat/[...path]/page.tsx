@@ -25,6 +25,7 @@ import { useSlugResolution } from "@/hooks/useSlugResolution";
 import { SkillSessionPanel } from "@/components/chat/SkillSessionPanel";
 import DocumentHistoryPanel from "@/components/chat/DocumentHistoryPanel";
 import { SkillsBar } from "@/components/navigation/SkillsBar";
+import { getSkillMeta } from "@/lib/skillMeta";
 import { AGUIProvider } from "@/providers/AGUIProvider";
 import {
   SurfaceRegistryProvider,
@@ -309,6 +310,9 @@ function ChatShell({
     });
   }, [agentSessionId, skillId]);
 
+  const activeSkill = userSkills.find((s) => s.skillId === skillId) ?? null;
+  const activeSkillMeta = activeSkill ? getSkillMeta(activeSkill) : null;
+
   const userInitial = (user.displayName ?? user.email ?? "U").charAt(0).toUpperCase();
   const userDisplayName = user.displayName ?? user.email ?? "You";
 
@@ -482,7 +486,7 @@ function ChatShell({
   return (
     <SurfaceRegistryProvider>
     <SurfaceSessionLifecycle sessionId={sessionId} />
-    <main className="flex h-screen flex-col bg-[hsl(222,47%,5%)]">
+    <main className="flex h-screen flex-col bg-background">
       <SkillsBar
         skills={userSkills}
         activeSkillId={skillId}
@@ -502,9 +506,39 @@ function ChatShell({
 
       <div className="flex min-h-0 flex-1">
         {showDocBrowser && (
-          <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-white/[0.07] bg-[hsl(222,47%,4%)]">
-            <div className="border-b border-white/[0.06] px-3 py-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/50">Sessions</p>
+          <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-border bg-background">
+            {/* Skill info card — shows active skill description + role */}
+            {activeSkillMeta && (
+              <div className="border-b border-border px-3 py-3">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="shrink-0 text-primary">{activeSkillMeta.icon}</span>
+                  <span className="text-xs font-semibold text-foreground truncate">{activeSkillMeta.tagline}</span>
+                  {activeSkillMeta.isEntryPoint && (
+                    <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary">Hub</span>
+                  )}
+                </div>
+                <p className="text-[10px] leading-relaxed text-muted-foreground">{activeSkillMeta.description}</p>
+                {activeSkillMeta.subAgentCount && (
+                  <div className="mt-2 flex gap-1.5">
+                    <span className="rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[9px] font-semibold text-primary/70">
+                      {activeSkillMeta.subAgentCount} sub-agents
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="border-b border-border px-3 py-2.5">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/50">Sessions</p>
+                <button
+                  type="button"
+                  onClick={handleNewSession}
+                  title="New conversation"
+                  className="rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[9px] font-semibold text-primary/70 transition-colors hover:bg-primary/15 hover:text-primary"
+                >
+                  + New
+                </button>
+              </div>
               <div className="mt-1.5 max-h-40 overflow-y-auto">
                 <SkillSessionPanel
                   sessions={sessions}
@@ -614,9 +648,9 @@ function ChatShell({
             }
           />
 
-          <footer className="border-t border-white/[0.07] bg-[hsl(222,47%,4%)] p-3">
+          <footer className="border-t border-border bg-background p-3">
             <form
-              className="flex items-center gap-2 rounded-xl border border-white/[0.09] bg-white/[0.04] px-3 py-2 transition-all focus-within:border-primary/40 focus-within:shadow-[0_0_0_1px_rgba(232,168,0,0.12)]"
+              className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2 transition-all focus-within:border-primary/40 focus-within:shadow-[0_0_0_1px_rgba(232,168,0,0.12)] dark:border-white/[0.09] dark:bg-white/[0.04]"
               onSubmit={(e) => {
                 e.preventDefault();
                 void handleSend();
