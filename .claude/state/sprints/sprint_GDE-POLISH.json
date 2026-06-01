@@ -1,0 +1,135 @@
+{
+  "sprint_id": "GDE-POLISH",
+  "title": "GDE AP Agent — Competition Polish Sprint",
+  "design_doc": "docs/design/forks/gde-ap-agent/competition-polish-sprint.md",
+  "deadline": "2026-06-05T17:00:00-07:00",
+  "status": "planned",
+  "created": "2026-06-01",
+  "milestones": [
+    {
+      "id": "M1",
+      "title": "Branding + AP Finance Theme",
+      "scope": "frontend",
+      "day": 1,
+      "status": "pending",
+      "estimated_loc": 80,
+      "files": [
+        "frontend/src/lib/branding.ts",
+        "frontend/src/app/globals.css",
+        "frontend/src/components/chat/BrandAvatar.tsx",
+        "frontend/src/components/chat/ToolCallChip.tsx",
+        "infrastructure/mcp-sandbox/sandbox.html",
+        "public/images/logo/"
+      ],
+      "acceptance_criteria": [
+        "npm run quality:check:fast green",
+        "Browser tab says 'GDE AP Agent'",
+        "Chat avatar is gold/amber, not orange",
+        "No 'Sunholo' or 'Aitana' visible in normal UI flows",
+        "globals.css --primary is gold (hsl ~45 90% 50%)"
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "AP Pipeline Step Visualizer",
+      "scope": "frontend",
+      "day": 2,
+      "status": "pending",
+      "estimated_loc": 160,
+      "files": [
+        "frontend/src/components/chat/APPipelineSteps.tsx",
+        "frontend/src/components/chat/MessageBubble.tsx"
+      ],
+      "acceptance_criteria": [
+        "4-step rail: Intake → Extract → Validate → Post",
+        "Each step transitions: pending (grey) → active (pulsing gold) → done (gold check)",
+        "Only appears on messages from ap-orchestrator skill",
+        "Component passes Vitest snapshot tests",
+        "No layout regression on other skills"
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "Invoice Review Card (A2UI)",
+      "scope": "fullstack",
+      "day": 2,
+      "status": "pending",
+      "estimated_loc": 130,
+      "files": [
+        "backend/skills/templates/ap-orchestrator/SKILL.md",
+        "frontend/src/app/dev/rich-media/page.tsx"
+      ],
+      "acceptance_criteria": [
+        "Workspace pane shows structured card after AP processing",
+        "Card shows: vendor, invoice#, amount+currency, due date, GL code, status chip",
+        "Status chip is coloured: green (Approved), amber (Review), red (Exception)",
+        "Backend tests still green after instruction change",
+        "No regression in existing A2UI tests"
+      ]
+    },
+    {
+      "id": "M4",
+      "title": "MCP Sandbox Deploy + Vendor Globe",
+      "scope": "fullstack",
+      "day": 3,
+      "status": "pending",
+      "estimated_loc": 350,
+      "files": [
+        "infrastructure/mcp-sandbox/cloudbuild.yaml",
+        "infrastructure/mcp-sandbox/artefacts/vendor-globe/index.html",
+        "backend/skills/templates/ap-orchestrator/SKILL.md",
+        "cloudbuild.yaml"
+      ],
+      "acceptance_criteria": [
+        "mcp-sandbox Cloud Run service deployed and /healthz returns 200",
+        "_MCP_SANDBOX_URL is non-blank in gde-ap-agent Cloud Run env",
+        "Processing invoice with vendor country shows globe in chat",
+        "Globe rotates, shows arc from vendor location",
+        "No CSP errors in browser console"
+      ]
+    },
+    {
+      "id": "M5",
+      "title": "AP Analytics Dashboard (Chart.js MCP App)",
+      "scope": "fullstack",
+      "day": 4,
+      "status": "pending",
+      "estimated_loc": 380,
+      "files": [
+        "infrastructure/mcp-sandbox/artefacts/ap-dashboard/index.html",
+        "backend/skills/templates/ap-validator/SKILL.md"
+      ],
+      "acceptance_criteria": [
+        "Dashboard renders in workspace pane after validation step",
+        "At least 2 chart types visible (bar + donut minimum)",
+        "Theme matches chat (dark/light via hostContext)",
+        "Renders without network errors in browser console"
+      ]
+    },
+    {
+      "id": "M6",
+      "title": "SUBMISSION.md + README Rebrand",
+      "scope": "docs",
+      "day": 4,
+      "status": "pending",
+      "estimated_loc": 100,
+      "files": [
+        "SUBMISSION.md",
+        "README.md"
+      ],
+      "acceptance_criteria": [
+        "SUBMISSION.md has live URL, demo video URL, architecture diagram",
+        "README.md has no Aitana/Sunholo references",
+        "./scripts/smoke-deployed.sh dev all passes",
+        "Submitted before 2026-06-05 17:00 PT"
+      ]
+    }
+  ],
+  "minimum_viable_entry": ["M1", "M2", "M3"],
+  "wow_factor": ["M4", "M5"],
+  "quality_gates": {
+    "frontend": "cd frontend && npm run quality:check:fast",
+    "backend": "cd backend && make lint && uv run pytest tests/ -m 'not slow and not integration' -q",
+    "post_deploy": "./scripts/smoke-deployed.sh dev all"
+  }
+}
