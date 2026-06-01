@@ -137,6 +137,7 @@ steps:
           --allow-unauthenticated \
           --max-instances=3 \
           --session-affinity \
+          --service-account=sa-${_SERVICE_NAME}@${_PROJECT_ID}.iam.gserviceaccount.com \
           --container=main \
           --image=${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}/ui:${BRANCH_NAME} \
           --port=8080 \
