@@ -3,10 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { InlineCitation, renderWithCitations } from "../InlineCitation";
 
 describe("InlineCitation", () => {
-  it("renders as a chip button for aitana:// URIs", () => {
+  it("renders as a chip button for inline-citation:// URIs", () => {
     const navigate = vi.fn();
     render(
-      <InlineCitation href="aitana://doc/doc-1/block/blk-1" navigateToBlock={navigate}>
+      <InlineCitation href="inline-citation://doc/doc-1/block/blk-1" navigateToBlock={navigate}>
         Q1 Summary
       </InlineCitation>,
     );
@@ -16,7 +16,7 @@ describe("InlineCitation", () => {
   it("calls navigateToBlock with correct docId and blockId on click", () => {
     const navigate = vi.fn();
     render(
-      <InlineCitation href="aitana://doc/doc-abc/block/blk-xyz" navigateToBlock={navigate}>
+      <InlineCitation href="inline-citation://doc/doc-abc/block/blk-xyz" navigateToBlock={navigate}>
         Source
       </InlineCitation>,
     );
@@ -24,7 +24,7 @@ describe("InlineCitation", () => {
     expect(navigate).toHaveBeenCalledWith("doc-abc", "blk-xyz");
   });
 
-  it("renders a plain anchor for non-aitana GCS URLs", () => {
+  it("renders a plain anchor for non-citation GCS URLs", () => {
     const navigate = vi.fn();
     render(
       <InlineCitation
@@ -51,16 +51,16 @@ describe("InlineCitation", () => {
 });
 
 describe("renderWithCitations", () => {
-  it("returns plain text nodes unchanged when no aitana:// links present", () => {
+  it("returns plain text nodes unchanged when no citation:// links present", () => {
     const navigate = vi.fn();
     const nodes = renderWithCitations("Hello world", navigate);
     expect(nodes).toHaveLength(1);
     expect(nodes[0]).toBe("Hello world");
   });
 
-  it("splits text on [label](aitana://) markdown links and renders chips", () => {
+  it("splits text on [label](inline-citation://) markdown links and renders chips", () => {
     const navigate = vi.fn();
-    const text = "See [Q1 Report](aitana://doc/d1/block/b1) for details.";
+    const text = "See [Q1 Report](inline-citation://doc/d1/block/b1) for details.";
     const nodes = renderWithCitations(text, navigate);
     // Should have: "See ", chip, " for details."
     expect(nodes).toHaveLength(3);
@@ -68,7 +68,7 @@ describe("renderWithCitations", () => {
 
   it("rendered chip calls navigateToBlock on click", () => {
     const navigate = vi.fn();
-    const text = "Check [Table 1](aitana://doc/doc-x/block/blk-y) here.";
+    const text = "Check [Table 1](inline-citation://doc/doc-x/block/blk-y) here.";
     const { getByRole } = render(<>{renderWithCitations(text, navigate)}</>);
     fireEvent.click(getByRole("button"));
     expect(navigate).toHaveBeenCalledWith("doc-x", "blk-y");

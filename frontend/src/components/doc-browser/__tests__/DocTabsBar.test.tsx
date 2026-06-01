@@ -19,7 +19,6 @@ function renderBar(overrides: Partial<Parameters<typeof DocTabsBar>[0]> = {}) {
     onClose: vi.fn(),
     onToggleInclude: vi.fn(),
     onToggleBrowser: vi.fn(),
-    onUploadClick: vi.fn(),
     ...overrides,
   };
   return { ...render(<DocTabsBar {...props} />), props };
@@ -50,9 +49,4 @@ describe("DocTabsBar", () => {
     expect(props.onToggleBrowser).toHaveBeenCalled();
   });
 
-  it("calls onUploadClick when upload button clicked", async () => {
-    const { props } = renderBar();
-    await userEvent.click(screen.getByLabelText(/upload document/i));
-    expect(props.onUploadClick).toHaveBeenCalled();
-  });
 });

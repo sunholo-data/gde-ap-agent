@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="GDE AP Agent">
+  <!-- Gold background circle -->
+  <circle cx="16" cy="16" r="16" fill="#E8A800"/>
+  <!-- AP monogram in deep navy -->
+  <text x="16" y="21" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="800" fill="#1A1F2E" text-anchor="middle" dominant-baseline="middle" letter-spacing="-0.5">AP</text>
+</svg>

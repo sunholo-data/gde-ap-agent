@@ -37,19 +37,19 @@ describe("ChatMarkdown", () => {
     expect(container.querySelector("code")).toBeTruthy();
   });
 
-  it("renders aitana:// link as InlineCitation chip (button), not plain <a>", () => {
-    const md = "[Source](aitana://doc/doc1/block/blk1)";
+  it("renders inline-citation:// link as InlineCitation chip (button), not plain <a>", () => {
+    const md = "[Source](inline-citation://doc/doc1/block/blk1)";
     const { container } = render(
       <ChatMarkdown content={md} navigateToBlock={noop} />,
     );
-    // InlineCitation for aitana:// renders as a <button>
+    // InlineCitation for inline-citation:// renders as a <button>
     expect(container.querySelector("button")).toBeTruthy();
     expect(container.querySelector("a")).toBeFalsy();
   });
 
-  it("calls navigateToBlock when an aitana:// chip is clicked", async () => {
+  it("calls navigateToBlock when an inline-citation:// chip is clicked", async () => {
     const navigateToBlock = vi.fn();
-    const md = "[Source](aitana://doc/doc42/block/blk7)";
+    const md = "[Source](inline-citation://doc/doc42/block/blk7)";
     const { container } = render(
       <ChatMarkdown content={md} navigateToBlock={navigateToBlock} />,
     );

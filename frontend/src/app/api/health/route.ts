@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 export function GET() {
   return NextResponse.json({
     status: "ok",
-    service: "aitana-v6-frontend",
+    service: "gde-ap-agent-frontend",
     commit: process.env.COMMIT_SHA ?? "unknown",
   });
 }

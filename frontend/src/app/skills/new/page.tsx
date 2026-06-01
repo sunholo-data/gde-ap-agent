@@ -7,7 +7,7 @@ export default function NewSkillPage() {
         <h1 className="text-2xl font-semibold">Create a new skill</h1>
         <p className="text-muted-foreground">
           The skill creation wizard is on its way. For now, use{" "}
-          <code className="rounded bg-muted px-1.5 py-0.5 text-sm">aitana skill create</code>{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5 text-sm">aiplatform skill create</code>{" "}
           from the local CLI.
         </p>
         <Link className="inline-block text-sm underline" href="/">

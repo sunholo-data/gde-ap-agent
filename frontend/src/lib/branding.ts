@@ -34,29 +34,29 @@ export const TRANSPORT_FIELD = `__${process.env.NEXT_PUBLIC_APP_SLUG ?? "platfor
 
 export const BRANDING = {
   /** Short product name used in page <title>, banners, marketing hero. */
-  appName: "Sunholo",
+  appName: "GDE AP Agent",
 
   /** One-line product tagline shown under the logo on the welcome screen. */
-  tagline: "AI Protocol Platform",
+  tagline: "AI-Powered Accounts Payable",
 
   /** Long form description used in <meta name="description">. */
-  description: "Open-source AI protocol platform — Skills + AG-UI + A2UI + MCP Apps + A2A on Google ADK",
+  description: "Autonomous accounts-payable processing — invoice intake, extraction, validation, and posting powered by Google ADK multi-agent AI.",
 
   /** Public-facing logo paths. Swap the files in /public/images/logo/ to
    * rebrand without touching this object. */
   logo: {
     /** Browser tab favicon (SVG — works in all modern browsers). */
-    favicon: "/images/logo/sunholo-logo.svg",
+    favicon: "/images/logo/gde-ap-agent-logo.svg",
     /** Welcome-screen mark (SVG). */
-    heroAnimated: "/images/logo/sunholo-logo.svg",
+    heroAnimated: "/images/logo/gde-ap-agent-logo.svg",
     /** Square chat-message-bubble avatar (SVG). */
-    chatAvatar: "/images/logo/sunholo-logo.svg",
+    chatAvatar: "/images/logo/gde-ap-agent-avatar.svg",
   },
 
   /** Contact / community links exposed in CONTRIBUTING + workshop docs. */
   contact: {
-    email: "multivac@sunholo.com",
-    githubRepo: "https://github.com/sunholo-data/ai-protocol-platform",
+    email: "mark@aitanalabs.com",
+    githubRepo: "https://github.com/sunholo-data/gde-ap-agent",
   },
 } as const;
 
