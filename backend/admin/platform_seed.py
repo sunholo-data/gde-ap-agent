@@ -37,6 +37,10 @@ logger = logging.getLogger(__name__)
 PLATFORM_OWNER_EMAIL = os.environ.get("PLATFORM_OWNER_EMAIL", "platform@aitanalabs.com")
 DEFAULT_TEMPLATES_ROOT = Path(__file__).resolve().parent.parent / "skills" / "templates"
 
+# Previous PLATFORM_OWNER_UID values from forks/renames. Skills still owned
+# by these sentinels are fully purged on every seed run (one-time migration).
+_LEGACY_OWNER_UIDS: frozenset[str] = frozenset({"aitana-platform"})
+
 
 @dataclass
 class SeedSummary:
@@ -166,6 +170,19 @@ def seed(templates_root: Path | None = None) -> SeedSummary:
             template_names.add(parsed["name"])
         except Exception:  # noqa: BLE001 — parse errors handled below
             pass
+
+    # Purge any skills still owned by a legacy sentinel UID (one-time migration
+    # after a fork rename). These are deleted unconditionally — the new seed
+    # re-creates the AP skills under PLATFORM_OWNER_UID.
+    for legacy_uid in _LEGACY_OWNER_UIDS:
+        try:
+            legacy_configs = skill_config.list_skills(owner_id=legacy_uid, limit=200)
+            for cfg in legacy_configs:
+                skill_config.delete_skill(cfg.skillId)
+                logger.info("platform_seed: removed legacy-owner skill %r (uid=%s)", cfg.name, legacy_uid)
+                summary.purged += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("platform_seed: failed to purge legacy skills for %s: %s", legacy_uid, e)
 
     # Purge platform skills that are no longer in templates.
     stale = existing - template_names
