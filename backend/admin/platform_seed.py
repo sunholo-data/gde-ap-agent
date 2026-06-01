@@ -172,15 +172,22 @@ def seed(templates_root: Path | None = None) -> SeedSummary:
             pass
 
     # Purge any skills still owned by a legacy sentinel UID (one-time migration
-    # after a fork rename). These are deleted unconditionally — the new seed
-    # re-creates the AP skills under PLATFORM_OWNER_UID.
+    # after a fork rename). Uses a no-order query so skills without updatedAt
+    # (created by older seeders) are not silently excluded by ORDER BY.
     for legacy_uid in _LEGACY_OWNER_UIDS:
         try:
-            legacy_configs = skill_config.list_skills(owner_id=legacy_uid, limit=200)
-            for cfg in legacy_configs:
-                skill_config.delete_skill(cfg.skillId)
-                logger.info("platform_seed: removed legacy-owner skill %r (uid=%s)", cfg.name, legacy_uid)
-                summary.purged += 1
+            docs = fs.query_documents(
+                skill_config.COLLECTION,
+                filters=[("ownerId", "==", legacy_uid)],
+                order_by=None,
+                limit=200,
+            )
+            for doc in docs:
+                sid = doc.get("__id") or doc.get("skillId", "")
+                if sid:
+                    skill_config.delete_skill(sid)
+                    logger.info("platform_seed: removed legacy-owner skill %r (uid=%s)", doc.get("name"), legacy_uid)
+                    summary.purged += 1
         except Exception as e:  # noqa: BLE001
             logger.warning("platform_seed: failed to purge legacy skills for %s: %s", legacy_uid, e)
 
