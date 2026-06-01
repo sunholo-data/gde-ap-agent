@@ -9,6 +9,7 @@ export type ParseStatus =
   | "pending"
   | "pending_ai_extraction"
   | "parsed"
+  | "preview_only"
   | "failed";
 
 export interface Folder {

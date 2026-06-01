@@ -39,7 +39,7 @@ const DOCS_F1: ParsedDocument[] = [
   { id: "d1", originalFilename: "Q1-Executive-Summary.docx", sourceFormat: "docx", parseError: null, parseStatus: "parsed", folderId: "f1", userId: "demo", blockCount: 42, hasA2ui: true },
   { id: "d2", originalFilename: "Q1-Financial-Model.xlsx", sourceFormat: "xlsx", parseError: null, parseStatus: "parsed", folderId: "f1", userId: "demo", blockCount: 18, hasA2ui: true },
   { id: "d3", originalFilename: "Q1-Investor-Deck.pptx", sourceFormat: "pptx", parseError: null, parseStatus: "parsed", folderId: "f1", userId: "demo", blockCount: 24, hasA2ui: true },
-  { id: "d4", originalFilename: "Q1-Cash-Flow-Analysis.pdf", sourceFormat: "pdf", parseError: null, parseStatus: "pending_ai_extraction", folderId: "f1", userId: "demo", blockCount: null, hasA2ui: false },
+  { id: "d4", originalFilename: "Q1-Cash-Flow-Analysis.pdf", sourceFormat: "pdf", parseError: null, parseStatus: "preview_only", folderId: "f1", userId: "demo", blockCount: null, hasA2ui: false },
   { id: "d5", originalFilename: "Q1-Audit-Report.pdf", sourceFormat: "pdf", parseError: null, parseStatus: "pending", folderId: "f1", userId: "demo", blockCount: null, hasA2ui: false },
 ];
 
@@ -198,7 +198,7 @@ export default function FileBrowserDevPage() {
             {[
               { parseStatus: "parsed" as const, parseError: null, originalFilename: "Summary.docx", sourceFormat: "docx", blockCount: 42, hasA2ui: true },
               { parseStatus: "pending" as const, parseError: null, originalFilename: "Uploading-Now.pdf", sourceFormat: "pdf", blockCount: null, hasA2ui: false },
-              { parseStatus: "pending_ai_extraction" as const, parseError: null, originalFilename: "Scanned-Contract.pdf", sourceFormat: "pdf", blockCount: null, hasA2ui: false },
+              { parseStatus: "preview_only" as const, parseError: null, originalFilename: "Scanned-Contract.pdf", sourceFormat: "pdf", blockCount: null, hasA2ui: false },
               { parseStatus: "failed" as const, parseError: "AILANG Parse API error: 500 writeFile: is a directory", originalFilename: "Corrupt-File.xlsx", sourceFormat: "xlsx", blockCount: null, hasA2ui: false },
             ].map((d, i) => (
               <DocListItem
@@ -209,7 +209,7 @@ export default function FileBrowserDevPage() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            Green = parsed · amber pulse = pending · sky pulse = pending_ai_extraction · red = failed
+            Green = parsed · amber pulse = pending · sky = preview_only (PDF iframe) · red = failed
           </p>
         </Section>
 

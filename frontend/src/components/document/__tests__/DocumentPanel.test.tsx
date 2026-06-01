@@ -6,6 +6,12 @@ vi.mock("@/hooks/useDocument", () => ({
   useDocument: vi.fn(),
 }));
 
+// Mock the signed-URL fetch so PdfPreview's useEffect doesn't hit network.
+// We never await the resolution in these tests — we only assert the loading shell.
+vi.mock("@/lib/apiClient", () => ({
+  fetchWithAuth: vi.fn(() => new Promise(() => {})),
+}));
+
 import { useDocument } from "@/hooks/useDocument";
 import { DocumentPanel } from "../DocumentPanel";
 
@@ -60,14 +66,48 @@ describe("DocumentPanel", () => {
     expect(screen.getByText(/parsing document/i)).toBeInTheDocument();
   });
 
-  it("shows 'Parsing document…' caption while parseStatus is pending_ai_extraction", () => {
+  it("shows reparse hint for legacy pending_ai_extraction (no longer hangs)", () => {
     _mockUseDocument.mockReturnValue({
       doc: { ...FIXTURE_DOC, parseStatus: "pending_ai_extraction", blocks: [] },
       isLoading: false,
       error: null,
     });
     render(<DocumentPanel docId="doc-1" />);
-    expect(screen.getByText(/parsing document/i)).toBeInTheDocument();
+    expect(screen.getByText(/try re-parsing/i)).toBeInTheDocument();
+  });
+
+  it("renders PDF preview shell for preview_only PDFs (not the failed/terminal branches)", () => {
+    _mockUseDocument.mockReturnValue({
+      doc: { ...FIXTURE_DOC, sourceFormat: "pdf", parseStatus: "preview_only", blocks: [] },
+      isLoading: false,
+      error: null,
+    });
+    render(<DocumentPanel docId="doc-1" />);
+    // PdfPreview shows "Loading preview…" while the signed URL fetch resolves.
+    // That proves we took the PDF branch instead of the failed/preview-only terminal.
+    expect(screen.getByText(/loading preview/i)).toBeInTheDocument();
+  });
+
+  it("renders PDF preview shell even when parse failed", () => {
+    _mockUseDocument.mockReturnValue({
+      doc: { ...FIXTURE_DOC, sourceFormat: "pdf", parseStatus: "failed", parseError: "boom", blocks: [] },
+      isLoading: false,
+      error: null,
+    });
+    render(<DocumentPanel docId="doc-1" />);
+    expect(screen.getByText(/loading preview/i)).toBeInTheDocument();
+    // The "boom" parseError should NOT be shown — we bypass it for PDFs.
+    expect(screen.queryByText("boom")).toBeNull();
+  });
+
+  it("shows preview-unavailable terminal for non-PDF preview_only", () => {
+    _mockUseDocument.mockReturnValue({
+      doc: { ...FIXTURE_DOC, sourceFormat: "png", parseStatus: "preview_only", blocks: [] },
+      isLoading: false,
+      error: null,
+    });
+    render(<DocumentPanel docId="doc-1" />);
+    expect(screen.getByText(/preview unavailable/i)).toBeInTheDocument();
   });
 
   it("renders error state when fetch fails", () => {

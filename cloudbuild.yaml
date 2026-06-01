@@ -120,6 +120,11 @@ steps:
           SEP=$${SECRETS:+,}
           SECRETS="$${SECRETS}$${SEP}ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest"
         fi
+        # AILANG Parse key — deterministic Office/structured-text extraction.
+        # Without it, every upload falls through to "preview_only" (PDF iframe
+        # for PDFs, "preview unavailable" for everything else).
+        SEP=$${SECRETS:+,}
+        SECRETS="$${SECRETS}$${SEP}DOCPARSE_API_KEY=DOCPARSE_API_KEY:latest"
         # Channel secrets — only wired when the channel is enabled
         if [ "${_ENABLE_TELEGRAM}" = "true" ]; then
           SECRETS="$${SECRETS},TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest"

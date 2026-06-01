@@ -5,13 +5,21 @@ import type { ParseStatus } from "@/hooks/useDocBrowser";
 import { DocumentHeader } from "./DocumentHeader";
 import { DocumentFooter } from "./DocumentFooter";
 import { DocumentViewer } from "./DocumentViewer";
+import { PdfPreview } from "./PdfPreview";
 
 interface DocumentPanelProps {
   docId: string;
 }
 
+// Genuine "still working on it" states. `pending_ai_extraction` is legacy:
+// older docs are stuck in it because the AI extraction pipeline was never
+// wired in this fork. New uploads use `preview_only` instead.
 function isPendingStatus(status: ParseStatus): boolean {
-  return status === "pending" || status === "pending_ai_extraction";
+  return status === "pending";
+}
+
+function isPdfFormat(sourceFormat: string): boolean {
+  return sourceFormat.toLowerCase() === "pdf";
 }
 
 function pickCaption(doc: DocumentDetail | null): string {
@@ -70,6 +78,18 @@ export function DocumentPanel({ docId }: DocumentPanelProps) {
     );
   }
 
+  // For PDFs we can always show a native iframe preview, even on parse failure
+  // or preview-only status. AILANG Parse can't structure PDFs anyway.
+  const canPdfPreview = isPdfFormat(doc.sourceFormat) && !isPendingStatus(doc.parseStatus);
+  if (canPdfPreview) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden bg-muted/10">
+        <DocumentHeader doc={doc} />
+        <PdfPreview docId={doc.id} filename={doc.originalFilename} />
+      </div>
+    );
+  }
+
   if (doc.parseStatus === "failed") {
     return (
       <TerminalMessage
@@ -81,6 +101,26 @@ export function DocumentPanel({ docId }: DocumentPanelProps) {
 
   if (isPendingStatus(doc.parseStatus)) {
     return <Skeleton caption="Parsing document…" />;
+  }
+
+  if (doc.parseStatus === "preview_only") {
+    return (
+      <TerminalMessage
+        doc={doc}
+        message="Preview unavailable for this format — the agent can still see the filename and metadata."
+      />
+    );
+  }
+
+  // Legacy: docs uploaded before the preview_only status existed are stuck in
+  // pending_ai_extraction. Show a useful terminal message instead of looping.
+  if (doc.parseStatus === "pending_ai_extraction") {
+    return (
+      <TerminalMessage
+        doc={doc}
+        message="Preview unavailable — try re-parsing this document from the sidebar."
+      />
+    );
   }
 
   if (!doc.blocks || doc.blocks.length === 0) {

@@ -171,7 +171,7 @@ def build_document_context(
     if parse_status == "preview_only":
         return (
             f"**Document:** {original_filename}\n\n"
-            "ℹ️ This document format does not support structured extraction "
+            "This document format does not support structured extraction "
             "(typically a PDF or scanned image). The user can view it as a "
             "native preview, but the agent cannot read its contents directly."
         ), None

@@ -8,6 +8,7 @@ const STATUS_DOT: Record<ParseStatus, { color: string; title: string }> = {
   parsed: { color: "bg-emerald-500", title: "Parsed" },
   pending: { color: "bg-amber-400 animate-pulse", title: "Pending" },
   pending_ai_extraction: { color: "bg-sky-400 animate-pulse", title: "Extracting" },
+  preview_only: { color: "bg-sky-500", title: "Preview only (no structured extraction)" },
   failed: { color: "bg-destructive", title: "Failed" },
 };
 
