@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Vendor Globe</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #0a0f1e; color: #e8e8e8; font-family: system-ui, sans-serif; overflow: hidden; }
+    #globe-container { width: 100%; height: 100%; position: relative; }
+    #label { position: absolute; top: 12px; left: 0; right: 0; text-align: center; font-size: 13px; color: #e8a800; font-weight: 600; letter-spacing: 0.5px; pointer-events: none; }
+    #legend { position: absolute; bottom: 12px; left: 12px; font-size: 11px; color: #888; pointer-events: none; }
+    #legend span { color: #e8a800; }
+  </style>
+</head>
+<body>
+  <div id="globe-container">
+    <div id="label">AP Vendor Geography</div>
+    <div id="legend">Origin: <span id="origin-label">HQ</span> → Vendor locations</div>
+  </div>
+
+  <script type="module">
+    // Country name → [lat, lng] lookup (top AP vendor countries)
+    const COUNTRY_COORDS = {
+      "united states": [37.09, -95.71], "us": [37.09, -95.71], "usa": [37.09, -95.71],
+      "united kingdom": [55.38, -3.44], "uk": [55.38, -3.44], "gb": [55.38, -3.44],
+      "germany": [51.17, 10.45], "de": [51.17, 10.45],
+      "france": [46.23, 2.21], "fr": [46.23, 2.21],
+      "china": [35.86, 104.2], "cn": [35.86, 104.2],
+      "japan": [36.2, 138.25], "jp": [36.2, 138.25],
+      "india": [20.59, 78.96], "in": [20.59, 78.96],
+      "australia": [-25.27, 133.78], "au": [-25.27, 133.78],
+      "canada": [56.13, -106.35], "ca": [56.13, -106.35],
+      "netherlands": [52.13, 5.29], "nl": [52.13, 5.29],
+      "sweden": [60.13, 18.64], "se": [60.13, 18.64],
+      "switzerland": [46.82, 8.23], "ch": [46.82, 8.23],
+      "singapore": [1.35, 103.82], "sg": [1.35, 103.82],
+      "south korea": [35.91, 127.77], "kr": [35.91, 127.77],
+      "brazil": [-14.24, -51.93], "br": [-14.24, -51.93],
+      "mexico": [23.63, -102.55], "mx": [23.63, -102.55],
+      "spain": [40.46, -3.75], "es": [40.46, -3.75],
+      "italy": [41.87, 12.57], "it": [41.87, 12.57],
+      "poland": [51.92, 19.15], "pl": [51.92, 19.15],
+      "ireland": [53.42, -8.24], "ie": [53.42, -8.24],
+      "denmark": [56.26, 9.50], "dk": [56.26, 9.50],
+      "norway": [60.47, 8.47], "no": [60.47, 8.47],
+      "finland": [61.92, 25.75], "fi": [61.92, 25.75],
+    };
+
+    // HQ origin (London default — AP agent is UK-headquartered)
+    const ORIGIN = { lat: 51.51, lng: -0.13, label: "London HQ" };
+
+    let vendors = [];
+
+    // MCP Apps protocol
+    const TRANSPORT_KEY = "__platformTransport";
+
+    function reply(id, result) {
+      window.parent.postMessage(
+        { jsonrpc: "2.0", id, result, [TRANSPORT_KEY]: true },
+        "*"
+      );
+    }
+    function notify(method, params) {
+      window.parent.postMessage(
+        { jsonrpc: "2.0", method, params, [TRANSPORT_KEY]: true },
+        "*"
+      );
+    }
+
+    // Simple canvas-based globe using equirectangular projection + sphere
+    const container = document.getElementById("globe-container");
+    const canvas = document.createElement("canvas");
+    canvas.style.cssText = "width:100%;height:100%;display:block;";
+    container.appendChild(canvas);
+
+    const ctx = canvas.getContext("2d");
+    let rotation = 0;
+    let animFrame;
+
+    function resize() {
+      canvas.width = container.clientWidth * window.devicePixelRatio;
+      canvas.height = container.clientHeight * window.devicePixelRatio;
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    }
+    window.addEventListener("resize", () => { resize(); });
+    resize();
+
+    function project(lat, lng, cx, cy, r, rotDeg) {
+      const rotRad = (rotDeg * Math.PI) / 180;
+      const latRad = (lat * Math.PI) / 180;
+      const lngRad = ((lng + rotDeg) * Math.PI) / 180;
+      const x = cx + r * Math.cos(latRad) * Math.sin(lngRad);
+      const y = cy - r * Math.sin(latRad);
+      const z = Math.cos(latRad) * Math.cos(lngRad);
+      return { x, y, z }; // z > 0 = visible face
+    }
+
+    function drawGlobe() {
+      const W = canvas.width / window.devicePixelRatio;
+      const H = canvas.height / window.devicePixelRatio;
+      ctx.clearRect(0, 0, W, H);
+
+      const cx = W / 2, cy = H / 2;
+      const r = Math.min(W, H) * 0.38;
+
+      // Ocean sphere
+      const grad = ctx.createRadialGradient(cx - r * 0.25, cy - r * 0.25, r * 0.05, cx, cy, r);
+      grad.addColorStop(0, "#1a2a6c");
+      grad.addColorStop(0.5, "#0d1b3e");
+      grad.addColorStop(1, "#060d1f");
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Grid lines (latitude + longitude)
+      ctx.strokeStyle = "rgba(100,140,200,0.12)";
+      ctx.lineWidth = 0.5;
+      for (let lat = -80; lat <= 80; lat += 20) {
+        ctx.beginPath();
+        let first = true;
+        for (let lng = -180; lng <= 180; lng += 4) {
+          const p = project(lat, lng, cx, cy, r, rotation);
+          if (p.z <= 0) { first = true; continue; }
+          first ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+          first = false;
+        }
+        ctx.stroke();
+      }
+      for (let lng = -180; lng < 180; lng += 30) {
+        ctx.beginPath();
+        let first = true;
+        for (let lat = -90; lat <= 90; lat += 4) {
+          const p = project(lat, lng, cx, cy, r, rotation);
+          if (p.z <= 0) { first = true; continue; }
+          first ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+          first = false;
+        }
+        ctx.stroke();
+      }
+
+      // Origin marker (HQ)
+      const orig = project(ORIGIN.lat, ORIGIN.lng, cx, cy, r, rotation);
+      if (orig.z > 0) {
+        ctx.beginPath();
+        ctx.arc(orig.x, orig.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = "#e8a800";
+        ctx.fill();
+        ctx.font = "bold 10px system-ui";
+        ctx.fillStyle = "#e8a800";
+        ctx.fillText(ORIGIN.label, orig.x + 8, orig.y + 4);
+      }
+
+      // Vendor arcs + dots
+      vendors.forEach((v) => {
+        const vp = project(v.lat, v.lng, cx, cy, r, rotation);
+        if (vp.z > 0) {
+          // Vendor dot
+          const dotR = Math.max(4, Math.min(12, 4 + Math.sqrt(v.amount / 1000)));
+          ctx.beginPath();
+          ctx.arc(vp.x, vp.y, dotR, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(232,168,0,0.85)";
+          ctx.fill();
+          ctx.font = "10px system-ui";
+          ctx.fillStyle = "#fff";
+          ctx.fillText(v.name, vp.x + dotR + 3, vp.y + 4);
+        }
+
+        // Arc from origin to vendor (great-circle approximation via bezier)
+        if (orig.z > 0 && vp.z > 0) {
+          const midLat = (ORIGIN.lat + v.lat) / 2;
+          const midLng = (ORIGIN.lng + v.lng) / 2;
+          const mp = project(midLat + 15, midLng, cx, cy, r, rotation);
+          if (mp.z > 0) {
+            ctx.beginPath();
+            ctx.moveTo(orig.x, orig.y);
+            ctx.quadraticCurveTo(mp.x, mp.y, vp.x, vp.y);
+            ctx.strokeStyle = "rgba(232,168,0,0.35)";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        }
+      });
+
+      // Globe rim
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(100,140,200,0.4)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      rotation += 0.12;
+      animFrame = requestAnimationFrame(drawGlobe);
+    }
+
+    drawGlobe();
+
+    function addVendor(name, country, amount) {
+      const key = (country || "").toLowerCase().trim();
+      const coords = COUNTRY_COORDS[key];
+      if (!coords) { console.warn("Unknown country:", country); return; }
+      const existing = vendors.find(v => v.name === name);
+      if (existing) { existing.amount = amount; return; }
+      vendors.push({ name, lat: coords[0], lng: coords[1], amount: amount || 0 });
+    }
+
+    // MCP Apps message handler
+    window.addEventListener("message", (event) => {
+      const msg = event.data;
+      if (!msg || !msg.jsonrpc) return;
+
+      if (msg.method === "ui/initialize") {
+        reply(msg.id, {
+          protocolVersion: "2026-01-26",
+          capabilities: {},
+          serverInfo: { name: "vendor-globe", version: "1.0" },
+        });
+        return;
+      }
+
+      if (msg.method === "ui/notifications/sandbox-resource-ready") return;
+
+      if (msg.method === "ping") {
+        reply(msg.id, {});
+        return;
+      }
+
+      // Receive vendor data
+      if (msg.method === "ui/update-data" && msg.params) {
+        const { vendor, country, amount, originLabel } = msg.params;
+        if (originLabel) document.getElementById("origin-label").textContent = originLabel;
+        if (vendor && country) addVendor(vendor, country, amount || 0);
+        return;
+      }
+
+      // Also accept structured content pushed via notification
+      if (msg.method === "ui/notifications/data" && msg.params?.structuredContent) {
+        const sc = msg.params.structuredContent;
+        if (sc.vendor && sc.country) addVendor(sc.vendor, sc.country, sc.amount || 0);
+        if (sc.originLabel) document.getElementById("origin-label").textContent = sc.originLabel;
+      }
+    });
+  </script>
+</body>
+</html>

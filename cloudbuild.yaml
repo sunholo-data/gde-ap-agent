@@ -28,7 +28,7 @@ substitutions:
   # Platform skill owner email. Terraform sets this per environment.
   _PLATFORM_OWNER_EMAIL: ''
   # MCP sandbox iframe URL. Leave blank to disable MCP Apps.
-  _MCP_SANDBOX_URL: ''
+  _MCP_SANDBOX_URL: 'https://mcp-sandbox-374404277595.europe-west1.run.app'
 
 tags: ['${_PROJECT_ID}', '${_SERVICE_NAME}']
 

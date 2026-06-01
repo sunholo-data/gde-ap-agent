@@ -78,6 +78,9 @@ export interface StaticArtefactFrameProps {
   /** Inner-iframe sandbox attribute the proxy applies to the artefact.
    *  Default `"allow-scripts allow-same-origin"` matches sandbox.ts. */
   innerSandbox?: string;
+  /** Optional CSP resource domains added to script-src/style-src/img-src.
+   *  Passed as `?csp={"resourceDomains":[...]}` to sandbox.html. */
+  cspResourceDomains?: string[];
   /** Iframe className for sizing. */
   className?: string;
   /** Iframe title for a11y. */
@@ -119,6 +122,7 @@ export const StaticArtefactFrame = forwardRef<
     onUpdateModelContext,
     onInitialized,
     hostContext,
+    cspResourceDomains,
     innerSandbox = "allow-scripts allow-same-origin",
     className,
     title = "MCP App artefact",
@@ -128,6 +132,10 @@ export const StaticArtefactFrame = forwardRef<
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [iframeUrl] = useState(() => {
     const origin = sandboxOrigin.replace(/\/$/, "");
+    if (cspResourceDomains && cspResourceDomains.length > 0) {
+      const csp = encodeURIComponent(JSON.stringify({ resourceDomains: cspResourceDomains }));
+      return `${origin}/sandbox.html?csp=${csp}`;
+    }
     return `${origin}/sandbox.html`;
   });
 

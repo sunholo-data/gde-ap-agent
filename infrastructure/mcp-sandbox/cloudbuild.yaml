@@ -24,8 +24,7 @@ substitutions:
 tags: ['${_PROJECT_ID}', '${_SERVICE_NAME}']
 
 options:
-  logging: GCS_ONLY
-logsBucket: gs://multivac-deploy-aitana-logging-bucket
+  logging: CLOUD_LOGGING_ONLY
 
 steps:
   # --- Build the sandbox image ---

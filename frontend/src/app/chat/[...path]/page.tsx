@@ -34,6 +34,7 @@ import {
 import { A2UISurfaceMount } from "@/components/protocols/A2UISurfaceMount";
 import { DocumentPanel } from "@/components/document/DocumentPanel";
 import { LatencyHUD } from "@/components/dev/LatencyHUD";
+import { VendorGlobePanel } from "@/components/workspace/VendorGlobePanel";
 
 /**
  * MULTI-SURFACE-A2UI M3 — chat page surface mounts.
@@ -228,6 +229,7 @@ function ChatShell({
   const [showDocBrowser, setShowDocBrowser] = useState(true);
   const [openTabs, setOpenTabs] = useState<DocTabData[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [globeContext, setGlobeContext] = useState<{ vendor: string; country: string; amount?: number } | null>(null);
   const lastUserMessageRef = useRef<string>("");
 
   // Session routing: read ?session= from URL, allow programmatic navigation
@@ -338,6 +340,14 @@ function ChatShell({
 
   const handleAction = useCallback(
     (event: { actionName: string; context: Record<string, unknown> }) => {
+      if (event.actionName === "show_vendor_globe") {
+        setGlobeContext({
+          vendor: String(event.context.vendor ?? ""),
+          country: String(event.context.country ?? ""),
+          amount: typeof event.context.amount === "number" ? event.context.amount : undefined,
+        });
+        return;
+      }
       void sendMessage(
         `[a2ui:${event.actionName}] ${JSON.stringify(event.context)}`,
         { documentIds: includedDocIds, resumedSession: enteredViaResume },
@@ -529,8 +539,20 @@ function ChatShell({
         {/* MULTI-SURFACE-A2UI M3: workspace surface mount — takes the
             doc-panel slot when no doc tab is active AND the agent has
             published a workspace tree. Hidden in both other cases. */}
-        {!activeTabId && (
+        {!activeTabId && !globeContext && (
           <WorkspaceSurfaceRegion sessionId={sessionId ?? agentSessionId} />
+        )}
+
+        {/* M4: Vendor globe — shown when ap-orchestrator fires show_vendor_globe */}
+        {!activeTabId && globeContext && (
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-r md:max-w-xl">
+            <VendorGlobePanel
+              vendor={globeContext.vendor}
+              country={globeContext.country}
+              amount={globeContext.amount}
+              onClose={() => setGlobeContext(null)}
+            />
+          </div>
         )}
 
         <div className="flex min-w-0 flex-1 flex-col">

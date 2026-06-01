@@ -75,7 +75,7 @@ the following JSON structure (fill in values from the workflow; do not omit this
     "updateComponents": {
       "surfaceId": "workspace",
       "components": [
-        {"id": "root", "component": "Column", "children": ["header", "divider1", "meta", "divider2", "items", "divider3", "footer"]},
+        {"id": "root", "component": "Column", "children": ["header", "divider1", "meta", "divider2", "items", "divider3", "footer", "map_btn"]},
         {"id": "header", "component": "Row", "children": ["vendor_label", "status_label"]},
         {"id": "vendor_label", "component": "Text", "text": {"path": "/vendor"}, "variant": "h2"},
         {"id": "status_label", "component": "Text", "text": {"path": "/status"}, "variant": "h3"},
@@ -104,7 +104,8 @@ the following JSON structure (fill in values from the workflow; do not omit this
         {"id": "total_lbl", "component": "Text", "text": "Total", "variant": "h3"},
         {"id": "total_val", "component": "Text", "text": {"path": "/total"}, "variant": "h3"},
         {"id": "verdict_text", "component": "Text", "text": {"path": "/verdict"}, "variant": "body"},
-        {"id": "action_text", "component": "Text", "text": {"path": "/action"}, "variant": "caption"}
+        {"id": "action_text", "component": "Text", "text": {"path": "/action"}, "variant": "caption"},
+        {"id": "map_btn", "component": "Button", "label": "🌍 View Vendor on Map", "action": "show_vendor_globe", "context": {"vendor": {"path": "/vendor"}, "country": {"path": "/vendorCountry"}, "amount": {"path": "/totalAmount"}}}
       ]
     }
   },
@@ -114,6 +115,7 @@ the following JSON structure (fill in values from the workflow; do not omit this
       "surfaceId": "workspace",
       "value": {
         "vendor": "<vendor name>",
+        "vendorCountry": "<vendor country name or ISO code, e.g. 'Germany' or 'DE'>",
         "status": "<✅ APPROVED | ⚠️ NEEDS REVIEW | ❌ EXCEPTION>",
         "invoiceNumber": "<invoice number or 'Not found'>",
         "invoiceDate": "<date or 'Not found'>",
@@ -122,6 +124,7 @@ the following JSON structure (fill in values from the workflow; do not omit this
         "glCode": "<GL code or 'Pending'>",
         "lineItemsSummary": "<e.g. '3 line items — Widget A ×10 $500, Widget B ×5 $250, Shipping $50'>",
         "total": "<currency + amount, e.g. 'USD 800.00'>",
+        "totalAmount": "<numeric invoice total, e.g. 800.00>",
         "verdict": "<one-sentence validation verdict with reason>",
         "action": "<e.g. 'Posted to AP ledger' or 'Routed to finance team for approval'>"
       }
