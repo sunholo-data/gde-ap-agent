@@ -123,7 +123,7 @@ class TestUploadEndpoint:
         assert resp.status_code == 200
         assert resp.json()["status"] == "failed"
 
-    def test_pdf_gets_pending_ai_extraction_status(self, upload_client):
+    def test_pdf_gets_preview_only_status(self, upload_client):
         with (
             patch("tools.documents.upload.resolve_documents_bucket", return_value="test-bucket"),
             patch("tools.documents.upload._upload_to_gcs"),
@@ -138,7 +138,7 @@ class TestUploadEndpoint:
             )
 
         assert resp.status_code == 200
-        assert resp.json()["status"] == "pending_ai_extraction"
+        assert resp.json()["status"] == "preview_only"
 
     def test_bucket_comes_from_resolve_documents_bucket(self, upload_client):
         calls = []

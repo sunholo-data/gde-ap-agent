@@ -25,8 +25,6 @@ from google.adk.tools import AgentTool
 
 from admin.platform_seed import _parse_template
 from auth.firebase_auth import User
-from db.models import SkillConfig
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -94,9 +92,7 @@ def test_create_agent_ap_orchestrator_has_correct_sub_agents(_seeded_ap_skills):
         _safe_agent_name("ap-validator"),
         _safe_agent_name("ap-poster"),
     ]
-    assert sub_names == expected, (
-        f"Expected sub_agent names {expected!r}, got {sub_names!r}"
-    )
+    assert sub_names == expected, f"Expected sub_agent names {expected!r}, got {sub_names!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -114,11 +110,7 @@ def test_create_agent_ap_validator_has_enterprise_search_agent(_seeded_ap_skills
     agent = create_agent(config, _test_user())
 
     assert isinstance(agent, LlmAgent)
-    agent_tool_names = [
-        t.agent.name
-        for t in agent.tools
-        if isinstance(t, AgentTool)
-    ]
+    agent_tool_names = [t.agent.name for t in agent.tools if isinstance(t, AgentTool)]
     assert "enterprise_search_agent" in agent_tool_names, (
         f"Expected 'enterprise_search_agent' in AgentTool names, got {agent_tool_names!r}. "
         "Check that ap-validator/SKILL.md toolConfigs.ai_search.datastore_id is set "

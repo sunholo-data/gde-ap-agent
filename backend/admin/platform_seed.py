@@ -168,7 +168,7 @@ def seed(templates_root: Path | None = None) -> SeedSummary:
         try:
             parsed = _parse_template(skill_md)
             template_names.add(parsed["name"])
-        except Exception:  # noqa: BLE001 — parse errors handled below
+        except Exception:
             pass
 
     # Purge any skills still owned by a legacy sentinel UID (one-time migration
@@ -188,7 +188,7 @@ def seed(templates_root: Path | None = None) -> SeedSummary:
                     skill_config.delete_skill(sid)
                     logger.info("platform_seed: removed legacy-owner skill %r (uid=%s)", doc.get("name"), legacy_uid)
                     summary.purged += 1
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("platform_seed: failed to purge legacy skills for %s: %s", legacy_uid, e)
 
     # Purge platform skills that are no longer in templates.
@@ -202,7 +202,7 @@ def seed(templates_root: Path | None = None) -> SeedSummary:
                     logger.info("platform_seed: purged stale platform skill %r (%s)", name, cfg.skillId)
                     summary.purged += 1
                     break
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("platform_seed: failed to purge %s: %s", name, e)
 
     for child in sorted(root.iterdir()):

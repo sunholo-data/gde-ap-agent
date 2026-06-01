@@ -168,6 +168,14 @@ def build_document_context(
             "Its content is not yet available. Ask the user to try again in a moment."
         ), None
 
+    if parse_status == "preview_only":
+        return (
+            f"**Document:** {original_filename}\n\n"
+            "ℹ️ This document format does not support structured extraction "
+            "(typically a PDF or scanned image). The user can view it as a "
+            "native preview, but the agent cannot read its contents directly."
+        ), None
+
     raw_blocks: list[dict[str, Any]] = raw.get("blocks") or []
     edited_blocks_raw: dict[str, Any] = raw.get("editedBlocks") or {}
     metadata: dict = raw.get("metadata") or {}

@@ -146,7 +146,7 @@ def _seed_ap_skills(now: float) -> None:
             continue
         try:
             parsed = _parse_template(skill_md)
-        except Exception as e:  # noqa: BLE001 — a bad template shouldn't block boot
+        except Exception as e:
             logger.warning("seed_local_fixture: failed to parse %s: %s", skill_md, e)
             continue
         fs.set_document(

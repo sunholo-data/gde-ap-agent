@@ -92,6 +92,30 @@ def get_document(doc_id: str, user: _CurrentUser) -> dict:
     return doc
 
 
+@router.get("/api/documents/{doc_id}/preview-url")
+def get_document_preview_url(doc_id: str, user: _CurrentUser) -> dict:
+    """Return a short-lived signed GCS URL for previewing the raw file.
+
+    Used by the frontend to render a native preview (PDF iframe, image tag)
+    when AILANG Parse cannot produce structured blocks (preview_only status,
+    or any format the browser can render directly).
+    """
+    from tools.documents.ailang_parse import _generate_signed_url
+
+    doc = _get_firestore_doc(_PARSED_DOCS_COLLECTION, doc_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if doc.get("userId") != user.uid:
+        raise HTTPException(status_code=403, detail=_ACCESS_DENIED)
+    gs_url: str | None = doc.get("sourceUrl")
+    if not gs_url:
+        raise HTTPException(status_code=422, detail="Document has no GCS source URL")
+    signed = _generate_signed_url(gs_url)
+    if not signed:
+        raise HTTPException(status_code=500, detail="Could not sign URL — check SA permissions")
+    return {"url": signed, "expiresInSeconds": 900}
+
+
 @router.post("/api/documents/{doc_id}/reparse")
 async def reparse_document(doc_id: str, user: _CurrentUser) -> dict:
     """Re-run AILANG Parse on an existing document using its stored GCS URL.

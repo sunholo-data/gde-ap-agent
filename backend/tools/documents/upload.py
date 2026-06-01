@@ -119,8 +119,12 @@ async def _run_parse(gs_url: str) -> tuple[str, list, int, str | None]:
     elapsed_ms = int((time.monotonic() - t0) * 1000)
 
     if outcome is None:
-        log.info("AILANG Parse: extension not supported for %s, using AI extraction", gs_url)
-        return "pending_ai_extraction", [], elapsed_ms, None
+        # Either the extension isn't deterministic (PDF, image) or DOCPARSE_API_KEY
+        # isn't configured. Either way: no structured blocks. Mark as preview_only
+        # so the frontend can fall back to a native preview (PDF iframe) without
+        # waiting forever on a parse pipeline that will never run.
+        log.info("AILANG Parse: no blocks for %s — marking preview_only", gs_url)
+        return "preview_only", [], elapsed_ms, None
     if not outcome.ok:
         log.error("AILANG Parse failed for %s: [%s] %s", gs_url, outcome.error_code, outcome.error)
         return "failed", [], elapsed_ms, outcome.error

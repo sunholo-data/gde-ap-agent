@@ -56,6 +56,84 @@ When an invoice arrives:
    fields, the validation result with citations, the action taken, and any
    exceptions — so a human can audit the decision at a glance.
 
+## Step 5 — Invoice Review Card (ALWAYS required)
+
+After ap-poster completes, call `send_a2ui_json_to_client` **exactly once** with
+the following JSON structure (fill in values from the workflow; do not omit this step):
+
+```json
+[
+  {
+    "version": "v0.9",
+    "createSurface": {
+      "surfaceId": "workspace",
+      "catalogId": "https://a2ui.org/specification/v0_9/basic_catalog.json"
+    }
+  },
+  {
+    "version": "v0.9",
+    "updateComponents": {
+      "surfaceId": "workspace",
+      "components": [
+        {"id": "root", "component": "Column", "children": ["header", "divider1", "meta", "divider2", "items", "divider3", "footer"]},
+        {"id": "header", "component": "Row", "children": ["vendor_label", "status_label"]},
+        {"id": "vendor_label", "component": "Text", "text": {"path": "/vendor"}, "variant": "h2"},
+        {"id": "status_label", "component": "Text", "text": {"path": "/status"}, "variant": "h3"},
+        {"id": "divider1", "component": "Divider"},
+        {"id": "meta", "component": "Column", "children": ["inv_row", "date_row", "due_row", "po_row", "gl_row"]},
+        {"id": "inv_row", "component": "Row", "children": ["inv_lbl", "inv_val"]},
+        {"id": "inv_lbl", "component": "Text", "text": "Invoice #", "variant": "caption"},
+        {"id": "inv_val", "component": "Text", "text": {"path": "/invoiceNumber"}, "variant": "body"},
+        {"id": "date_row", "component": "Row", "children": ["date_lbl", "date_val"]},
+        {"id": "date_lbl", "component": "Text", "text": "Invoice Date", "variant": "caption"},
+        {"id": "date_val", "component": "Text", "text": {"path": "/invoiceDate"}, "variant": "body"},
+        {"id": "due_row", "component": "Row", "children": ["due_lbl", "due_val"]},
+        {"id": "due_lbl", "component": "Text", "text": "Due Date", "variant": "caption"},
+        {"id": "due_val", "component": "Text", "text": {"path": "/dueDate"}, "variant": "body"},
+        {"id": "po_row", "component": "Row", "children": ["po_lbl", "po_val"]},
+        {"id": "po_lbl", "component": "Text", "text": "PO Reference", "variant": "caption"},
+        {"id": "po_val", "component": "Text", "text": {"path": "/poReference"}, "variant": "body"},
+        {"id": "gl_row", "component": "Row", "children": ["gl_lbl", "gl_val"]},
+        {"id": "gl_lbl", "component": "Text", "text": "GL Code", "variant": "caption"},
+        {"id": "gl_val", "component": "Text", "text": {"path": "/glCode"}, "variant": "body"},
+        {"id": "divider2", "component": "Divider"},
+        {"id": "items", "component": "Text", "text": {"path": "/lineItemsSummary"}, "variant": "body"},
+        {"id": "divider3", "component": "Divider"},
+        {"id": "footer", "component": "Column", "children": ["total_row", "verdict_text", "action_text"]},
+        {"id": "total_row", "component": "Row", "children": ["total_lbl", "total_val"]},
+        {"id": "total_lbl", "component": "Text", "text": "Total", "variant": "h3"},
+        {"id": "total_val", "component": "Text", "text": {"path": "/total"}, "variant": "h3"},
+        {"id": "verdict_text", "component": "Text", "text": {"path": "/verdict"}, "variant": "body"},
+        {"id": "action_text", "component": "Text", "text": {"path": "/action"}, "variant": "caption"}
+      ]
+    }
+  },
+  {
+    "version": "v0.9",
+    "updateDataModel": {
+      "surfaceId": "workspace",
+      "value": {
+        "vendor": "<vendor name>",
+        "status": "<✅ APPROVED | ⚠️ NEEDS REVIEW | ❌ EXCEPTION>",
+        "invoiceNumber": "<invoice number or 'Not found'>",
+        "invoiceDate": "<date or 'Not found'>",
+        "dueDate": "<due date or 'Not specified'>",
+        "poReference": "<PO ref or 'None'>",
+        "glCode": "<GL code or 'Pending'>",
+        "lineItemsSummary": "<e.g. '3 line items — Widget A ×10 $500, Widget B ×5 $250, Shipping $50'>",
+        "total": "<currency + amount, e.g. 'USD 800.00'>",
+        "verdict": "<one-sentence validation verdict with reason>",
+        "action": "<e.g. 'Posted to AP ledger' or 'Routed to finance team for approval'>"
+      }
+    }
+  }
+]
+```
+
+Use `≤ 60` characters per field value. Status emoji: `✅` for approved, `⚠️` for needs
+review, `❌` for exception/rejected. Never skip this step — it is the primary visual
+output the user sees.
+
 ## Principles
 
 - **Never invent or "fix" a field.** If extraction is low-confidence or
