@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { StreamError, SkillMessage, ToolCallState } from "@/hooks/useSkillAgent";
 import type { ActiveDocumentContext } from "@/components/chat/ContextBanner";
 import { ContextBanner } from "@/components/chat/ContextBanner";
+import { BRANDING } from "@/lib/branding";
 import { MessageBubble } from "./MessageBubble";
 import { StreamingBubble } from "./StreamingBubble";
 import { TypingIndicator } from "./TypingIndicator";
@@ -191,9 +192,7 @@ export function ChatMessageList({
           )}
 
           {messages.length === 0 && !initialMessages?.length && !error && !isLoading && (
-            <p className="text-sm text-muted-foreground">
-              Send a message to start the conversation.
-            </p>
+            <APHeroEmpty />
           )}
 
           {stableMessages.map((m) => (
@@ -233,11 +232,114 @@ export function ChatMessageList({
         <button
           type="button"
           onClick={scrollToBottom}
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-border bg-background px-3 py-1 text-xs font-medium shadow-md hover:bg-muted"
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-primary/30 bg-background/90 px-3 py-1 text-xs font-medium shadow-lg backdrop-blur hover:bg-muted"
         >
           ↓ New message
         </button>
       )}
     </div>
+  );
+}
+
+function APHeroEmpty() {
+  return (
+    <div className="flex min-h-[420px] flex-col items-center justify-center px-6 py-14 text-center">
+      {/* Glowing logo */}
+      <div className="relative mb-6">
+        <div className="absolute inset-0 scale-[2] rounded-full bg-primary/15 blur-3xl" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={BRANDING.logo.chatAvatar}
+          alt=""
+          className="relative h-16 w-16 animate-glow-pulse"
+        />
+      </div>
+
+      {/* Headlines */}
+      <h1 className="gradient-text-gold mb-2 text-2xl font-bold tracking-tight">
+        AI-Powered Accounts Payable
+      </h1>
+      <p className="mb-10 max-w-xs text-sm leading-relaxed text-muted-foreground">
+        Multi-agent invoice processing — extract, validate, and post with a complete audit trail.
+      </p>
+
+      {/* Pipeline visualization */}
+      <div className="mb-10 flex items-center">
+        {[
+          { label: "Intake", icon: <DocSVG /> },
+          { label: "Extract", icon: <SearchSVG /> },
+          { label: "Validate", icon: <ShieldSVG /> },
+          { label: "Post", icon: <SendSVG /> },
+        ].map((step, i) => (
+          <div key={step.label} className="flex items-center">
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-primary shadow-inner backdrop-blur-sm">
+                {step.icon}
+              </div>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                {step.label}
+              </span>
+            </div>
+            {i < 3 && (
+              <div className="mx-2 mb-5 flex items-center gap-0.5">
+                <div className="h-px w-4 bg-gradient-to-r from-primary/30 to-primary/5" />
+                <div className="h-1 w-1 rounded-full bg-primary/20" />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Try it prompt card */}
+      <div className="w-full max-w-sm cursor-default rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 text-left backdrop-blur-sm transition-colors hover:border-primary/25 hover:bg-white/[0.05]">
+        <div className="mb-2 flex items-center gap-2">
+          <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary/80">
+            Try an invoice
+          </span>
+        </div>
+        <p className="font-mono text-xs leading-relaxed text-muted-foreground">
+          &ldquo;Process: Vendor Acme GmbH (Germany), Invoice INV-2026-042, €8,500, NET 30, GL 5200-OPEX&rdquo;
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function DocSVG() {
+  return (
+    <svg className="h-4.5 w-4.5" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+      <path d="M4 1.5h5.5L13 5v9.5H4v-13z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9.5 1.5V5H13" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6 8h4M6 10.5h2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SearchSVG() {
+  return (
+    <svg className="h-4.5 w-4.5" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+      <circle cx="6.5" cy="6.5" r="4.5" />
+      <path d="M10.5 10.5L13.5 13.5" strokeLinecap="round" />
+      <path d="M5 6.5h3M6.5 5v3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ShieldSVG() {
+  return (
+    <svg className="h-4.5 w-4.5" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+      <path d="M8 1.5L2.5 4v3.5c0 3.5 2.5 5.8 5.5 6.8 3-1 5.5-3.3 5.5-6.8V4L8 1.5z" strokeLinejoin="round" />
+      <path d="M5.5 8l1.5 1.5 3-3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SendSVG() {
+  return (
+    <svg className="h-4.5 w-4.5" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+      <path d="M13.5 2.5L1.5 7l5 1.5L8 14l5.5-11.5z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6.5 8.5L9 6" strokeLinecap="round" />
+    </svg>
   );
 }

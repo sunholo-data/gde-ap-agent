@@ -25,18 +25,18 @@
 
   .dark {
     /* Dark mode: deep navy canvas, gold primary, slate accents */
-    --background: 222 47% 6%;
+    --background: 222 47% 5%;
     --foreground: 210 40% 96%;
-    --muted: 222 32% 14%;
-    --muted-foreground: 215 20% 60%;
-    --border: 222 32% 18%;
-    --input: 222 32% 18%;
+    --muted: 222 32% 10%;
+    --muted-foreground: 215 20% 52%;
+    --border: 222 32% 13%;
+    --input: 222 32% 10%;
     --ring: 43 96% 50%;
     --primary: 43 96% 50%;
-    --primary-foreground: 222 47% 6%;
-    --secondary: 222 32% 14%;
+    --primary-foreground: 222 47% 5%;
+    --secondary: 222 32% 10%;
     --secondary-foreground: 210 40% 96%;
-    --accent: 222 32% 18%;
+    --accent: 222 32% 12%;
     --accent-foreground: 210 40% 96%;
     --destructive: 0 62% 38%;
     --destructive-foreground: 210 40% 98%;
@@ -51,4 +51,32 @@
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
   }
+}
+
+/* Dot-grid texture on dark canvas */
+.dark body {
+  background-image: radial-gradient(circle, rgba(100, 140, 200, 0.07) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Gold glow pulse — brand logo */
+@keyframes glow-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(232, 168, 0, 0.35)) drop-shadow(0 0 16px rgba(232, 168, 0, 0.12));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(232, 168, 0, 0.55)) drop-shadow(0 0 28px rgba(232, 168, 0, 0.22));
+  }
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+/* Gradient gold text */
+.gradient-text-gold {
+  background: linear-gradient(90deg, #fbbf24, #e8a800, #f59e0b);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
 }

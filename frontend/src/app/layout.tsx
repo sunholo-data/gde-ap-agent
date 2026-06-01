@@ -18,7 +18,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body className="font-sans bg-background text-foreground min-h-screen antialiased">
         <LocalModeBanner />
         <AppProviders>{children}</AppProviders>

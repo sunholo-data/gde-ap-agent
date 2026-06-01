@@ -25,14 +25,14 @@ export function DocTabsBar({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="flex items-stretch border-b bg-muted/30">
+    <div className="flex items-stretch border-b border-white/[0.07] bg-[hsl(222,47%,4%)]">
       {/* Browser toggle */}
       <button
         type="button"
         onClick={onToggleBrowser}
         className={[
-          "shrink-0 border-r px-2 text-muted-foreground hover:bg-accent",
-          showBrowser ? "bg-accent/50" : "",
+          "shrink-0 border-r border-white/[0.07] px-2.5 text-muted-foreground transition-colors hover:bg-white/[0.05] hover:text-foreground",
+          showBrowser ? "bg-white/[0.05] text-foreground" : "",
         ].join(" ")}
         title={showBrowser ? "Hide document list" : "Show document list"}
         aria-label="Toggle document list"
@@ -51,7 +51,7 @@ export function DocTabsBar({
         style={{ scrollbarWidth: "none" }}
       >
         {tabs.length === 0 && (
-          <span className="flex items-center px-3 text-xs text-muted-foreground">
+          <span className="flex items-center px-3 text-xs text-muted-foreground/50">
             No open documents
           </span>
         )}
@@ -66,7 +66,6 @@ export function DocTabsBar({
           />
         ))}
       </div>
-
     </div>
   );
 }

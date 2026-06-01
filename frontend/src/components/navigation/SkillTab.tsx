@@ -18,17 +18,17 @@ export function SkillTab({ skill, active }: SkillTabProps) {
       title={name}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex h-9 shrink-0 items-center gap-2 border-b-2 px-3 text-sm transition-colors",
+        "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-medium transition-all duration-150",
         active
-          ? "border-primary font-medium text-foreground"
-          : "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+          ? "bg-primary text-primary-foreground shadow-[0_0_10px_rgba(232,168,0,0.25)]"
+          : "text-muted-foreground hover:bg-white/[0.06] hover:text-foreground",
       )}
     >
       {skill.avatar ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={skill.avatar} alt="" className="h-5 w-5 rounded-sm" />
+        <img src={skill.avatar} alt="" className="h-4 w-4 rounded-sm" />
       ) : null}
-      <span className="max-w-[10rem] truncate">{name}</span>
+      <span className="max-w-[9rem] truncate">{name}</span>
     </Link>
   );
 }

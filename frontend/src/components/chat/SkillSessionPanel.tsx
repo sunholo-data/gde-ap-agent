@@ -51,7 +51,7 @@ export function SkillSessionPanel({
 
   if (sessions.length === 0) {
     return (
-      <div className="p-3 text-xs text-muted-foreground">No previous sessions</div>
+      <div className="px-3 py-2 text-[11px] text-muted-foreground/50">No previous sessions</div>
     );
   }
 
@@ -64,19 +64,22 @@ export function SkillSessionPanel({
           <div
             key={s.session_id}
             className={[
-              "group flex w-full items-center gap-1 rounded-md px-1 transition-colors",
-              "hover:bg-accent hover:text-accent-foreground",
-              isActive ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground",
+              "group flex w-full items-center gap-1 rounded-lg px-1 transition-all duration-150",
+              isActive
+                ? "bg-primary/10 ring-1 ring-primary/20 text-foreground"
+                : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground",
             ].join(" ")}
           >
             <button
               type="button"
               onClick={() => onSelectSession(s.session_id)}
-              className="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-2 py-2 text-left text-sm"
+              className="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-2 py-2 text-left"
               aria-current={isActive ? "true" : undefined}
             >
-              <span className="line-clamp-1 w-full">{title}</span>
-              <span className="text-xs opacity-60">{relativeTime(s.last_message_at)}</span>
+              <span className={["line-clamp-1 w-full text-xs", isActive ? "font-semibold text-primary" : ""].join(" ")}>
+                {title}
+              </span>
+              <span className="text-[10px] opacity-50">{relativeTime(s.last_message_at)}</span>
             </button>
             {onDelete && s.is_owner && (
               <button
@@ -87,7 +90,7 @@ export function SkillSessionPanel({
                 }}
                 aria-label={`Delete ${title}`}
                 title="Delete"
-                className="shrink-0 rounded p-1 text-gray-400 opacity-0 hover:bg-red-100 hover:text-red-600 group-hover:opacity-100"
+                className="shrink-0 rounded-md p-1 text-muted-foreground/40 opacity-0 transition-all hover:bg-red-900/30 hover:text-red-400 group-hover:opacity-100"
               >
                 <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
                   <path d="M3 4h10M5 4v9a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V4M7 4V3a1 1 0 0 1 1-1h0a1 1 0 0 1 1 1v1" strokeLinecap="round" strokeLinejoin="round" />

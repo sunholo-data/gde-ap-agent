@@ -482,7 +482,7 @@ function ChatShell({
   return (
     <SurfaceRegistryProvider>
     <SurfaceSessionLifecycle sessionId={sessionId} />
-    <main className="flex h-screen flex-col">
+    <main className="flex h-screen flex-col bg-[hsl(222,47%,5%)]">
       <SkillsBar
         skills={userSkills}
         activeSkillId={skillId}
@@ -502,10 +502,10 @@ function ChatShell({
 
       <div className="flex min-h-0 flex-1">
         {showDocBrowser && (
-          <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r bg-muted/30">
-            <div className="border-b px-3 py-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sessions</p>
-              <div className="mt-1 max-h-40 overflow-y-auto">
+          <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-white/[0.07] bg-[hsl(222,47%,4%)]">
+            <div className="border-b border-white/[0.06] px-3 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/50">Sessions</p>
+              <div className="mt-1.5 max-h-40 overflow-y-auto">
                 <SkillSessionPanel
                   sessions={sessions}
                   activeSessionId={sessionId}
@@ -614,9 +614,9 @@ function ChatShell({
             }
           />
 
-          <footer className="border-t p-3">
+          <footer className="border-t border-white/[0.07] bg-[hsl(222,47%,4%)] p-3">
             <form
-              className="flex gap-2"
+              className="flex items-center gap-2 rounded-xl border border-white/[0.09] bg-white/[0.04] px-3 py-2 transition-all focus-within:border-primary/40 focus-within:shadow-[0_0_0_1px_rgba(232,168,0,0.12)]"
               onSubmit={(e) => {
                 e.preventDefault();
                 void handleSend();
@@ -625,25 +625,25 @@ function ChatShell({
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder="Message…"
-                className="flex-1 rounded-md border px-3 py-2 text-sm"
+                placeholder="Describe an invoice or ask a question…"
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
                 disabled={inputDisabled}
               />
               {isLoading ? (
                 <button
                   type="button"
                   onClick={stop}
-                  className="rounded-md border px-3 py-2 text-sm"
+                  className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
                 >
-                  Stop
+                  ■ Stop
                 </button>
               ) : (
                 <button
                   type="submit"
-                  className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                  className="shrink-0 rounded-lg bg-primary px-4 py-1.5 text-xs font-bold text-primary-foreground shadow-[0_0_8px_rgba(232,168,0,0.2)] transition-all hover:shadow-[0_0_14px_rgba(232,168,0,0.35)] disabled:opacity-40 disabled:shadow-none"
                   disabled={!draft.trim() || inputDisabled}
                 >
-                  Send
+                  Send →
                 </button>
               )}
             </form>
