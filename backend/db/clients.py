@@ -45,7 +45,7 @@ def resolve_documents_bucket(user: User) -> str:  # type: ignore[name-defined]  
     client = get_client_sync(domain)
     if client and client.documents_bucket:
         return client.documents_bucket
-    return os.environ.get("DOCUMENTS_BUCKET", "aitana-documents-bucket")
+    return os.environ.get("DOCUMENTS_BUCKET", "")
 
 
 def resolve_channel_bucket() -> str:
@@ -60,4 +60,4 @@ def resolve_channel_bucket() -> str:
     Forks that want per-channel buckets (e.g., one for Discord, one
     for email) set CHANNEL_DOCUMENTS_BUCKET to override.
     """
-    return os.environ.get("CHANNEL_DOCUMENTS_BUCKET") or os.environ.get("DOCUMENTS_BUCKET", "aitana-documents-bucket")
+    return os.environ.get("CHANNEL_DOCUMENTS_BUCKET") or os.environ.get("DOCUMENTS_BUCKET", "")
