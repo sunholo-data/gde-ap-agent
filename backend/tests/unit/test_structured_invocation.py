@@ -86,6 +86,83 @@ def test_validate_raises_not_found_when_skill_missing():
             validate_structured_input("nope", {})
 
 
+@pytest.mark.asyncio
+async def test_run_collects_tool_results_with_camelcase_keys():
+    """Realistic AG-UI event sequence: START → ARGS (streamed) → RESULT.
+    Tool call result must end up captured under tool_calls[i].result.
+    """
+    from skills.structured_invocation import run_structured_invocation
+
+    schema = {
+        "type": "object",
+        "properties": {"document_id": {"type": "string", "minLength": 1}},
+        "required": ["document_id"],
+    }
+
+    events = [
+        {"type": "TOOL_CALL_START", "toolCallId": "tc-1", "toolCallName": "structured_extraction"},
+        {"type": "TOOL_CALL_ARGS", "toolCallId": "tc-1", "delta": '{"document_id"'},
+        {"type": "TOOL_CALL_ARGS", "toolCallId": "tc-1", "delta": ':"abc123"}'},
+        {"type": "TOOL_CALL_RESULT", "toolCallId": "tc-1", "content": '{"vendor_name":"Acme","total":8500}'},
+        {"type": "TEXT_MESSAGE_CONTENT", "delta": "Extraction complete."},
+    ]
+
+    async def fake_proc(*args, **kwargs):
+        for e in events:
+            yield e
+
+    with (
+        patch("skills.structured_invocation.get_skill", return_value=_make_skill_with_schema(schema)),
+        patch("skills.structured_invocation.process_skill_request", side_effect=fake_proc),
+    ):
+        result = await run_structured_invocation(
+            skill_id="test-skill",
+            user=None,  # type: ignore[arg-type]
+            access=None,  # type: ignore[arg-type]
+            payload={"document_id": "abc123"},
+            session_id=None,
+        )
+    assert result["text"] == "Extraction complete."
+    assert len(result["tool_calls"]) == 1
+    tc = result["tool_calls"][0]
+    assert tc["name"] == "structured_extraction"
+    assert tc["args"] == '{"document_id":"abc123"}'
+    assert tc["result"] == '{"vendor_name":"Acme","total":8500}'
+
+
+@pytest.mark.asyncio
+async def test_run_handles_snake_case_keys_defensively():
+    """Some transports / older event versions emit snake_case keys
+    (tool_call_id, tool_call_name). The capture loop should still
+    match the result back to the right call."""
+    from skills.structured_invocation import run_structured_invocation
+
+    schema = {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}
+    events = [
+        {"type": "TOOL_CALL_START", "tool_call_id": "tc-9", "tool_call_name": "list_documents"},
+        {"type": "TOOL_CALL_RESULT", "tool_call_id": "tc-9", "content": '[{"id": "d1"}]'},
+    ]
+
+    async def fake_proc(*args, **kwargs):
+        for e in events:
+            yield e
+
+    with (
+        patch("skills.structured_invocation.get_skill", return_value=_make_skill_with_schema(schema)),
+        patch("skills.structured_invocation.process_skill_request", side_effect=fake_proc),
+    ):
+        result = await run_structured_invocation(
+            skill_id="test-skill",
+            user=None,  # type: ignore[arg-type]
+            access=None,  # type: ignore[arg-type]
+            payload={"x": "y"},
+            session_id=None,
+        )
+    assert len(result["tool_calls"]) == 1
+    assert result["tool_calls"][0]["name"] == "list_documents"
+    assert result["tool_calls"][0]["result"] == '[{"id": "d1"}]'
+
+
 def test_serialize_input_includes_audit_preamble_and_payload():
     msg = serialize_input_as_message({"vendor_name": "Acme", "total": 8500})
     assert "AUDIT-VIEW STANDALONE INVOCATION" in msg

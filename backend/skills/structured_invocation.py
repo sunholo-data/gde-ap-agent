@@ -125,6 +125,19 @@ async def run_structured_invocation(
     text_buf: list[str] = []
     tool_calls: dict[str, dict[str, Any]] = {}
 
+    def _tcid(event: dict) -> str:
+        # AG-UI's ConfiguredBaseModel uses an alias_generator (to_camel), so
+        # the wire format is camelCase. Accept snake_case as a defensive
+        # fallback in case a transport layer drops the alias step.
+        return str(event.get("toolCallId") or event.get("tool_call_id") or event.get("id") or "")
+
+    def _tcname(event: dict) -> str:
+        return str(event.get("toolCallName") or event.get("tool_call_name") or event.get("name") or "")
+
+    def _ensure_tc_entry(tcid: str, name: str = "") -> None:
+        if tcid and tcid not in tool_calls:
+            tool_calls[tcid] = {"name": name, "args": "", "result": None}
+
     async for event in process_skill_request(
         skill_id=skill_id,
         user=user,
@@ -142,19 +155,21 @@ async def run_structured_invocation(
         if et == "TEXT_MESSAGE_CONTENT" and isinstance(event.get("delta"), str):
             text_buf.append(event["delta"])
         elif et == "TOOL_CALL_START":
-            tcid = str(event.get("toolCallId") or event.get("id") or "")
-            tool_calls[tcid] = {
-                "name": event.get("toolCallName") or event.get("name") or "",
-                "args": "",
-                "result": None,
-            }
+            tcid = _tcid(event)
+            _ensure_tc_entry(tcid, _tcname(event))
+            # Update the name even if START arrived after an ARGS chunk had
+            # already auto-created the entry (defensive ordering guard).
+            if tcid and _tcname(event):
+                tool_calls[tcid]["name"] = _tcname(event)
         elif et == "TOOL_CALL_ARGS":
-            tcid = str(event.get("toolCallId") or event.get("id") or "")
-            if tcid in tool_calls and isinstance(event.get("delta"), str):
+            tcid = _tcid(event)
+            _ensure_tc_entry(tcid)
+            if tcid and isinstance(event.get("delta"), str):
                 tool_calls[tcid]["args"] += event["delta"]
         elif et == "TOOL_CALL_RESULT":
-            tcid = str(event.get("toolCallId") or event.get("id") or "")
-            if tcid in tool_calls:
+            tcid = _tcid(event)
+            _ensure_tc_entry(tcid)
+            if tcid:
                 tool_calls[tcid]["result"] = event.get("content")
 
     duration_ms = int((time.monotonic() - started) * 1000)

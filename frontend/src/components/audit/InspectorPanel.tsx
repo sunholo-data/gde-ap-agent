@@ -6,6 +6,7 @@ import { getMetaByKey } from "@/lib/skillMeta";
 import type { SpecialistKey } from "@/lib/auditViewFlag";
 import type { SpecialistState, InvocationRecord } from "@/hooks/useSpecialistInvocations";
 import { RunStandaloneSection } from "./RunStandaloneSection";
+import { StandaloneResultView, type StandaloneResult } from "./StandaloneResultView";
 import { VendorKgPanel } from "./VendorKgPanel";
 import type { Skill } from "@/types/skill";
 
@@ -84,6 +85,18 @@ export function InspectorPanel({
     setSelectedIdx("current");
   }, [specialistKey, state?.current?.id]);
 
+  // Lifted "Run Standalone" result — rendered as the main body when set
+  // so the agent's tool calls + their structured outputs are the first
+  // thing the user sees, not buried in a footer disclosure. Clears on
+  // chip change to avoid showing yesterday's docparse result while
+  // viewing the validator.
+  const [standaloneResult, setStandaloneResult] = useState<StandaloneResult | null>(null);
+  const [standaloneRunning, setStandaloneRunning] = useState(false);
+  useEffect(() => {
+    setStandaloneResult(null);
+    setStandaloneRunning(false);
+  }, [specialistKey]);
+
   if (!open || !specialistKey) return null;
   const meta = getMetaByKey(specialistKey);
   const history = state?.history ?? [];
@@ -158,17 +171,45 @@ export function InspectorPanel({
       )}
 
       {/* Body */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-4">
+        {/* "Running…" indicator while the standalone POST is in flight */}
+        {standaloneRunning && (
+          <div
+            data-testid="audit-standalone-running"
+            className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-[11px] text-primary"
+          >
+            <span
+              aria-hidden
+              className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent"
+            />
+            Running standalone invocation…
+          </div>
+        )}
+
+        {/* Standalone-run result is the primary body when present —
+            agent tool calls + outputs appear at the top, not in a
+            collapsed footer. */}
+        {standaloneResult && (
+          <StandaloneResultView
+            result={standaloneResult}
+            onClear={() => setStandaloneResult(null)}
+          />
+        )}
+
+        {/* Orchestrator-driven invocation (chip lit up from the pipeline)
+            renders here. Pushed below the standalone result when both
+            exist — the user's most recent action is most visible. */}
         {displayRecord ? (
           <InvocationBody record={displayRecord} />
-        ) : (
+        ) : !standaloneResult && !standaloneRunning ? (
           <EmptyState specialistKey={specialistKey} />
-        )}
+        ) : null}
+
         {/* Protocol-trio showcase: validator panel embeds the
             ap-vendor-kg MCP App so AG-UI + A2UI + MCP Apps appear
             together in one place. See multi-agent-inspector-ux.md. */}
         {specialistKey === "validator" && (
-          <div className="mt-4">
+          <div>
             <h3 className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">
               Vendor knowledge graph (MCP App)
             </h3>
@@ -177,13 +218,17 @@ export function InspectorPanel({
         )}
       </div>
 
-      {/* Footer — Run Standalone form */}
+      {/* Footer — Run Standalone form. Results lift up to the body
+          above so the structured output is the first thing the user
+          sees, not buried behind a disclosure. */}
       <footer className="shrink-0 border-t border-border bg-muted/30 px-4 py-2.5">
         <RunStandaloneSection
           specialistKey={specialistKey}
           sessionId={sessionId}
           skills={skills}
           uid={uid}
+          onResult={setStandaloneResult}
+          onSubmittingChange={setStandaloneRunning}
         />
       </footer>
     </aside>

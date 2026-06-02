@@ -10,6 +10,7 @@ import { ValidatorJsonForm } from "./forms/ValidatorJsonForm";
 import { PosterVerdictForm } from "./forms/PosterVerdictForm";
 import { findSkillByMetaKey } from "@/lib/skillMeta";
 import type { Skill } from "@/types/skill";
+import type { StandaloneResult } from "./StandaloneResultView";
 
 interface RunStandaloneSectionProps {
   specialistKey: SpecialistKey;
@@ -18,12 +19,12 @@ interface RunStandaloneSectionProps {
    * actual skillId for the API call. */
   skills: Skill[];
   uid: string;
-}
-
-interface StandaloneResult {
-  duration_ms: number;
-  text: string;
-  tool_calls: Array<{ name: string; args?: string; result?: unknown }>;
+  /** Lift the run result up to the panel so the body can render it
+   * prominently instead of burying it in this footer. */
+  onResult: (result: StandaloneResult) => void;
+  /** Local submission/error state lifted too so the panel can show a
+   * subtle "running…" indicator near the top while the request is in flight. */
+  onSubmittingChange?: (submitting: boolean) => void;
 }
 
 export function RunStandaloneSection({
@@ -31,10 +32,11 @@ export function RunStandaloneSection({
   sessionId,
   skills,
   uid,
+  onResult,
+  onSubmittingChange,
 }: RunStandaloneSectionProps) {
   const [expanded, setExpanded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<StandaloneResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const metaKey =
@@ -50,7 +52,7 @@ export function RunStandaloneSection({
     }
     setError(null);
     setSubmitting(true);
-    setResult(null);
+    onSubmittingChange?.(true);
     try {
       const res = await fetchWithAuth(
         `/api/proxy/api/skill/${encodeURIComponent(skillId)}/structured`,
@@ -75,11 +77,16 @@ export function RunStandaloneSection({
         throw new Error(detail);
       }
       const data = (await res.json()) as StandaloneResult;
-      setResult(data);
+      onResult(data);
+      // Auto-collapse the form so the lifted result has room — user can
+      // re-expand to run another input. Keeps the panel focused on the
+      // output the user just requested.
+      setExpanded(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
+      onSubmittingChange?.(false);
     }
   }
 
@@ -137,46 +144,8 @@ export function RunStandaloneSection({
               {error}
             </pre>
           )}
-          {result && (
-            <StandaloneResultView result={result} />
-          )}
         </div>
       )}
     </div>
   );
-}
-
-function StandaloneResultView({ result }: { result: StandaloneResult }) {
-  return (
-    <div className="space-y-2 rounded border border-primary/20 bg-primary/5 p-2">
-      <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-primary/70">
-        <span>Standalone result</span>
-        <span>{result.duration_ms}ms · {result.tool_calls.length} tool call{result.tool_calls.length === 1 ? "" : "s"}</span>
-      </div>
-      {result.text && (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-background p-2 text-[11px] leading-relaxed text-foreground/90">
-          {result.text}
-        </pre>
-      )}
-      {result.tool_calls.length > 0 && (
-        <details>
-          <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Tool calls ({result.tool_calls.length})
-          </summary>
-          <ul className="mt-1 space-y-1">
-            {result.tool_calls.map((tc, i) => (
-              <li key={i} className="rounded bg-background p-1.5 text-[10px] font-mono text-foreground/80">
-                <span className="text-primary">{tc.name}</span>
-                {tc.args && <span className="ml-1 text-muted-foreground">({truncate(tc.args, 80)})</span>}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </div>
-  );
-}
-
-function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
