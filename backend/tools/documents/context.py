@@ -44,7 +44,10 @@ def blocks_to_markdown(blocks: list[dict[str, Any]]) -> str:
                 parts.append("| " + " | ".join(header_texts) + " |")
                 parts.append("| " + " | ".join(["---"] * len(header_texts)) + " |")
             for row in rows:
-                row_texts = [_cell_text(c) for c in row]
+                # Firestore-safe rows are stored as [{"cells": [...]}], not raw [[...]].
+                # Accept both shapes for backwards compat with older data and tests.
+                cells = row["cells"] if isinstance(row, dict) else row
+                row_texts = [_cell_text(c) for c in cells]
                 parts.append("| " + " | ".join(row_texts) + " |")
 
         elif block_type == "list":

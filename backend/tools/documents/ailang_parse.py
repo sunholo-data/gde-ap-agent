@@ -271,13 +271,15 @@ def _extract_content(result: ParseResult, output_format: str) -> str | list | No
             return None
         # Firestore rejects nested arrays. Block.rows is List[List[Cell]] —
         # wrap inner row arrays in maps so the structure becomes array-of-maps.
-        out: list[dict] = []
-        for b in result.blocks:
-            d = _dc.asdict(b)
+        # Recurse so the same fix applies to nested children blocks.
+        def _firestore_safe(d: dict) -> dict:
             if d.get("rows"):
                 d["rows"] = [{"cells": row} for row in d["rows"]]
-            out.append(d)
-        return out
+            if d.get("children"):
+                d["children"] = [_firestore_safe(c) for c in d["children"]]
+            return d
+
+        return [_firestore_safe(_dc.asdict(b)) for b in result.blocks]
     return result.markdown or None
 
 
