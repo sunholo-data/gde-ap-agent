@@ -1,0 +1,104 @@
+{
+  "sprint_id": "GCS-BROWSER",
+  "created": "2026-06-02T05:35:23Z",
+  "estimated_duration_days": 1,
+  "design_doc": "docs/design/forks/gde-ap-agent/gcs-bucket-browser.md",
+  "sprint_plan": "docs/design/forks/gde-ap-agent/gcs-bucket-browser-sprint.md",
+  "features": [
+    {
+      "id": "M1-backend-gcs-api",
+      "description": "Backend GCS list + import API: tools/gcs_browser/ module with browser.py (validate_bucket_name, list_gcs_objects, import_gcs_object) and routes.py (GET /api/gcs/list, POST /api/gcs/import). Reuses _upload_to_gcs/_run_parse/_store_document from upload.py. Register router in fast_api_app.py. Add AP_DEMO_BUCKET env var.",
+      "scope": "backend",
+      "estimated_loc": 315,
+      "actual_loc": null,
+      "dependencies": [],
+      "acceptance_criteria": [
+        "GET /api/gcs/list?bucket=demo returns list of GCSObject items in tests",
+        "GET /api/gcs/list?bucket=bad\\ name!! returns HTTP 400",
+        "GET /api/gcs/list with mocked SA 403 returns JSON with sa_email field",
+        "POST /api/gcs/import returns ParsedDocumentResponse shape",
+        "POST /api/gcs/import with unsupported extension returns HTTP 400",
+        "cd backend && make lint && make test-fast passes"
+      ],
+      "files_to_create": [
+        "backend/tools/gcs_browser/__init__.py",
+        "backend/tools/gcs_browser/browser.py",
+        "backend/tools/gcs_browser/routes.py",
+        "backend/tests/tool_tests/test_gcs_browser.py"
+      ],
+      "files_to_modify": [
+        "backend/fast_api_app.py",
+        "backend/.env.example",
+        "cloudbuild.yaml"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    },
+    {
+      "id": "M2-frontend-gcs-browser",
+      "description": "Frontend GCSFileBrowser sidebar component: useGCSBucket hook (calls /api/proxy/api/gcs/list), GCSFileItem (import button with loading states), GCSBucketInput (strips gs:// prefix, localStorage persistence), GCSFileBrowser (two accordion sections: Example Invoices + Your GCS Bucket, skeleton loader, empty/error states). Wire into page.tsx sidebar.",
+      "scope": "frontend",
+      "estimated_loc": 392,
+      "actual_loc": null,
+      "dependencies": ["M1-backend-gcs-api"],
+      "acceptance_criteria": [
+        "Example Invoices accordion section renders with file list or empty state",
+        "Clicking Import shows 'Importing…' spinner then 'Done' state",
+        "Imported file appears in DocListView without page refresh (Firestore listener)",
+        "Your GCS Bucket input persists bucket name in localStorage across reloads",
+        "Invalid/denied bucket shows error with SA email address",
+        "npm run quality:check:fast passes (lint + typecheck)"
+      ],
+      "files_to_create": [
+        "frontend/src/hooks/useGCSBucket.ts",
+        "frontend/src/components/doc-browser/GCSFileItem.tsx",
+        "frontend/src/components/doc-browser/GCSBucketInput.tsx",
+        "frontend/src/components/doc-browser/GCSFileBrowser.tsx",
+        "frontend/src/components/doc-browser/__tests__/GCSFileBrowser.test.tsx"
+      ],
+      "files_to_modify": [
+        "frontend/src/app/chat/[...path]/page.tsx"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    },
+    {
+      "id": "M3-infra-deploy",
+      "description": "Infrastructure: run setup-demo-bucket.sh to create GCS bucket and upload 9 demo invoice files, add _AP_DEMO_BUCKET substitution to cloudbuild.yaml, push to trigger Cloud Build deployment.",
+      "scope": "backend",
+      "estimated_loc": 15,
+      "actual_loc": null,
+      "dependencies": ["M1-backend-gcs-api", "M2-frontend-gcs-browser"],
+      "acceptance_criteria": [
+        "gsutil ls gs://gde-ap-agent-demo-invoices/ lists 9 demo files",
+        "_AP_DEMO_BUCKET substitution present in cloudbuild.yaml backend deploy step",
+        "GET /api/proxy/api/gcs/list?bucket=demo returns objects from deployed frontend",
+        "git push to dev triggers Cloud Build successfully"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "cloudbuild.yaml"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    }
+  ],
+  "velocity": {
+    "target_loc_per_day": 665,
+    "actual_loc_per_day": null,
+    "estimated_total_loc": 722,
+    "actual_total_loc": null,
+    "estimated_days": 1.1,
+    "actual_days": null
+  },
+  "github_issues": [],
+  "last_session": null,
+  "last_checkpoint": null,
+  "status": "not_started"
+}
