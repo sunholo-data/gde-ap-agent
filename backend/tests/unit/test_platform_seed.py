@@ -135,6 +135,35 @@ def test_seed_refreshes_template_fields_on_existing(tmp_path):
     assert updated_payload["skillMetadata"] == {"model": "gemini-2.5-flash"}
 
 
+def test_seed_purges_stale_platform_skill_uses_snake_case_id(tmp_path):
+    """Regression: SkillConfig exposes the id as `skill_id` (Pydantic
+    field name), not `skillId` (camelCase alias). The original code
+    accessed `cfg.skillId` which raised AttributeError, caught silently
+    by the broad except, leaving every stale skill behind every seed
+    run. Observed in dev as "docparse" surviving the rename to
+    "invoice-extractor" until this fix.
+    """
+    # Single template "alpha"; Firestore has both "alpha" and stale "docparse"
+    _fake_template_dir(tmp_path, "alpha")
+
+    alpha_cfg = _make_config("alpha", skillId="platform-alpha")
+    stale_cfg = _make_config("docparse", skillId="platform-docparse")
+
+    with (
+        patch("admin.platform_seed.skill_config.list_skills") as mock_list,
+        patch("admin.platform_seed.skill_config.delete_skill") as mock_delete,
+        patch("admin.platform_seed.skill_config.update_skill"),
+        patch("admin.platform_seed.skill_config.create_skill"),
+    ):
+        mock_list.return_value = [alpha_cfg, stale_cfg]
+        summary = seed(templates_root=tmp_path)
+
+    assert summary.purged == 1
+    assert summary.failed == [], f"expected no failures, got {summary.failed!r}"
+    # The actual delete must be called with the snake_case id from the config
+    mock_delete.assert_called_once_with("platform-docparse")
+
+
 def test_seed_refresh_failure_does_not_abort(tmp_path):
     """If update_skill raises for one template, the run continues and
     the failure is recorded — never bring down a deploy on a refresh."""

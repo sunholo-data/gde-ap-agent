@@ -209,8 +209,15 @@ def seed(templates_root: Path | None = None) -> SeedSummary:
             configs = skill_config.list_skills(owner_id=PLATFORM_OWNER_UID, limit=200)
             for cfg in configs:
                 if cfg.name == name:
-                    skill_config.delete_skill(cfg.skillId)
-                    logger.info("platform_seed: purged stale platform skill %r (%s)", name, cfg.skillId)
+                    # Bug fix: SkillConfig exposes the id as `skill_id`
+                    # (Pydantic field name) not `skillId` (camelCase alias).
+                    # The cfg.skillId attribute access silently raised
+                    # AttributeError, caught by the broad `except` below,
+                    # logged as "failed to purge" — so every seed run
+                    # since the docparse→invoice-extractor rename left
+                    # the stale docparse skill in Firestore.
+                    skill_config.delete_skill(cfg.skill_id)
+                    logger.info("platform_seed: purged stale platform skill %r (%s)", name, cfg.skill_id)
                     summary.purged += 1
                     break
         except Exception as e:
