@@ -8,6 +8,7 @@ import type { SpecialistState, InvocationRecord } from "@/hooks/useSpecialistInv
 import { RunStandaloneSection } from "./RunStandaloneSection";
 import { StandaloneResultView, type StandaloneResult } from "./StandaloneResultView";
 import { VendorKgPanel } from "./VendorKgPanel";
+import { InputOutputCard, SectionLabel } from "./sharedView";
 import type { Skill } from "@/types/skill";
 
 interface InspectorPanelProps {
@@ -254,60 +255,38 @@ function InvocationBody({ record }: { record: InvocationRecord }) {
     record.endedAt !== null ? record.endedAt - record.startedAt : null;
 
   return (
-    <div className="space-y-4">
-      {/* Status row */}
-      <div className="flex items-center gap-2">
+    <section
+      data-testid="audit-orchestrator-invocation"
+      className="space-y-3 rounded-lg border border-border bg-muted/20 p-3"
+    >
+      <header className="flex items-center gap-2">
+        <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary">
+          Orchestrator-driven
+        </span>
         <StatusPill status={record.status} />
         {latencyMs !== null && (
           <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
             {latencyMs < 1000 ? `${Math.round(latencyMs)}ms` : `${(latencyMs / 1000).toFixed(2)}s`}
           </span>
         )}
-        <span className="truncate text-[10px] font-mono text-muted-foreground/60">{record.name}</span>
+        <span className="truncate font-mono text-[10px] text-muted-foreground/60">{record.name}</span>
+      </header>
+
+      <div>
+        <SectionLabel>Structured I/O</SectionLabel>
+        <div className="mt-1">
+          <InputOutputCard
+            title={record.name}
+            input={record.argsJson}
+            output={record.resultContent}
+            inputLabel="Input (orchestrator → specialist)"
+            outputLabel="Output (specialist → orchestrator)"
+            emptyOutputMessage={record.status === "active" ? "(awaiting result…)" : "(no result captured)"}
+          />
+        </div>
       </div>
-
-      {/* Input args */}
-      <Section title="Input (orchestrator → specialist)">
-        <JsonBlock value={record.argsJson} placeholder="No input args captured" />
-      </Section>
-
-      {/* Result */}
-      <Section title="Output (specialist → orchestrator)">
-        <JsonBlock value={record.resultContent} placeholder="Awaiting result…" />
-      </Section>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h3 className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">
-        {title}
-      </h3>
-      {children}
     </section>
   );
-}
-
-function JsonBlock({ value, placeholder }: { value?: string; placeholder: string }) {
-  if (!value) {
-    return <p className="text-xs italic text-muted-foreground/50">{placeholder}</p>;
-  }
-  const pretty = tryPretty(value);
-  return (
-    <pre className="max-h-72 overflow-auto rounded-md border border-border bg-muted/40 p-2 text-[11px] leading-relaxed text-foreground/90">
-      <code>{pretty}</code>
-    </pre>
-  );
-}
-
-function tryPretty(s: string): string {
-  try {
-    return JSON.stringify(JSON.parse(s), null, 2);
-  } catch {
-    return s;
-  }
 }
 
 function formatRelativeTime(ts: number): string {
