@@ -154,16 +154,41 @@ describe("MessageBubble — A2UI tool delivery", () => {
   });
 });
 
-describe("MessageBubble — JSON text suppression when A2UI Card is present", () => {
-  // The structured_extraction_callback emits the validated JSON as a text
-  // Part (for downstream agents to JSON.parse) AND a synthesised A2UI
-  // tool call rendering the same data as a Card. Without suppression
-  // the user sees both — a JSON code block AND the Card. These tests
-  // pin the "show only the Card" behaviour and confirm we never hide
-  // prose that just happens to contain a JSON snippet.
+describe("MessageBubble — JSON-only text rendered as A2UI Card", () => {
+  // When an agent (any agent — orchestrator, sub-agent, extractor)
+  // returns JSON as its final text, render it as a styled Card instead
+  // of a code block. The agent doesn't need to emit A2UI — the frontend
+  // turns the JSON into a v0.9 message array via JsonCardBuilder and
+  // feeds it through the existing A2UIRenderer path. This is the user-
+  // visible fix for the "JSON blob in chat" anti-pattern.
 
-  it("suppresses JSON-only text body when an inline A2UI render exists", () => {
+  it("renders JSON-only text as a Card (no raw JSON in the DOM)", () => {
     const jsonOnly = JSON.stringify({ vendor_name: "Acme GmbH", total: 8500 });
+    const { container } = render(<MessageBubble message={botMsg(jsonOnly)} {...baseProps} />);
+    // The renderer was invoked (mocked → testid).
+    expect(container.querySelector("[data-testid='a2ui-renderer']")).toBeInTheDocument();
+    // The raw JSON text body is NOT rendered — only the Card.
+    expect(screen.queryByText(/vendor_name/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Acme GmbH/)).not.toBeInTheDocument();
+  });
+
+  it("does NOT render a Card for prose that merely contains a JSON snippet", () => {
+    // The trigger is unambiguous JSON-only text; prose with embedded
+    // JSON must continue to render as markdown so the user sees the
+    // surrounding sentences.
+    const proseWithJson =
+      'I extracted the invoice. The result is: {"vendor":"Acme"}. Please review.';
+    const { container } = render(
+      <MessageBubble message={botMsg(proseWithJson)} {...baseProps} />,
+    );
+    expect(container.querySelector("[data-testid='a2ui-renderer']")).not.toBeInTheDocument();
+    expect(screen.getByText(/I extracted the invoice/)).toBeInTheDocument();
+  });
+
+  it("prefers an existing inline A2UI tool result over the JSON-derived Card", () => {
+    // If the agent already emitted A2UI directly, that takes priority —
+    // we don't double up. The JSON text body is suppressed.
+    const jsonOnly = JSON.stringify({ vendor_name: "Acme GmbH" });
     const toolCalls = [
       {
         id: "tc-a2ui",
@@ -172,46 +197,16 @@ describe("MessageBubble — JSON text suppression when A2UI Card is present", ()
         resultContent: JSON.stringify({
           validated_a2ui_json: [{ version: "v0.9", createSurface: { surfaceId: "chat" } }],
           surface_id: "chat",
-          mime_type: "application/json+a2ui",
         }),
       },
     ];
     const { container } = render(
       <MessageBubble message={botMsg(jsonOnly)} {...baseProps} toolCalls={toolCalls} />,
     );
-    // A2UI Card rendered.
-    expect(container.querySelector("[data-testid='a2ui-renderer']")).toBeInTheDocument();
-    // JSON text body suppressed — neither the raw key nor the value appear.
+    // Exactly one A2UIRenderer mount — the one from the real tool call.
+    const renderers = container.querySelectorAll("[data-testid='a2ui-renderer']");
+    expect(renderers).toHaveLength(1);
     expect(screen.queryByText(/vendor_name/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Acme GmbH/)).not.toBeInTheDocument();
-  });
-
-  it("keeps prose that merely contains a JSON snippet visible", () => {
-    const proseWithJson =
-      'I extracted the invoice. The result is: {"vendor":"Acme"}. Please review.';
-    const toolCalls = [
-      {
-        id: "tc-a2ui",
-        name: "send_a2ui_json_to_client",
-        status: "success" as const,
-        resultContent: JSON.stringify({
-          validated_a2ui_json: [{ version: "v0.9", createSurface: { surfaceId: "chat" } }],
-        }),
-      },
-    ];
-    render(<MessageBubble message={botMsg(proseWithJson)} {...baseProps} toolCalls={toolCalls} />);
-    // Prose body is preserved — the suppression only fires for messages
-    // that are unambiguously JSON-only.
-    expect(screen.getByText(/I extracted the invoice/)).toBeInTheDocument();
-  });
-
-  it("keeps JSON text body when there is no inline A2UI render", () => {
-    const jsonOnly = JSON.stringify({ vendor_name: "Acme GmbH" });
-    render(<MessageBubble message={botMsg(jsonOnly)} {...baseProps} />);
-    // Without an A2UI Card taking over, the JSON must still render
-    // (regression guard — we shouldn't blank-screen the user when a
-    // schema-driven skill runs without the callback wired in).
-    expect(screen.getByText(/vendor_name/)).toBeInTheDocument();
   });
 });
 

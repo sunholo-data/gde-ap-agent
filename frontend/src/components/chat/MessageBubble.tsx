@@ -20,6 +20,7 @@ import { BrandAvatar } from "@/components/chat/BrandAvatar";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { InlineCitation } from "@/components/chat/InlineCitation";
 import { ToolCallChip } from "@/components/chat/ToolCallChip";
+import { buildA2UICardFromJson } from "@/components/chat/JsonCardBuilder";
 import { useSurfaceRegistry } from "@/providers/SurfaceRegistry";
 import type { SkillMessage, ToolCallState } from "@/hooks/useSkillAgent";
 
@@ -198,17 +199,29 @@ export const MessageBubble = React.memo(function MessageBubble({
 
     const isAPOrchestrator = skillId === "ap-orchestrator";
 
-    // Suppress the text body when an inline A2UI render is taking over
-    // for the same turn AND the text body is just the JSON payload that
-    // the A2UI Card now renders. Without this, schema-driven skills
-    // (anything with `metadata.extractionSchema`) would show both a JSON
-    // code block AND a Card for the same data — the JSON Part is kept on
-    // the wire so downstream agents can JSON.parse it, but the user only
-    // wants the styled Card. See backend/tools/structured_extraction.py.
+    // JSON-only text bodies are turned into a styled A2UI Card so the
+    // user never sees a raw JSON code block. The most common source is
+    // schema-driven skills (any SKILL.md with `metadata.extractionSchema`):
+    // the backend callback emits the validated extraction as a text Part
+    // so downstream agents can JSON.parse it, and this client-side render
+    // turns the same text into a Card the user can actually read.
+    //
+    // Skip the conversion if the turn already has an inline A2UI tool
+    // result (the agent did the right thing and emitted A2UI directly) —
+    // we suppress the duplicate JSON text instead. Prose that merely
+    // contains a JSON snippet is left alone; `isLikelyJsonOnly` is
+    // intentionally strict.
     const hasInlineA2ui = inlineA2uiCalls.length > 0;
-    const textBodyIsRedundantJson =
-      hasInlineA2ui && !!message.content && isLikelyJsonOnly(message.content);
-    const showTextBody = !!message.content && !textBodyIsRedundantJson;
+    const textIsJsonOnly = !!message.content && isLikelyJsonOnly(message.content);
+    const jsonCardMessages: Record<string, unknown>[] | null = (() => {
+      if (!textIsJsonOnly || hasInlineA2ui) return null;
+      try {
+        return buildA2UICardFromJson(JSON.parse(message.content));
+      } catch {
+        return null;
+      }
+    })();
+    const showTextBody = !!message.content && !textIsJsonOnly;
 
     return (
       <div className="flex items-start gap-3">
@@ -224,6 +237,16 @@ export const MessageBubble = React.memo(function MessageBubble({
           <div className="space-y-2 rounded-[2px_8px_8px_8px] border-l-[3px] border-primary/50 bg-muted/30 px-3 py-2 text-sm">
             {showTextBody && (
               <ChatMarkdown content={message.content} navigateToBlock={navigateToBlock} />
+            )}
+            {jsonCardMessages && (
+              <A2UIRenderer
+                key={`json-card-${message.id}`}
+                messages={jsonCardMessages}
+                fallbackSurfaceId={`json-card-${message.id}`}
+                onAction={(a) =>
+                  onAction({ actionName: a.name, context: a.context })
+                }
+              />
             )}
             {a2uiCalls.map((tc) => {
               const parsed = parseA2UIResult(tc.resultContent);
