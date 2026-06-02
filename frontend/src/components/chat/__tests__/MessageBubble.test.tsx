@@ -154,6 +154,95 @@ describe("MessageBubble — A2UI tool delivery", () => {
   });
 });
 
+describe("MessageBubble — JSON text suppression when A2UI Card is present", () => {
+  // The structured_extraction_callback emits the validated JSON as a text
+  // Part (for downstream agents to JSON.parse) AND a synthesised A2UI
+  // tool call rendering the same data as a Card. Without suppression
+  // the user sees both — a JSON code block AND the Card. These tests
+  // pin the "show only the Card" behaviour and confirm we never hide
+  // prose that just happens to contain a JSON snippet.
+
+  it("suppresses JSON-only text body when an inline A2UI render exists", () => {
+    const jsonOnly = JSON.stringify({ vendor_name: "Acme GmbH", total: 8500 });
+    const toolCalls = [
+      {
+        id: "tc-a2ui",
+        name: "send_a2ui_json_to_client",
+        status: "success" as const,
+        resultContent: JSON.stringify({
+          validated_a2ui_json: [{ version: "v0.9", createSurface: { surfaceId: "chat" } }],
+          surface_id: "chat",
+          mime_type: "application/json+a2ui",
+        }),
+      },
+    ];
+    const { container } = render(
+      <MessageBubble message={botMsg(jsonOnly)} {...baseProps} toolCalls={toolCalls} />,
+    );
+    // A2UI Card rendered.
+    expect(container.querySelector("[data-testid='a2ui-renderer']")).toBeInTheDocument();
+    // JSON text body suppressed — neither the raw key nor the value appear.
+    expect(screen.queryByText(/vendor_name/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Acme GmbH/)).not.toBeInTheDocument();
+  });
+
+  it("keeps prose that merely contains a JSON snippet visible", () => {
+    const proseWithJson =
+      'I extracted the invoice. The result is: {"vendor":"Acme"}. Please review.';
+    const toolCalls = [
+      {
+        id: "tc-a2ui",
+        name: "send_a2ui_json_to_client",
+        status: "success" as const,
+        resultContent: JSON.stringify({
+          validated_a2ui_json: [{ version: "v0.9", createSurface: { surfaceId: "chat" } }],
+        }),
+      },
+    ];
+    render(<MessageBubble message={botMsg(proseWithJson)} {...baseProps} toolCalls={toolCalls} />);
+    // Prose body is preserved — the suppression only fires for messages
+    // that are unambiguously JSON-only.
+    expect(screen.getByText(/I extracted the invoice/)).toBeInTheDocument();
+  });
+
+  it("keeps JSON text body when there is no inline A2UI render", () => {
+    const jsonOnly = JSON.stringify({ vendor_name: "Acme GmbH" });
+    render(<MessageBubble message={botMsg(jsonOnly)} {...baseProps} />);
+    // Without an A2UI Card taking over, the JSON must still render
+    // (regression guard — we shouldn't blank-screen the user when a
+    // schema-driven skill runs without the callback wired in).
+    expect(screen.getByText(/vendor_name/)).toBeInTheDocument();
+  });
+});
+
+describe("isLikelyJsonOnly", () => {
+  it("returns true for a JSON object string", async () => {
+    const { isLikelyJsonOnly } = await import("../MessageBubble");
+    expect(isLikelyJsonOnly('{"a":1}')).toBe(true);
+  });
+
+  it("returns true for a JSON array string", async () => {
+    const { isLikelyJsonOnly } = await import("../MessageBubble");
+    expect(isLikelyJsonOnly("[1, 2, 3]")).toBe(true);
+  });
+
+  it("returns false for prose that contains a JSON snippet", async () => {
+    const { isLikelyJsonOnly } = await import("../MessageBubble");
+    expect(isLikelyJsonOnly('Here is the data: {"a":1}')).toBe(false);
+  });
+
+  it("returns false for empty string", async () => {
+    const { isLikelyJsonOnly } = await import("../MessageBubble");
+    expect(isLikelyJsonOnly("")).toBe(false);
+    expect(isLikelyJsonOnly("   ")).toBe(false);
+  });
+
+  it("returns false for malformed JSON", async () => {
+    const { isLikelyJsonOnly } = await import("../MessageBubble");
+    expect(isLikelyJsonOnly('{"unclosed":')).toBe(false);
+  });
+});
+
 describe("MessageBubble — MCP App tool routing", () => {
   it("invokes MCPAppToolCallRouter with non-A2UI tool calls that have resultContent", () => {
     mcpRouterMock.mockClear();

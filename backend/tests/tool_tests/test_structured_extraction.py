@@ -228,6 +228,139 @@ class TestSchemaEnforcedReturn:
         assert "temp:extraction_validation_errors" not in ctx.state
 
 
+class TestA2UIPreviewCardEmission:
+    """The callback must emit an A2UI Card alongside the JSON text Part so
+    the chat bubble renders a Card instead of a raw JSON code block.
+
+    The emission rides on a synthesised ``send_a2ui_json_to_client``
+    function_call + function_response Part pair on the returned Content.
+    AG-UI's event translator turns those into TOOL_CALL_START /
+    TOOL_CALL_END / TOOL_CALL_RESULT events the frontend already routes
+    via MessageBubble.parseA2UIResult.
+
+    These tests are the regression guard for the "JSON blob in chat"
+    anti-pattern called out in the GE / A2UI integration guide.
+    """
+
+    @pytest.mark.asyncio
+    async def test_successful_extraction_appends_a2ui_function_call_and_response(self):
+        from tools.structured_extraction import structured_extraction_callback
+
+        schema = {
+            "type": "object",
+            "title": "AP Invoice",
+            "properties": {"vendor": {"type": "string"}, "total": {"type": "number"}},
+        }
+        extracted = {"vendor": "Acme GmbH", "total": 9000}
+        ctx = _make_ctx(
+            {
+                "app:extraction_schema": schema,
+                "temp:document_blocks": "[]",
+                "temp:document_id": "doc-acme",
+            }
+        )
+
+        with patch("tools.structured_extraction._run_extraction", new=AsyncMock(return_value=json.dumps(extracted))):
+            result = await structured_extraction_callback(ctx)
+
+        assert result is not None
+        parts = result.parts
+        # Three Parts: text (for downstream agents) + function_call + function_response.
+        function_calls = [p.function_call for p in parts if getattr(p, "function_call", None) is not None]
+        function_responses = [p.function_response for p in parts if getattr(p, "function_response", None) is not None]
+        assert len(function_calls) == 1, "expected exactly one synthesised function_call"
+        assert len(function_responses) == 1, "expected exactly one synthesised function_response"
+        # Tool name is the canonical A2UI emit tool — that's what the
+        # frontend's MessageBubble filters on.
+        assert function_calls[0].name == "send_a2ui_json_to_client"
+        assert function_responses[0].name == "send_a2ui_json_to_client"
+        # IDs must match so AG-UI pairs the call with the result.
+        assert function_calls[0].id == function_responses[0].id
+
+    @pytest.mark.asyncio
+    async def test_a2ui_response_carries_mime_tag_and_surface(self):
+        """The function_response.response dict is what the frontend reads
+        via parseA2UIResult. It must carry the v0.9 message array plus
+        the MIME tag + surface routing the SDK envelope uses."""
+        from tools.structured_extraction import structured_extraction_callback
+
+        schema = {"type": "object", "title": "X", "properties": {"a": {"type": "string"}}}
+        ctx = _make_ctx(
+            {
+                "app:extraction_schema": schema,
+                "temp:document_blocks": "[]",
+                "temp:document_id": "doc-mime",
+            }
+        )
+
+        with patch("tools.structured_extraction._run_extraction", new=AsyncMock(return_value=json.dumps({"a": "v"}))):
+            result = await structured_extraction_callback(ctx)
+
+        responses = [p.function_response for p in result.parts if getattr(p, "function_response", None) is not None]
+        envelope = responses[0].response
+        assert envelope["mime_type"] == "application/json+a2ui"
+        assert envelope["surface_id"] == "chat"
+        assert envelope["update_mode"] == "replace"
+        # The v0.9 array must contain at least createSurface + updateComponents.
+        messages = envelope["validated_a2ui_json"]
+        assert any("createSurface" in m for m in messages)
+        assert any("updateComponents" in m for m in messages)
+
+    @pytest.mark.asyncio
+    async def test_text_part_for_json_is_still_emitted_for_downstream_agents(self):
+        """Downstream agents (ap-validator transfer, structured_invocation)
+        JSON.parse the text Part. The A2UI emission MUST be additive — it
+        must never remove the text Part. Frontend handles the visual
+        duplicate via isLikelyJsonOnly()."""
+        from tools.structured_extraction import structured_extraction_callback
+
+        schema = {"type": "object", "properties": {"vendor": {"type": "string"}}}
+        ctx = _make_ctx(
+            {
+                "app:extraction_schema": schema,
+                "temp:document_blocks": "[]",
+                "temp:document_id": "doc-text-kept",
+            }
+        )
+
+        with patch(
+            "tools.structured_extraction._run_extraction", new=AsyncMock(return_value=json.dumps({"vendor": "Acme"}))
+        ):
+            result = await structured_extraction_callback(ctx)
+
+        text_parts = [p.text for p in result.parts if getattr(p, "text", None)]
+        assert len(text_parts) == 1
+        assert json.loads(text_parts[0])["vendor"] == "Acme"
+
+    @pytest.mark.asyncio
+    async def test_no_a2ui_emission_when_schema_is_a_string(self):
+        """The card builder needs a dict-shaped schema. When `app:extraction_schema`
+        was set as a JSON string (older callers), the text JSON Part still goes
+        out — only the optional A2UI emission is skipped. No crash."""
+        from tools.structured_extraction import structured_extraction_callback
+
+        ctx = _make_ctx(
+            {
+                "app:extraction_schema": '{"type":"object"}',  # string, not dict
+                "temp:document_blocks": "[]",
+                "temp:document_id": "doc-str-schema",
+            }
+        )
+
+        with patch("tools.structured_extraction._run_extraction", new=AsyncMock(return_value=json.dumps({"a": 1}))):
+            result = await structured_extraction_callback(ctx)
+
+        assert result is not None
+        # Text Part survives.
+        text_parts = [p.text for p in result.parts if getattr(p, "text", None)]
+        assert len(text_parts) == 1
+        # No A2UI emission when schema isn't a dict.
+        function_responses = [
+            p.function_response for p in result.parts if getattr(p, "function_response", None) is not None
+        ]
+        assert function_responses == []
+
+
 class TestRunExtraction:
     @pytest.mark.asyncio
     async def test_returns_json_string(self):

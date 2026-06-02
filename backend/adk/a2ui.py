@@ -67,6 +67,13 @@ from pydantic import BaseModel, Field, model_validator
 
 UpdateMode = Literal["replace", "patch"]
 
+# Canonical MIME type for A2UI payloads per the Gemini Enterprise / A2UI
+# integration guide (cloud.google.com/blog/.../guide-to-gemini-enterprise-and-a2ui-integration).
+# Tagged onto every successful tool result alongside `validated_a2ui_json` so
+# clients that route by MIME (A2A DataPart, Gemini Enterprise renderer) can
+# identify the payload without inspecting its shape.
+A2UI_MIME_TYPE = "application/json+a2ui"
+
 
 _CATALOG: A2uiCatalog | None = None
 
@@ -261,16 +268,14 @@ class _SurfaceAwareTool(SendA2uiToClientToolset._SendA2uiJsonToClientTool):
         result = await super().run_async(args=args, tool_context=tool_context)
         if not isinstance(result, dict):
             return result
-        if self._default_surface is None:
-            return result
-        # Only augment successful results — never leak surface onto an error envelope.
+        # Only augment successful results — never leak metadata onto an error envelope.
         if self.VALIDATED_A2UI_JSON_KEY not in result:
             return result
-        return {
-            **result,
-            "surface_id": self._default_surface,
-            "update_mode": self._default_update_mode,
-        }
+        augmented: dict[str, Any] = {**result, "mime_type": A2UI_MIME_TYPE}
+        if self._default_surface is not None:
+            augmented["surface_id"] = self._default_surface
+            augmented["update_mode"] = self._default_update_mode
+        return augmented
 
 
 class SurfaceAwareA2uiToolset(SendA2uiToClientToolset):

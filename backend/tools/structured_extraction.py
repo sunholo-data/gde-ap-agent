@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 from typing import Any
 
 from google import genai
@@ -32,7 +33,12 @@ from google.adk.agents.callback_context import CallbackContext
 from google.genai import types as genai_types
 from jsonschema import Draft202012Validator
 
+from adk.a2ui import A2UI_MIME_TYPE
+from adk.a2ui_card_builder import build_a2ui_card_from_schema
+
 log = logging.getLogger(__name__)
+
+_A2UI_TOOL_NAME = "send_a2ui_json_to_client"
 
 _EXTRACTION_MODEL = os.environ.get("EXTRACTION_MODEL", "gemini-2.5-flash")
 _LARGE_OUTPUT_THRESHOLD = 50_000
@@ -118,16 +124,91 @@ async def structured_extraction_callback(callback_context: CallbackContext) -> A
     else:
         callback_context.state[_STATE_EXTRACTION_RESULT] = result_json
 
-    # Append the validated JSON as the agent's final text message. ADK's
-    # after_agent_callback contract treats a returned Content as an
-    # additional response event — so the AG-UI stream's last
-    # TEXT_MESSAGE_CONTENT is the schema-enforced payload. Downstream
-    # consumers (structured_invocation, ap-validator transfer result)
-    # JSON.parse this directly.
-    return genai_types.Content(
-        role="model",
-        parts=[genai_types.Part.from_text(text=result_json)],
+    # Build the response Content. Two roles to fill:
+    #
+    #   (a) Downstream agents (ap-validator transfer, structured_invocation
+    #       endpoint, session history for the orchestrator's next step)
+    #       need the JSON as a text Part so they can JSON.parse it.
+    #
+    #   (b) The end user needs a rendered Card, not a JSON code block. The
+    #       blog (cloud.google.com/blog/.../guide-to-gemini-enterprise-and-a2ui-integration)
+    #       says "Agent decides whether UI widget or text is appropriate";
+    #       a raw JSON dump is neither. So we synthesise a
+    #       `send_a2ui_json_to_client` tool invocation in this same Content:
+    #       a function_call Part + a matching function_response Part. The
+    #       AG-UI event translator turns these into TOOL_CALL_START /
+    #       TOOL_CALL_END / TOOL_CALL_RESULT, and the frontend's
+    #       MessageBubble routes the result envelope to A2UIRenderer just
+    #       as if a real tool had been called.
+    #
+    # The frontend suppresses the text-Part bubble when an inline A2UI
+    # render is present in the same turn, so the user sees the Card and
+    # downstream code still gets the JSON.
+    parts: list[genai_types.Part] = [genai_types.Part.from_text(text=result_json)]
+
+    a2ui_part_pair = _build_a2ui_emission_parts(schema, result_json, doc_id)
+    if a2ui_part_pair is not None:
+        parts.extend(a2ui_part_pair)
+
+    return genai_types.Content(role="model", parts=parts)
+
+
+def _build_a2ui_emission_parts(
+    schema: Any, result_json: str, doc_id: str
+) -> tuple[genai_types.Part, genai_types.Part] | None:
+    """Synthesise a (function_call, function_response) Part pair for A2UI emission.
+
+    Returns ``None`` when the data can't be rendered (parse failure or
+    schema not a dict). Defensive: a Card-builder failure must never abort
+    the extraction — the downstream JSON is still valid.
+
+    The synthesised function_call/function_response IDs match so AG-UI's
+    event translator pairs TOOL_CALL_END with the TOOL_CALL_RESULT it
+    emits (see ag_ui_adk/event_translator.py:_translate_function_response).
+    """
+    if not isinstance(schema, dict):
+        return None
+    try:
+        data = json.loads(result_json)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    try:
+        a2ui_messages = build_a2ui_card_from_schema(schema=schema, data=data)
+    except Exception as exc:
+        log.warning("structured_extraction: A2UI card build failed for doc %s: %s", doc_id, exc)
+        return None
+
+    # Match the SDK's tool result envelope shape (backend/adk/a2ui.py).
+    # `mime_type` is the canonical A2UI MIME tag from the GE / A2UI guide;
+    # `surface_id="chat"` keeps the Card inline in the chat bubble so the
+    # extraction preview shows in the same place the JSON used to.
+    tool_result = {
+        "validated_a2ui_json": a2ui_messages,
+        "mime_type": A2UI_MIME_TYPE,
+        "surface_id": "chat",
+        "update_mode": "replace",
+    }
+
+    # Stable id so the translator pairs call ↔ response.
+    call_id = uuid.uuid4().hex
+    fc_part = genai_types.Part(
+        function_call=genai_types.FunctionCall(
+            id=call_id,
+            name=_A2UI_TOOL_NAME,
+            args={"a2ui_json": json.dumps(a2ui_messages, ensure_ascii=False)},
+        )
     )
+    fr_part = genai_types.Part(
+        function_response=genai_types.FunctionResponse(
+            id=call_id,
+            name=_A2UI_TOOL_NAME,
+            response=tool_result,
+        )
+    )
+    return fc_part, fr_part
 
 
 def _schema_label(schema: dict | None) -> str:

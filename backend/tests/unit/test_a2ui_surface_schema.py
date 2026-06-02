@@ -59,7 +59,7 @@ def _stub_tool_context() -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_run_async_without_surface_omits_surface_keys():
-    """surface_id=None → result has ONLY validated_a2ui_json (back-compat)."""
+    """surface_id=None → result has validated_a2ui_json + mime_type (no surface keys)."""
     toolset = make_a2ui_toolset()
     tools = await toolset.get_tools(_readonly_ctx_enabled())
     assert len(tools) == 1
@@ -71,8 +71,28 @@ async def test_run_async_without_surface_omits_surface_keys():
     )
 
     assert "validated_a2ui_json" in result
+    # MIME tag is per the Gemini Enterprise / A2UI integration guide and
+    # rides on every successful payload regardless of surface routing.
+    assert result["mime_type"] == "application/json+a2ui"
     assert "surface_id" not in result
     assert "update_mode" not in result
+
+
+@pytest.mark.asyncio
+async def test_run_async_with_surface_includes_mime_and_surface_keys():
+    """Surface routed payloads carry mime_type alongside surface_id/update_mode."""
+    toolset = make_a2ui_toolset(default_surface="workspace")
+    tools = await toolset.get_tools(_readonly_ctx_enabled())
+    tool = tools[0]
+
+    result = await tool.run_async(
+        args={"a2ui_json": _minimal_a2ui_json()},
+        tool_context=_stub_tool_context(),
+    )
+
+    assert result["mime_type"] == "application/json+a2ui"
+    assert result["surface_id"] == "workspace"
+    assert result["update_mode"] == "replace"
 
 
 @pytest.mark.asyncio
@@ -180,9 +200,9 @@ def test_make_a2ui_toolset_rejects_patch_against_chat():
 
 @pytest.mark.asyncio
 async def test_run_async_error_path_preserves_legacy_envelope():
-    """When the underlying tool errors, we do NOT add surface keys; the
-    frontend treats the result as a failure regardless. Confirms we
-    don't leak surface keys onto error payloads."""
+    """When the underlying tool errors, we do NOT add surface keys or MIME
+    tag; the frontend treats the result as a failure regardless. Confirms
+    we don't leak metadata onto error payloads."""
     toolset = make_a2ui_toolset(default_surface="workspace")
     tools = await toolset.get_tools(_readonly_ctx_enabled())
     tool = tools[0]
@@ -192,10 +212,12 @@ async def test_run_async_error_path_preserves_legacy_envelope():
         tool_context=_stub_tool_context(),
     )
     assert "error" in result
-    # surface_id MUST NOT leak onto an error envelope — the frontend
-    # never tries to portal an error spec.
+    # Metadata MUST NOT leak onto an error envelope — the frontend never
+    # tries to portal an error spec, and a MIME tag on an error would
+    # mislead any MIME-routing client.
     assert "surface_id" not in result
     assert "update_mode" not in result
+    assert "mime_type" not in result
 
 
 # === Factory accepts an A2uiToolConfig instance directly ===

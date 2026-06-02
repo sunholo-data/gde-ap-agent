@@ -96,6 +96,36 @@ export function parseA2UIResult(
   }
 }
 
+/**
+ * True when `content` is plausibly just a JSON object/array with no other
+ * prose around it — used to decide whether the text body is redundant
+ * because an inline A2UI Card is rendering the same data. Conservative:
+ * we only suppress text that is unambiguously JSON, never prose that
+ * *contains* a JSON snippet.
+ *
+ * The structured_extraction_callback emits the validated JSON as a text
+ * Part for downstream-agent consumption AND a synthesised A2UI tool call
+ * that renders the same data as a Card. This helper is the bridge
+ * between the two — it lets us keep the text Part on the wire while
+ * hiding the duplicate in the UI.
+ */
+export function isLikelyJsonOnly(content: string): boolean {
+  const trimmed = content.trim();
+  if (trimmed.length === 0) return false;
+  // Cheap structural check first — avoids JSON.parse on every long
+  // prose message in the chat.
+  const startsLikeJson =
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"));
+  if (!startsLikeJson) return false;
+  try {
+    JSON.parse(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function formatTime(): string {
   return new Intl.DateTimeFormat("en", {
     hour: "numeric",
@@ -168,6 +198,18 @@ export const MessageBubble = React.memo(function MessageBubble({
 
     const isAPOrchestrator = skillId === "ap-orchestrator";
 
+    // Suppress the text body when an inline A2UI render is taking over
+    // for the same turn AND the text body is just the JSON payload that
+    // the A2UI Card now renders. Without this, schema-driven skills
+    // (anything with `metadata.extractionSchema`) would show both a JSON
+    // code block AND a Card for the same data — the JSON Part is kept on
+    // the wire so downstream agents can JSON.parse it, but the user only
+    // wants the styled Card. See backend/tools/structured_extraction.py.
+    const hasInlineA2ui = inlineA2uiCalls.length > 0;
+    const textBodyIsRedundantJson =
+      hasInlineA2ui && !!message.content && isLikelyJsonOnly(message.content);
+    const showTextBody = !!message.content && !textBodyIsRedundantJson;
+
     return (
       <div className="flex items-start gap-3">
         <BrandAvatar />
@@ -180,7 +222,7 @@ export const MessageBubble = React.memo(function MessageBubble({
             <APPipelineSteps toolCalls={toolCalls} isStreaming={!!message.content && nonA2uiCalls.some((tc) => tc.status === "running")} />
           )}
           <div className="space-y-2 rounded-[2px_8px_8px_8px] border-l-[3px] border-primary/50 bg-muted/30 px-3 py-2 text-sm">
-            {message.content && (
+            {showTextBody && (
               <ChatMarkdown content={message.content} navigateToBlock={navigateToBlock} />
             )}
             {a2uiCalls.map((tc) => {

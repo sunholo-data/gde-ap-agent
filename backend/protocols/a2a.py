@@ -23,9 +23,9 @@ import logging
 import os
 import time
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, Response
 
 from skills.skill_config import list_marketplace
 
@@ -40,6 +40,56 @@ router = APIRouter()
 # pinning a stale snapshot for more than a minute. list_marketplace()
 # is a Firestore query; 60s is the sweet spot between cost and freshness.
 _CACHE_TTL = 60.0
+
+# A2A extensions this agent supports. Advertised on the card body
+# (`capabilities.extensions`) and echoed in the `X-A2A-Extensions` response
+# header per the Gemini Enterprise / A2UI integration guide. Clients send
+# `X-A2A-Extensions` listing what they can render; the server replies with
+# the intersection so both sides know which pattern/catalog to use.
+#
+# - a2ui-v0.9 — A2UI message protocol, v0.9 wire format
+# - a2ui-basic-catalog-v0.9 — pre-approved BasicCatalog (Card, Text, Button,
+#   Image, Column, Row, Divider, ChoicePicker, …) per a2ui.org spec
+# - a2ui-inline-pattern — component tree with data inlined (createSurface +
+#   updateComponents only); the default GE-compatible pattern
+# - a2ui-decoupled-pattern — component tree + updateDataModel as separate
+#   messages, enabling token-efficient mid-stream data refreshes
+# - a2a-v0.2 — A2A discovery card schema version
+# - mcp-apps-v1 — sandboxed iframe surface for third-party UI artefacts
+SUPPORTED_EXTENSIONS: tuple[str, ...] = (
+    "a2ui-v0.9",
+    "a2ui-basic-catalog-v0.9",
+    "a2ui-inline-pattern",
+    "a2ui-decoupled-pattern",
+    "a2a-v0.2",
+    "mcp-apps-v1",
+)
+
+
+def _parse_client_extensions(header_value: str | None) -> list[str]:
+    """Parse the `X-A2A-Extensions` request header into a clean list.
+
+    Per the integration guide, clients advertise their renderer capabilities
+    as a comma-separated list. We tolerate whitespace and empty entries so
+    a misformatted header doesn't drop the request — discovery must stay
+    permissive.
+    """
+    if not header_value:
+        return []
+    return [tok.strip() for tok in header_value.split(",") if tok.strip()]
+
+
+def _negotiate_extensions(client_extensions: list[str]) -> list[str]:
+    """Return the intersection of client- and server-supported extensions.
+
+    Empty client list (no header) → echo the full server set so clients
+    using the body's `capabilities.extensions` see the same value as the
+    response header. Non-empty client list → intersect, preserving the
+    canonical server order for deterministic test output.
+    """
+    if not client_extensions:
+        return list(SUPPORTED_EXTENSIONS)
+    return [ext for ext in SUPPORTED_EXTENSIONS if ext in client_extensions]
 
 
 def _skill_to_a2a(skill: SkillConfig) -> dict[str, Any]:
@@ -87,6 +137,12 @@ def _build_card(base_url: str) -> dict[str, Any]:
             "streaming": True,
             "pushNotifications": False,
             "stateTransitionHistory": False,
+            # A2A extensions this agent supports. Mirrored in the
+            # `X-A2A-Extensions` response header so a client that does
+            # capability negotiation by header (per the GE / A2UI
+            # integration guide) and a client that reads the card body
+            # see the same set.
+            "extensions": list(SUPPORTED_EXTENSIONS),
         },
         "defaultInputModes": ["text"],
         "defaultOutputModes": ["text"],
@@ -125,11 +181,30 @@ def invalidate_cache() -> None:
 
 
 @router.get("/.well-known/agent.json")
-def agent_card() -> dict[str, Any]:
+def agent_card(
+    response: Response,
+    x_a2a_extensions: Annotated[str | None, Header(alias="X-A2A-Extensions")] = None,
+) -> dict[str, Any]:
     """A2A agent card. Unauthenticated — advertises public skills only.
 
     Private / domain / specific / tagged skills never appear here: the
     `list_marketplace()` query filters on `accessControl.type == "public"`.
+
+    A2UI capability negotiation
+    ---------------------------
+    Per the Gemini Enterprise / A2UI integration guide
+    (cloud.google.com/blog/.../guide-to-gemini-enterprise-and-a2ui-integration),
+    A2A clients advertise renderer capabilities via the `X-A2A-Extensions`
+    request header. We negotiate the intersection with our own
+    `SUPPORTED_EXTENSIONS` and return the result on the response header so
+    the client knows which patterns the agent will emit.
+
+    The `Vary: X-A2A-Extensions` header is set so any HTTP cache between
+    the client and the agent keys responses by capability set instead of
+    serving a stale set to a differently-capable client.
     """
     base_url = os.getenv("PUBLIC_BASE_URL", "http://localhost:1956")
+    negotiated = _negotiate_extensions(_parse_client_extensions(x_a2a_extensions))
+    response.headers["X-A2A-Extensions"] = ", ".join(negotiated)
+    response.headers["Vary"] = "X-A2A-Extensions"
     return _cached_card(base_url, _time_bucket())

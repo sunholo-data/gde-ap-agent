@@ -227,6 +227,18 @@ docs/design/forks/gde-ap-agent/v0.1.0/
 
 ---
 
+## Gemini Enterprise + A2UI Alignment
+
+This submission lines up with every theme in Google's [practitioner's guide to Gemini Enterprise and A2UI integration](https://cloud.google.com/blog/topics/developers-practitioners/guide-to-gemini-enterprise-and-a2ui-integration). The full theme-by-theme map — protocol stack, component catalog, `X-A2A-Extensions` negotiation, MIME tagging, structured widget input, sandboxing — is documented in [`docs/design/forks/gde-ap-agent/v0.1.0/gemini-enterprise-a2ui-alignment.md`](docs/design/forks/gde-ap-agent/v0.1.0/gemini-enterprise-a2ui-alignment.md). Quick verification:
+
+```bash
+# A2A discovery card with capability negotiation
+curl https://gde-ap-agent-blqtqfexwa-ew.a.run.app/.well-known/agent.json \
+  -H 'X-A2A-Extensions: a2ui-v0.9, a2ui-decoupled-pattern' -i
+# → response header echoes the negotiated intersection
+# → body advertises capabilities.extensions with the full supported set
+```
+
 ## Built On
 
 - **[Google ADK](https://github.com/google/adk-python)** — agent orchestration, sub-agent delegation, sessions, artifacts
