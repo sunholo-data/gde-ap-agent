@@ -257,6 +257,7 @@ from skills.routes import router as skills_router  # noqa: E402
 from skills.skill_processor import SkillNotFoundError, process_skill_request  # noqa: E402
 from tools.documents.routes import router as doc_folders_router  # noqa: E402
 from tools.documents.upload import router as documents_router  # noqa: E402
+from tools.gcs_browser.routes import router as gcs_browser_router  # noqa: E402
 from tools.media_utils import router as media_router  # noqa: E402
 
 app.include_router(auth_router)
@@ -266,6 +267,7 @@ app.include_router(buckets_router)
 app.include_router(admin_router)
 app.include_router(documents_router)
 app.include_router(doc_folders_router)
+app.include_router(gcs_browser_router)
 app.include_router(media_router)
 app.include_router(a2a_router)
 app.include_router(models_router)
