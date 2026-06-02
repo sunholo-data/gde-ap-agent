@@ -48,6 +48,15 @@ When forking this repo and deploying to a fresh GCP project, several one-time
 infrastructure steps are needed before chat will work. **Skip any of these
 and the chat path will return HTTP 500** with cryptic Vertex AI errors.
 
+> **The scripts in this section are stopgaps.** The canonical home for these
+> resources is **Terraform in the `multivac-aitana` infrastructure repo** —
+> the `_ENABLE_AGENT_ENGINE`, `_PROJECT_ID`, and `_AP_DEMO_BUCKET` substitutions
+> already flow through `cloudbuild.yaml` from terraform-managed tfvars, and the
+> Reasoning Engine / artifact bucket / demo bucket should follow the same
+> pattern. The shell scripts below let you unblock dev today; promote them
+> to Terraform modules at the next infra-repo PR window. See script header
+> comments for the equivalent Terraform resources.
+
 ### 1. Create the Vertex AI Reasoning Engine
 
 ADK's `VertexAiSessionService` needs a Reasoning Engine to namespace chat
@@ -78,7 +87,25 @@ this, the `--set-secrets=AGENT_ENGINE_ID=AGENT_ENGINE_ID:latest` flag is
 not injected and the deployed service falls back to in-memory sessions
 (chat works, but history is lost on every cold start).
 
-### 3. Build + deploy the MCP App sandbox
+### 3. Create the ADK Artifact Service bucket
+
+ADK's artifact service stores in-session uploads (documents, tool
+outputs that need to survive a turn) in a GCS bucket named via
+`ADK_ARTIFACT_BUCKET`. Without it, every artifact read/write fails
+with `404 ... The specified bucket does not exist.` and the docparse
+skill (along with any flow that touches `load_artifacts`) silently
+returns no content.
+
+```bash
+./scripts/create-artifact-bucket.sh <project-id> <region>
+```
+
+The script is idempotent — re-runs only update IAM. It creates
+`gs://<project-id>-artifacts` in your Cloud Run region with uniform
+bucket-level access + public-access-prevention, and grants the Cloud
+Run SA (`sa-gde-ap-agent@<project-id>`) `roles/storage.objectAdmin`.
+
+### 4. Build + deploy the MCP App sandbox
 
 The MCP App sandbox is a **separate Cloud Run service** that serves
 each widget's HTML from `infrastructure/mcp-sandbox/artefacts/<name>/index.html`.
@@ -99,7 +126,7 @@ deployed image — exactly the "I added it but forgot to redeploy" trap
 that surfaced as an empty Vendor Knowledge Graph in the validator
 Audit View.
 
-### 4. Seed the demo invoices bucket (optional)
+### 5. Seed the demo invoices bucket (optional)
 
 For the Example Invoices sidebar section to populate:
 
@@ -110,7 +137,7 @@ For the Example Invoices sidebar section to populate:
 This uploads 9 sample invoices to the `_AP_DEMO_BUCKET` bucket
 (`gde-ap-agent-demo-invoices` by default).
 
-### 5. Verify everything works
+### 6. Verify everything works
 
 After a deploy, run the verification scripts:
 
@@ -135,6 +162,7 @@ GCP_PROJECT=<project> ./scripts/tail-logs.sh tail    # live stream
 | Chat returns 500, log shows `Invalid ReasoningEngine resource name` | `AGENT_ENGINE_ID` secret is `dummy_value` or missing | Step 1 |
 | Specialists show "Skill does not declare metadata.structuredInput" | Platform seed step skipped existing skills (pre-`fa1d150` builds) | Trigger a fresh deploy — the seed step now refreshes template fields |
 | MCP App iframe (eg. Vendor Knowledge Graph) shows a permanent spinner | Widget file is in the repo but the sandbox image doesn't include it | `make verify-mcp-artefacts` to confirm; `make deploy-mcp-sandbox` to ship |
+| Document load / artifact write fails with `404 ... bucket does not exist` | ADK artifact bucket missing for the project | `make create-artifact-bucket` (Step 3) |
 | Example Invoices section shows "No demo files" | `_AP_DEMO_BUCKET` empty or missing IAM grant for the SA | Step 4, or grant `roles/storage.objectViewer` to the Cloud Run SA |
 | Audit View chips never light up | AG-UI streaming not reaching the frontend | Check CORS + `/api/proxy/*` route in [frontend/src/app/api/proxy/[...path]/route.ts](frontend/src/app/api/proxy/[...path]/route.ts) |
 

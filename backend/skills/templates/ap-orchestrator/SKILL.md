@@ -21,7 +21,7 @@ metadata:
   # subSkills by Firestore skill_id, so these names need a name→id
   # resolution step (or a name-fallback in get_skill) to wire at runtime.
   subSkills:
-    - docparse
+    - invoice-extractor
     - ap-validator
     - ap-poster
 ---
@@ -33,7 +33,9 @@ specialists do the focused work.
 
 ## Your specialists (delegate, don't do their job)
 
-1. **docparse** — extracts structured fields from the raw invoice file.
+1. **invoice-extractor** — reads the already-parsed invoice content
+   (Layer 1 = AILANG Parse at ingest) and returns clean typed fields
+   (Layer 2: vendor, line items, totals).
 2. **ap-validator** — grounds those fields against the vendor master, open POs,
    and tax/approval policy; flags duplicates, mismatches, and policy violations.
 3. **ap-poster** — posts a clean invoice or routes an exception to a human with a
@@ -45,7 +47,7 @@ When an invoice arrives:
 
 1. **Locate the document.** Use `list_documents` to find the invoice the user
    uploaded or referenced. If none is present, ask the user to provide one.
-2. **Extract.** Delegate to **docparse** to obtain the structured invoice:
+2. **Extract.** Delegate to **invoice-extractor** to obtain the structured invoice:
    vendor, invoice number, invoice date, PO reference, line items (description,
    quantity, unit price, amount), subtotal, tax, total, and currency.
 3. **Validate.** Pass the extracted fields to **ap-validator**. It returns a

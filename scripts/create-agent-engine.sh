@@ -11,6 +11,21 @@
 #   1. AGENT_ENGINE_ID secret in Secret Manager is populated with the resource name.
 #   2. Set _ENABLE_AGENT_ENGINE=true in the Cloud Build substitutions (terraform.tfvars).
 #   3. Push to dev — Cloud Build will inject the secret and enable VertexAiSessionService.
+#
+# STOPGAP — promote to Terraform in the multivac-aitana infra repo. The
+# google_vertex_ai_reasoning_engine resource isn't in the Google provider
+# yet (as of Jun 2026), so a `google_cloud_run_v2_job` that wraps this
+# script or a `terraform_data` with a local-exec provisioner is the
+# current pattern. The secret_manager_secret_version write IS native:
+#
+#   resource "google_secret_manager_secret" "agent_engine_id" {
+#     secret_id = "AGENT_ENGINE_ID"
+#     replication { auto {} }
+#   }
+#   resource "google_secret_manager_secret_version" "agent_engine_id" {
+#     secret      = google_secret_manager_secret.agent_engine_id.id
+#     secret_data = "projects/<num>/locations/us-central1/reasoningEngines/<id>"
+#   }
 set -euo pipefail
 
 PROJECT="${1:-multivac-internal-dev}"

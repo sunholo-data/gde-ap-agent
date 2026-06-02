@@ -18,7 +18,10 @@ interface Step {
 
 const STEPS: Step[] = [
   { label: "Intake",   triggers: [] },          // Step 1: always starts active
-  { label: "Extract",  triggers: ["docparse"] },
+  // Extract: accept both the new "invoice-extractor" name and the
+  // legacy "docparse" name so in-flight sessions or older event streams
+  // still light up the right step.
+  { label: "Extract",  triggers: ["invoice_extractor", "invoice-extractor", "docparse"] },
   { label: "Validate", triggers: ["ap_validator", "ap-validator", "validator"] },
   { label: "Post",     triggers: ["ap_poster", "ap-poster", "poster", "route_to_human"] },
 ];

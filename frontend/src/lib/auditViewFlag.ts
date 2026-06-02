@@ -21,10 +21,14 @@ export type SpecialistKey = (typeof SPECIALIST_KEYS)[number];
 
 /** Tool-call name → specialist key. Matches the trigger lists in
  * APPipelineSteps so the chip and pipeline stay in sync.
+ *
+ * The extractor was previously named "docparse"; we still match that
+ * string so in-flight sessions and any older AG-UI event streams keep
+ * lighting up the chip correctly.
  */
 export function specialistKeyForToolName(name: string): SpecialistKey | null {
   const n = name.toLowerCase();
-  if (n.includes("docparse")) return "docparse";
+  if (n.includes("invoice_extractor") || n.includes("invoice-extractor") || n.includes("docparse")) return "docparse";
   if (n.includes("ap_validator") || n.includes("ap-validator") || n.includes("validator")) return "validator";
   if (n.includes("ap_poster") || n.includes("ap-poster") || n.includes("poster")) return "poster";
   return null;

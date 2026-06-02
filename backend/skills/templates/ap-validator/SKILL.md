@@ -23,7 +23,7 @@ metadata:
     ai_search:
       datastore_id: ds-ap-vendors
   # Audit-View "Run Standalone": auditor supplies a pre-extracted invoice
-  # (typically loaded from the last docparse run). See
+  # (typically loaded from the last invoice-extractor run). See
   # docs/design/forks/gde-ap-agent/multi-agent-inspector-ux.md
   structuredInput:
     type: object
@@ -96,5 +96,5 @@ Return a verdict object:
   suspicion is `needs_review` with `detail: "could not ground"`, never a `pass`.
 - **Fail toward review.** If the knowledge base can't confirm a check, that is
   `needs_review`, not `pass`. Absence of evidence is not approval.
-- **Don't extract or post.** You validate. Extraction is docparse's job; the
+- **Don't extract or post.** You validate. Extraction is invoice-extractor's job; the
   posting/escalation action is ap-poster's.

@@ -88,6 +88,9 @@ deploy-mcp-sandbox:
 verify-mcp-artefacts:
 	@./scripts/verify-mcp-artefacts.sh
 
+create-artifact-bucket:
+	@./scripts/create-artifact-bucket.sh
+
 cli-selftest:
 	@echo "▶ mock smoke …"
 	@$(MAKE) --no-print-directory cli-selftest-mock
@@ -115,3 +118,4 @@ help:
 	@echo "make tail-logs            — recent backend errors (set GCP_PROJECT + ARGS for filters)"
 	@echo "make verify-mcp-artefacts — check each MCP App widget is reachable on the deployed sandbox"
 	@echo "make deploy-mcp-sandbox   — rebuild + redeploy the MCP sandbox (run after adding a widget)"
+	@echo "make create-artifact-bucket — create the ADK artifact GCS bucket + grant SA write access"

@@ -67,9 +67,9 @@ const META: Record<string, SkillMeta> = {
     role: "hub",
   },
   docparse: {
-    tagline: "Document Parser",
+    tagline: "Invoice Extractor",
     description:
-      "Extracts structured data from invoices: vendor, line items, tax, GL codes. Feeds clean JSON to the Validator.",
+      "Reads already-parsed invoice content (parsing happens at ingest) and extracts typed business fields: vendor, line items, tax, GL codes. Feeds clean JSON to the Validator.",
     isEntryPoint: false,
     icon: <DocParseIcon />,
     role: "specialist",
@@ -95,7 +95,15 @@ const META: Record<string, SkillMeta> = {
 function matchKey(skill: Skill): string | null {
   const id = [skill.slug, skill.name, skill.skillId].filter(Boolean).join(" ").toLowerCase();
   if (id.includes("orchestrator")) return "orchestrator";
-  if (id.includes("docparse") || id.includes("doc-parse") || id.includes("doc_parse")) return "docparse";
+  // Accept both new (invoice-extractor) and legacy (docparse) names so
+  // a partial re-seed or in-flight session still resolves the meta.
+  if (
+    id.includes("invoice-extractor") ||
+    id.includes("invoice_extractor") ||
+    id.includes("docparse") ||
+    id.includes("doc-parse") ||
+    id.includes("doc_parse")
+  ) return "docparse";
   if (id.includes("validator")) return "validator";
   if (id.includes("poster")) return "poster";
   return null;
