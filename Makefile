@@ -91,6 +91,9 @@ verify-mcp-artefacts:
 create-artifact-bucket:
 	@./scripts/create-artifact-bucket.sh
 
+create-logs-bucket:
+	@./scripts/create-logs-bucket.sh
+
 create-search-datastore:
 	@./scripts/create-search-datastore.sh
 
@@ -125,5 +128,6 @@ help:
 	@echo "make verify-mcp-artefacts — check each MCP App widget is reachable on the deployed sandbox"
 	@echo "make deploy-mcp-sandbox   — rebuild + redeploy the MCP sandbox (run after adding a widget)"
 	@echo "make create-artifact-bucket — create the ADK artifact GCS bucket + grant SA write access"
+	@echo "make create-logs-bucket     — create the OTEL GenAI completions bucket + grant SA write"
 	@echo "make create-search-datastore — create the AP-validator Vertex AI Search datastore (eu)"
 	@echo "make load-vendor-master     — import demo vendors/POs/policies into the datastore"

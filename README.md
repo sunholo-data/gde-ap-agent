@@ -211,6 +211,7 @@ GCP_PROJECT=<project> ./scripts/tail-logs.sh tail    # live stream
 | Specialists show "Skill does not declare metadata.structuredInput" | Platform seed step skipped existing skills (pre-`fa1d150` builds) | Trigger a fresh deploy — the seed step now refreshes template fields |
 | MCP App iframe (eg. Vendor Knowledge Graph) shows a permanent spinner | Widget file is in the repo but the sandbox image doesn't include it | `make verify-mcp-artefacts` to confirm; `make deploy-mcp-sandbox` to ship |
 | Document load / artifact write fails with `404 ... bucket does not exist` | ADK artifact bucket missing for the project | `make create-artifact-bucket` (Step 3) |
+| OTEL `FileNotFoundError: ...aitana-v6-logs/o?name=completions/...` floods logs | OTEL GenAI completion-hook bucket missing | `make create-logs-bucket` |
 | AP Validator returns `400 INVALID_ARGUMENT ... Invalid Vertex AI datastore resource name` | Vertex AI Search datastore missing | `make create-search-datastore` (Step 5) |
 | Example Invoices section shows "No demo files" | `_AP_DEMO_BUCKET` empty or missing IAM grant for the SA | Step 4, or grant `roles/storage.objectViewer` to the Cloud Run SA |
 | Audit View chips never light up | AG-UI streaming not reaching the frontend | Check CORS + `/api/proxy/*` route in [frontend/src/app/api/proxy/[...path]/route.ts](frontend/src/app/api/proxy/[...path]/route.ts) |
