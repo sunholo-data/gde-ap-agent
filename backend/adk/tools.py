@@ -74,8 +74,24 @@ async def list_documents(
             limit=effective_limit,
         )
     except Exception as exc:
-        logger.warning("list_documents: Firestore query failed: %s", exc)
-        return f"Could not retrieve documents: {exc}"
+        # Structured failure surfacing: bland "Could not retrieve documents"
+        # gets paraphrased away by the LLM into a misleading "no documents
+        # found" response. The [TOOL_ERROR] prefix is a convention the
+        # specialist SKILL.md files relay verbatim so the user sees the
+        # actual root cause in the chat (eg. missing Firestore index,
+        # permission denied) rather than a hung "thinking…" indicator.
+        logger.warning(
+            "list_documents.failed user_id=%s skill_id=%s exc_type=%s msg=%s",
+            user_id or "anonymous",
+            skill_id or "all",
+            type(exc).__name__,
+            exc,
+        )
+        return (
+            f"[TOOL_ERROR] list_documents failed ({type(exc).__name__}): {exc}. "
+            "Report this error to the user verbatim — do NOT claim there are no "
+            "documents available."
+        )
 
     if not docs:
         return "No documents found in the workspace."
@@ -115,8 +131,18 @@ async def get_document_content(
     except KeyError:
         return f"Document '{doc_id}' not found. Use list_documents to see available documents."
     except Exception as exc:
-        logger.warning("get_document_content failed for %s: %s", doc_id, exc)
-        return f"Could not load document '{doc_id}': {exc}"
+        logger.warning(
+            "get_document_content.failed doc_id=%s mode=%s exc_type=%s msg=%s",
+            doc_id,
+            mode,
+            type(exc).__name__,
+            exc,
+        )
+        return (
+            f"[TOOL_ERROR] get_document_content failed for doc {doc_id!r} "
+            f"({type(exc).__name__}): {exc}. Report this error to the user "
+            "verbatim — do NOT fabricate document content."
+        )
 
     if mode == "blocks" and blocks is not None and tool_context is not None:
         # Populate session state so structured_extraction_callback can consume blocks

@@ -151,3 +151,11 @@ output the user sees.
   fields + a validation reason + a source citation.
 - **Escalate on doubt.** When in doubt between posting and escalating, escalate.
   A human reviewing a clean invoice is cheap; a wrongly-posted one is not.
+- **Relay `[TOOL_ERROR]` results verbatim.** If `list_documents`,
+  `get_document_content`, or a sub-agent transfer returns a string
+  starting with `[TOOL_ERROR]`, your final text response must include
+  that error message word-for-word. Do NOT paraphrase it into "no
+  documents found" or "I'll try again" — the user needs to see the
+  underlying cause (missing Firestore index, permission denied,
+  upstream parse failure) so they can act. Skip the Invoice Review
+  Card in this case; the chat text IS the audit trail for the error.
