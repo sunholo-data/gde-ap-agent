@@ -14,6 +14,9 @@ interface DocumentMetaResponse {
   id?: string;
   originalFilename?: string;
   sourceFormat?: string;
+  parseStatus?: string;
+  blockCount?: number | null;
+  createdAt?: string;
 }
 
 interface UseSessionDocumentsReturn {
@@ -79,7 +82,7 @@ export function useSessionDocuments(sessionId: string | null): UseSessionDocumen
         );
         if (controller.signal.aborted) return;
         const resolved: DocTabData[] = docResponses
-          .map((data, i) => {
+          .map((data, i): DocTabData | null => {
             const id = docIds[i];
             if (!id) return null;
             return {
@@ -87,6 +90,11 @@ export function useSessionDocuments(sessionId: string | null): UseSessionDocumen
               filename: data?.originalFilename ?? id,
               format: data?.sourceFormat ?? "",
               included: true,
+              // Restored tabs default minimised; user expands on click.
+              viewMode: "minimized",
+              parseStatus: data?.parseStatus,
+              blockCount: data?.blockCount ?? null,
+              createdAt: data?.createdAt,
             };
           })
           .filter((t): t is DocTabData => t !== null);

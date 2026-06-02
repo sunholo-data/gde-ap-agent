@@ -5,9 +5,9 @@ import type { DocTabData } from "../DocTab";
 import { DocTabsBar } from "../DocTabsBar";
 
 const tabs: DocTabData[] = [
-  { id: "d1", filename: "alpha.docx", format: "docx", included: true },
-  { id: "d2", filename: "beta.pdf", format: "pdf", included: true },
-  { id: "d3", filename: "gamma.xlsx", format: "xlsx", included: true },
+  { id: "d1", filename: "alpha.docx", format: "docx", included: true, viewMode: "minimized" },
+  { id: "d2", filename: "beta.pdf", format: "pdf", included: true, viewMode: "minimized" },
+  { id: "d3", filename: "gamma.xlsx", format: "xlsx", included: true, viewMode: "minimized" },
 ];
 
 function renderBar(overrides: Partial<Parameters<typeof DocTabsBar>[0]> = {}) {
@@ -19,6 +19,7 @@ function renderBar(overrides: Partial<Parameters<typeof DocTabsBar>[0]> = {}) {
     onClose: vi.fn(),
     onToggleInclude: vi.fn(),
     onToggleBrowser: vi.fn(),
+    onSetViewMode: vi.fn(),
     ...overrides,
   };
   return { ...render(<DocTabsBar {...props} />), props };

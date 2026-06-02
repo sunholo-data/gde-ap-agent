@@ -96,12 +96,20 @@ describe("useSessionDocuments — route hydration into doc tabs", () => {
         filename: "VOLUNTEERS for the show.docx",
         format: "docx",
         included: true,
+        viewMode: "minimized",
+        parseStatus: undefined,
+        blockCount: null,
+        createdAt: undefined,
       },
       {
         id: "doc-claim",
         filename: "claim_incident_summary.docx",
         format: "docx",
         included: true,
+        viewMode: "minimized",
+        parseStatus: undefined,
+        blockCount: null,
+        createdAt: undefined,
       },
     ]);
   });
@@ -126,6 +134,10 @@ describe("useSessionDocuments — route hydration into doc tabs", () => {
       filename: "Readable.docx",
       format: "docx",
       included: true,
+      viewMode: "minimized",
+      parseStatus: undefined,
+      blockCount: null,
+      createdAt: undefined,
     });
     // The missing doc still produces a tab so the user knows it WAS
     // attached to this thread; ``included: true`` keeps the contract.

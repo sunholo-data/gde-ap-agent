@@ -4,7 +4,7 @@ import { computeIncludedDocIds } from "@/lib/docContext";
 import type { DocTabData } from "@/components/doc-browser/DocTab";
 
 function tab(id: string, included: boolean): DocTabData {
-  return { id, filename: `${id}.docx`, format: "docx", included };
+  return { id, filename: `${id}.docx`, format: "docx", included, viewMode: "minimized" };
 }
 
 describe("computeIncludedDocIds (multi-doc-context-fix 1.22 D2)", () => {

@@ -57,9 +57,9 @@ const DOCS_F3: ParsedDocument[] = [
 const ALL_DOCS: Record<string, ParsedDocument[]> = { f1: DOCS_F1, f2: DOCS_F2, f3: DOCS_F3 };
 
 const INITIAL_TABS: DocTabData[] = [
-  { id: "d1", filename: "Q1-Executive-Summary.docx", format: "docx", included: true },
-  { id: "d6", filename: "Roadmap-2026-H1.md", format: "md", included: true },
-  { id: "d7", filename: "Feature-Priorities.csv", format: "csv", included: true },
+  { id: "d1", filename: "Q1-Executive-Summary.docx", format: "docx", included: true, viewMode: "minimized" },
+  { id: "d6", filename: "Roadmap-2026-H1.md", format: "md", included: true, viewMode: "minimized" },
+  { id: "d7", filename: "Feature-Priorities.csv", format: "csv", included: true, viewMode: "minimized" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -102,7 +102,7 @@ export default function FileBrowserDevPage() {
       if (prev.find((t) => t.id === doc.id)) return prev;
       return [
         ...prev,
-        { id: doc.id, filename: doc.originalFilename, format: doc.sourceFormat, included: true },
+        { id: doc.id, filename: doc.originalFilename, format: doc.sourceFormat, included: true, viewMode: "minimized" },
       ];
     });
     setActiveTabId(doc.id);
@@ -156,6 +156,10 @@ export default function FileBrowserDevPage() {
               onClose={handleTabClose}
               onToggleInclude={handleTabToggleInclude}
               onToggleBrowser={() => { setShowBrowser((v) => !v); logEvent("Toggled browser"); }}
+              onSetViewMode={(id, mode) => {
+                setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, viewMode: mode } : t)));
+                logEvent(`Tab ${id} → ${mode}`);
+              }}
             />
             <div className="p-3 text-xs text-muted-foreground">
               Active tab: <strong>{activeTabId || "none"}</strong> · Browser visible: <strong>{String(showBrowser)}</strong> · {tabs.length} open tab(s)
@@ -169,14 +173,14 @@ export default function FileBrowserDevPage() {
         {/* ================================================================ */}
         <Section title="2 — DocTab variants">
           <div className="flex flex-wrap gap-2">
-            {[
-              { id: "t1", filename: "Executive-Summary.docx", format: "docx", included: true },
-              { id: "t2", filename: "Budget-Model.xlsx", format: "xlsx", included: true },
-              { id: "t3", filename: "Investor-Deck.pptx", format: "pptx", included: false },
-              { id: "t4", filename: "Audit-Report.pdf", format: "pdf", included: true },
-              { id: "t5", filename: "README.md", format: "md", included: true },
-              { id: "t6", filename: "Data-Export.csv", format: "csv", included: true },
-            ].map((tab, i) => (
+            {([
+              { id: "t1", filename: "Executive-Summary.docx", format: "docx", included: true, viewMode: "minimized" },
+              { id: "t2", filename: "Budget-Model.xlsx", format: "xlsx", included: true, viewMode: "minimized" },
+              { id: "t3", filename: "Investor-Deck.pptx", format: "pptx", included: false, viewMode: "minimized" },
+              { id: "t4", filename: "Audit-Report.pdf", format: "pdf", included: true, viewMode: "minimized" },
+              { id: "t5", filename: "README.md", format: "md", included: true, viewMode: "minimized" },
+              { id: "t6", filename: "Data-Export.csv", format: "csv", included: true, viewMode: "minimized" },
+            ] satisfies DocTabData[]).map((tab, i) => (
               <DocTab
                 key={tab.id}
                 tab={tab}
@@ -184,6 +188,7 @@ export default function FileBrowserDevPage() {
                 onSelect={(id) => logEvent(`Tab selected: ${id}`)}
                 onClose={(id) => logEvent(`Tab closed: ${id}`)}
                 onToggleInclude={(id) => logEvent(`Toggled include: ${id}`)}
+                onSetViewMode={(id, mode) => logEvent(`Tab ${id} → ${mode}`)}
               />
             ))}
           </div>
@@ -312,6 +317,9 @@ export default function FileBrowserDevPage() {
                 onClose={handleTabClose}
                 onToggleInclude={handleTabToggleInclude}
                 onToggleBrowser={() => setShowBrowser((v) => !v)}
+                onSetViewMode={(id, mode) =>
+                  setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, viewMode: mode } : t)))
+                }
               />
               <div className="flex-1 p-4 text-xs text-muted-foreground">
                 {activeTabId ? (

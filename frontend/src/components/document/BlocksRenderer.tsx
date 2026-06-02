@@ -39,12 +39,21 @@ const HEADING_STYLE_LEVEL: Record<string, number> = {
 };
 
 function headingClass(level: number): string {
+  // scroll-margin gives anchor-jump some breathing room beneath the doc toolbar.
+  const base = "scroll-mt-12";
   switch (level) {
-    case 1: return "mt-4 mb-2 text-xl font-semibold tracking-tight";
-    case 2: return "mt-3 mb-1.5 text-lg font-semibold";
-    case 3: return "mt-2 mb-1 text-base font-semibold";
-    case 4: return "mt-2 mb-1 text-sm font-semibold";
-    default: return "mt-1.5 mb-0.5 text-sm font-medium";
+    case 1:
+      return `${base} mt-6 mb-3 border-b border-border/60 pb-1.5 text-2xl font-bold tracking-tight text-foreground`;
+    case 2:
+      return `${base} mt-5 mb-2 text-xl font-semibold tracking-tight text-foreground`;
+    case 3:
+      return `${base} mt-4 mb-1.5 text-lg font-semibold text-foreground/90`;
+    case 4:
+      return `${base} mt-3 mb-1 text-base font-semibold text-foreground/85`;
+    case 5:
+      return `${base} mt-2 mb-0.5 text-sm font-semibold uppercase tracking-wide text-muted-foreground`;
+    default:
+      return `${base} mt-2 mb-0.5 text-xs font-medium uppercase tracking-wider text-muted-foreground`;
   }
 }
 
@@ -66,29 +75,50 @@ function renderText(b: Block): ReactNode {
   if (headingLevel) return renderHeading(headingLevel, text);
 
   if (b.style === "abstract") {
-    return <p className="my-2 italic text-sm text-muted-foreground border-l-2 border-muted pl-3">{text}</p>;
+    return (
+      <blockquote className="my-3 rounded-r border-l-4 border-primary/40 bg-primary/5 py-2 pl-4 pr-3 italic text-sm leading-relaxed text-muted-foreground">
+        {text}
+      </blockquote>
+    );
   }
   if (b.style === "bibitem") {
-    return <p className="my-1 text-xs text-muted-foreground pl-4 -indent-4">{text}</p>;
+    return <p className="my-1 pl-6 -indent-6 text-xs leading-snug text-muted-foreground">{text}</p>;
   }
   if (b.style === "equation" || b.style === "equation-display") {
-    return <pre className="my-2 px-3 py-2 bg-muted/50 rounded text-xs font-mono whitespace-pre-wrap">{text}</pre>;
+    return (
+      <pre className="my-3 overflow-x-auto rounded-md border border-border/60 bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">
+        {text}
+      </pre>
+    );
+  }
+  if (b.style === "code" || b.style === "code-block") {
+    return (
+      <pre className="my-3 overflow-x-auto rounded-md bg-zinc-900 px-3 py-2 font-mono text-xs leading-relaxed text-zinc-100">
+        {text}
+      </pre>
+    );
+  }
+  if (b.style === "caption") {
+    return <p className="my-1 text-center text-xs italic text-muted-foreground">{text}</p>;
   }
   if (!text.trim()) return null;
-  return <p className="my-1 text-sm leading-relaxed">{text}</p>;
+  return <p className="my-2 text-sm leading-relaxed text-foreground/90">{text}</p>;
 }
 
 function renderTable(b: Block): ReactNode {
   const headers = b.headers ?? [];
   const rows = b.rows ?? [];
   return (
-    <div className="my-2 overflow-x-auto">
-      <table className="w-full text-xs border-collapse">
+    <div className="my-3 overflow-x-auto rounded-md border border-border/60 shadow-sm">
+      <table className="w-full border-collapse text-xs">
         {headers.length > 0 && (
-          <thead>
-            <tr className="bg-muted/50">
+          <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
+            <tr>
               {headers.map((h, i) => (
-                <th key={i} className="border px-2 py-1 text-left font-semibold">
+                <th
+                  key={i}
+                  className="border-b border-border/70 px-2.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-foreground/80"
+                >
                   {h.text ?? ""}
                 </th>
               ))}
@@ -97,9 +127,15 @@ function renderTable(b: Block): ReactNode {
         )}
         <tbody>
           {rows.map((row, ri) => (
-            <tr key={ri} className="border-b last:border-b-0">
+            <tr
+              key={ri}
+              className={[
+                "border-b border-border/30 last:border-b-0 transition-colors hover:bg-accent/40",
+                ri % 2 === 1 ? "bg-muted/20" : "",
+              ].join(" ")}
+            >
               {(row.cells ?? []).map((c, ci) => (
-                <td key={ci} className="border px-2 py-1 align-top">
+                <td key={ci} className="px-2.5 py-1.5 align-top text-foreground/90">
                   {c.text ?? ""}
                 </td>
               ))}
@@ -113,32 +149,52 @@ function renderTable(b: Block): ReactNode {
 
 function renderList(b: Block): ReactNode {
   const items = b.items ?? [];
-  const cls = "my-1 pl-5 text-sm space-y-0.5";
+  const cls = "my-2 pl-6 text-sm space-y-1 text-foreground/90 leading-relaxed";
   if (b.ordered) {
-    return <ol className={`${cls} list-decimal`}>{items.map((it, i) => <li key={i}>{it}</li>)}</ol>;
+    return (
+      <ol className={`${cls} list-decimal marker:text-muted-foreground`}>
+        {items.map((it, i) => <li key={i}>{it}</li>)}
+      </ol>
+    );
   }
-  return <ul className={`${cls} list-disc`}>{items.map((it, i) => <li key={i}>{it}</li>)}</ul>;
+  return (
+    <ul className={`${cls} list-disc marker:text-primary/60`}>
+      {items.map((it, i) => <li key={i}>{it}</li>)}
+    </ul>
+  );
 }
 
 function renderChange(b: Block): ReactNode {
   const isDelete = b.change_type === "deletion" || b.change_type === "delete";
-  const cls = isDelete
-    ? "bg-red-50 text-red-700 line-through px-1 rounded"
-    : "bg-green-50 text-green-800 px-1 rounded";
+  const wrapperCls = isDelete
+    ? "bg-rose-50 text-rose-700 line-through"
+    : "bg-emerald-50 text-emerald-700";
+  const label = isDelete ? "deleted" : "inserted";
   return (
-    <span className={`text-sm ${cls}`}>
-      {b.text}
-      {b.author && <em className="ml-1 text-[10px] opacity-70 not-italic">— {b.author}</em>}
+    <span className={`inline-flex items-baseline gap-1.5 rounded px-1.5 py-0.5 text-sm ${wrapperCls}`}>
+      <span>{b.text}</span>
+      <span className="rounded bg-white/70 px-1 py-px text-[9px] font-medium uppercase tracking-wide opacity-80">
+        {label}
+        {b.author && ` · ${b.author}`}
+      </span>
     </span>
   );
 }
 
 function renderImage(b: Block): ReactNode {
-  const label = b.description || b.mime || "embedded";
+  const label = b.description || b.transcription || "embedded image";
   return (
-    <div className="my-2 px-3 py-2 bg-muted/30 rounded text-xs italic text-muted-foreground">
-      [Image: {label}]
-    </div>
+    <figure className="my-3 rounded-md border border-dashed border-border/60 bg-muted/30 px-3 py-3">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <svg className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+          <rect x="2" y="3" width="12" height="10" rx="1" />
+          <circle cx="6" cy="7" r="1.2" />
+          <path d="M2.5 12l3.5-3 3 2.5 2-1.5 2.5 2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="italic">{label}</span>
+        {b.mime && <span className="rounded bg-background px-1 py-px text-[10px] font-mono">{b.mime}</span>}
+      </div>
+    </figure>
   );
 }
 
@@ -158,8 +214,12 @@ function renderBlock(b: Block, key: number): ReactNode {
       return <div key={key}>{renderImage(b)}</div>;
     case "section":
       return (
-        <section key={key} className="my-2">
-          {b.kind && <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{b.kind}</div>}
+        <section key={key} className="my-3 first:mt-0">
+          {b.kind && (
+            <div className="mb-1 inline-block rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {b.kind}
+            </div>
+          )}
           {(b.children ?? []).map((c, i) => renderBlock(c, i))}
         </section>
       );
@@ -167,7 +227,7 @@ function renderBlock(b: Block, key: number): ReactNode {
       if (b.children?.length) {
         return <div key={key}>{b.children.map((c, i) => renderBlock(c, i))}</div>;
       }
-      if (b.text) return <p key={key} className="my-1 text-sm">{b.text}</p>;
+      if (b.text) return <p key={key} className="my-2 text-sm leading-relaxed text-foreground/90">{b.text}</p>;
       return null;
   }
 }
@@ -178,7 +238,7 @@ interface BlocksRendererProps {
 
 export function BlocksRenderer({ blocks }: BlocksRendererProps) {
   return (
-    <div className="space-y-1">
+    <div className="mx-auto max-w-3xl space-y-1 px-1 py-2 text-foreground">
       {blocks.map((b, i) => renderBlock(b, i))}
     </div>
   );

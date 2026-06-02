@@ -3,7 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { DocTab, type DocTabData } from "../DocTab";
 
-const tab: DocTabData = { id: "doc1", filename: "report.docx", format: "docx", included: true };
+const tab: DocTabData = {
+  id: "doc1",
+  filename: "report.docx",
+  format: "docx",
+  included: true,
+  viewMode: "minimized",
+};
 
 function renderTab(overrides: Partial<Parameters<typeof DocTab>[0]> = {}) {
   const props = {
@@ -12,6 +18,7 @@ function renderTab(overrides: Partial<Parameters<typeof DocTab>[0]> = {}) {
     onSelect: vi.fn(),
     onClose: vi.fn(),
     onToggleInclude: vi.fn(),
+    onSetViewMode: vi.fn(),
     ...overrides,
   };
   return { ...render(<DocTab {...props} />), props };
