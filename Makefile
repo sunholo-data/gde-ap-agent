@@ -73,6 +73,12 @@ cli-selftest-live:
 # Combined self-test: mock smoke (always runs), then live smoke (skipped
 # cleanly if backend or auth missing). Single command for "is the CLI
 # wired up correctly" — the entry point future agents/teammates use.
+verify-audit-view:
+	@./scripts/test-audit-view.sh
+
+verify-skill-schemas:
+	@./scripts/verify-skill-schemas.sh
+
 cli-selftest:
 	@echo "▶ mock smoke …"
 	@$(MAKE) --no-print-directory cli-selftest-mock
@@ -94,3 +100,6 @@ help:
 	@echo "make cli-selftest       — run mock + live smokes (live skips cleanly if no backend)"
 	@echo "make cli-selftest-mock  — offline end-to-end (real binary, mock SSE backend)"
 	@echo "make cli-selftest-live  — diagnostic against running \`make dev\` backend"
+	@echo
+	@echo "make verify-skill-schemas — assert deployed platform skills declare structuredInput"
+	@echo "make verify-audit-view    — full audit-view verification (schemas + Run-Standalone probe)"

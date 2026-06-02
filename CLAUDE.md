@@ -235,6 +235,8 @@ Any local workflow that requires more than one manual step — setting env vars,
 | **Backend pre-push CI parity (lint + format + tests)** | `cd backend && make lint && make test-fast` |
 | Install the `aiplatform` CLI globally | `make cli-install` |
 | Verify the `aiplatform` CLI works end-to-end | `make cli-selftest` |
+| Verify deployed platform skills declare structuredInput | `make verify-skill-schemas` |
+| Full audit-view verification against a live deploy | `AIPLATFORM_ID_TOKEN=<token> make verify-audit-view` |
 
 When adding a new workflow, add it to `scripts/` and the root `Makefile` in the same PR.
 
