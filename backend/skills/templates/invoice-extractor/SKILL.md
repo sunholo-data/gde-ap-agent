@@ -20,6 +20,14 @@ metadata:
   tools:
     - list_documents
     - get_document_content
+  # SCHEMA-ENFORCE: declare the output contract. Wired into session
+  # state by adk/agent.py::_set_extraction_schema_in_state; the
+  # structured_extraction_callback fires after the agent run, calls
+  # Gemini with response_format constrained to this schema, validates
+  # via Draft 2020-12, and APPENDS the validated JSON as the final
+  # TEXT_MESSAGE in the agent response. See
+  # docs/design/forks/gde-ap-agent/schema-enforced-extraction.md
+  extractionSchema: ap_invoice
   # Audit-View "Run Standalone": frontend renders this as a typed form,
   # backend validates the body before invoking the agent. See
   # docs/design/forks/gde-ap-agent/multi-agent-inspector-ux.md

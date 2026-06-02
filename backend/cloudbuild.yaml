@@ -88,6 +88,7 @@ steps:
       # /api/admin/seed-platform-skills from the seed step below).
       - '--set-env-vars=ADMIN_SEED_ALLOWED_SAS=${_ADMIN_SEED_ALLOWED_SAS}'
       - '--set-env-vars=DATASTORE_LOCATION=eu'
+      - '--set-env-vars=EXTRACTION_MODEL=gemini-3.5-flash'
 
   # --- Post-deploy smoke: standalone backend is IAM-protected, so use an
   # identity token from the Cloud Build SA. Cloud Build SA needs run.invoker

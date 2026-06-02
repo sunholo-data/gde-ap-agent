@@ -65,6 +65,7 @@ from auth.access_context import AccessContext
 from auth.firebase_auth import User
 from db.models import SkillConfig
 from skills.skill_config import find_by_name, get_skill
+from tools.schemas import resolve_schema_ref
 from tools.structured_extraction import structured_extraction_callback
 
 logger = logging.getLogger(__name__)
@@ -249,6 +250,50 @@ def _resolve_code_executor(
 # --- Agent factory ---
 
 
+def _resolve_extraction_schema_for_skill(skill_config: SkillConfig) -> dict | None:
+    """Resolve `metadata.extraction_schema` (named ref or inline) to a dict.
+
+    SCHEMA-ENFORCE sprint: called once at agent build time for each skill.
+    Unknown named references log a warning and resolve to None — the skill
+    still works, the after-agent extraction step just no-ops on that run.
+    Lets a fork ship a typo'd SKILL.md without taking the whole agent down.
+    """
+    value = skill_config.skill_metadata.extraction_schema if skill_config.skill_metadata else None
+    if value is None:
+        return None
+    try:
+        return resolve_schema_ref(value)
+    except ValueError as exc:
+        logger.warning(
+            "schema-enforce: skill=%s extraction_schema=%r unresolved (%s); "
+            "extraction will no-op for this skill until SKILL.md is corrected",
+            skill_config.skill_id,
+            value,
+            exc,
+        )
+        return None
+
+
+def _set_extraction_schema_in_state(callback_context: object, schema: dict | None) -> None:
+    """Before-agent callback: write the resolved schema into session state.
+
+    The structured_extraction_callback (existing, fires after every agent
+    run) reads from app:extraction_schema and runs Gemini's constrained
+    decoding when present. Writing here means each agent's run starts with
+    the right schema in state — sub-agents transferred to inherit it
+    automatically, and skills without an extraction_schema land None
+    (the callback treats falsy as "no enforcement").
+    """
+    state = getattr(callback_context, "state", None)
+    if state is None:
+        return
+    # Always assign — schema=None overrides any inherited value from a
+    # previous skill in the same session (defensive: prevents the
+    # invoice-extractor's ap_invoice from leaking into the orchestrator's
+    # response when the orchestrator runs without its own schema).
+    state["app:extraction_schema"] = schema
+
+
 def create_agent(
     skill_config: SkillConfig,
     user: User,
@@ -344,6 +389,10 @@ def create_agent(
     _session_tracker = make_session_tracker(user.uid, skill_config.skill_id)
     _document_loader = make_document_loader()
     _document_injector = make_document_injector()
+    # SCHEMA-ENFORCE: resolve metadata.extraction_schema (name or inline dict)
+    # once at agent build time and write into session state on every run start.
+    # When None, the structured_extraction_callback after-agent step no-ops.
+    _resolved_extraction_schema = _resolve_extraction_schema_for_skill(skill_config)
 
     async def _composed_before_agent(callback_context: object) -> None:
         # TTFT mark: ADK has finished its runner setup and is now invoking
@@ -357,6 +406,7 @@ def create_agent(
 
         _before_agent(callback_context)
         _session_tracker(callback_context)
+        _set_extraction_schema_in_state(callback_context, _resolved_extraction_schema)
         await _document_loader(callback_context)
 
         # TTFT: mark the end of the synchronous before-agent chain. Show

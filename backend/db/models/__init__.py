@@ -45,6 +45,13 @@ class SkillMetadata(BaseModel):
     # POST /api/skill/{skill_id}/structured. None when the skill doesn't
     # expose a standalone-invocation form (eg. the orchestrator).
     structured_input: dict | None = Field(default=None, alias="structuredInput")
+    # SCHEMA-ENFORCE: optional schema constraining the agent's OUTPUT.
+    # Accepts either a named reference (resolved against tools/schemas/SCHEMAS,
+    # eg. "ap_invoice") OR an inline JSON Schema dict. Wired into session
+    # state by before_agent_extraction_schema_setter, enforced via
+    # Gemini's constrained-decoding + Draft 2020-12 validation in
+    # structured_extraction_callback. None = no enforcement.
+    extraction_schema: str | dict | None = Field(default=None, alias="extractionSchema")
 
     model_config = {"populate_by_name": True}
 

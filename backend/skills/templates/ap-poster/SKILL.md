@@ -20,6 +20,11 @@ metadata:
     #   mcp:
     #     servers:
     #       - ext-ap-erp
+  # SCHEMA-ENFORCE: output contract for the poster's action record.
+  # Flat enum + if/then/else (Gemini constrained decoding doesn't support
+  # oneOf; server-side Draft 2020-12 enforces the conditional). See
+  # docs/design/forks/gde-ap-agent/schema-enforced-extraction.md.
+  extractionSchema: ap_posting_record
   # Audit-View "Run Standalone": auditor supplies a verdict + invoice.
   # See docs/design/forks/gde-ap-agent/multi-agent-inspector-ux.md
   structuredInput:

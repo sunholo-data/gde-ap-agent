@@ -118,6 +118,116 @@ class TestStructuredExtractionCallbackRuns:
         assert "artifact_id" in meta
 
 
+class TestSchemaEnforcedReturn:
+    """SCHEMA-ENFORCE M3: callback returns types.Content with validated JSON.
+
+    ADK's after_agent_callback contract: a non-None return is appended as
+    an additional agent response. We use this to make the validated
+    extraction the final TEXT_MESSAGE in the AG-UI stream.
+    """
+
+    @pytest.mark.asyncio
+    async def test_valid_extraction_returns_content_with_json(self):
+        from tools.structured_extraction import structured_extraction_callback
+
+        schema = {
+            "type": "object",
+            "properties": {"vendor": {"type": "string"}, "total": {"type": "number"}},
+            "required": ["vendor", "total"],
+            "additionalProperties": False,
+        }
+        extracted = {"vendor": "Acme GmbH", "total": 9000}
+        ctx = _make_ctx(
+            {
+                "app:extraction_schema": schema,
+                "temp:document_blocks": "[]",
+                "temp:document_id": "doc-acme",
+            }
+        )
+
+        with patch("tools.structured_extraction._run_extraction", new=AsyncMock(return_value=json.dumps(extracted))):
+            result = await structured_extraction_callback(ctx)
+
+        # Returned types.Content carries the validated JSON for ADK to append
+        assert result is not None
+        # The validated JSON also lands in state for sub-agents that pull from state
+        assert json.loads(ctx.state["temp:extraction_result"]) == extracted
+        # No validation errors when output matches schema
+        assert "temp:extraction_validation_errors" not in ctx.state
+
+    @pytest.mark.asyncio
+    async def test_invalid_output_records_violations_but_still_returns_content(self):
+        """Graceful degradation: surface broken output + log errors, don't crash."""
+        from tools.structured_extraction import structured_extraction_callback
+
+        schema = {
+            "type": "object",
+            "properties": {"vendor": {"type": "string"}, "total": {"type": "number"}},
+            "required": ["vendor", "total"],
+        }
+        # Missing required `total`, vendor wrong type
+        broken = {"vendor": 42}
+        ctx = _make_ctx(
+            {
+                "app:extraction_schema": schema,
+                "temp:document_blocks": "[]",
+                "temp:document_id": "doc-broken",
+            }
+        )
+
+        with patch("tools.structured_extraction._run_extraction", new=AsyncMock(return_value=json.dumps(broken))):
+            result = await structured_extraction_callback(ctx)
+
+        # Still returns content (graceful degradation) so the audit view shows
+        # the broken output instead of "specialist returned no tool calls".
+        assert result is not None
+        errors = ctx.state.get("temp:extraction_validation_errors", [])
+        assert errors, "validation errors should be recorded"
+        assert any("total" in err for err in errors), f"expected 'total' violation in {errors!r}"
+
+    @pytest.mark.asyncio
+    async def test_extraction_failure_returns_none(self):
+        """When the Gemini call itself errors, no Content is returned —
+        the error envelope in state is the only output."""
+        from tools.structured_extraction import structured_extraction_callback
+
+        ctx = _make_ctx(
+            {
+                "app:extraction_schema": {"type": "object"},
+                "temp:document_blocks": "[]",
+                "temp:document_id": "doc-fail",
+            }
+        )
+
+        with patch(
+            "tools.structured_extraction._run_extraction", new=AsyncMock(side_effect=RuntimeError("Vertex auth"))
+        ):
+            result = await structured_extraction_callback(ctx)
+
+        assert result is None
+        assert "error" in json.loads(ctx.state["temp:extraction_result"])
+
+    @pytest.mark.asyncio
+    async def test_clears_stale_validation_errors_on_success(self):
+        """Next-turn-with-valid-output must wipe prior errors."""
+        from tools.structured_extraction import structured_extraction_callback
+
+        schema = {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}
+        ctx = _make_ctx(
+            {
+                "app:extraction_schema": schema,
+                "temp:document_blocks": "[]",
+                "temp:document_id": "doc-1",
+                "temp:extraction_validation_errors": ["leftover from prior run"],
+            }
+        )
+
+        with patch("tools.structured_extraction._run_extraction", new=AsyncMock(return_value=json.dumps({"x": "ok"}))):
+            await structured_extraction_callback(ctx)
+
+        assert "temp:extraction_validation_errors" not in ctx.state
+
+
 class TestRunExtraction:
     @pytest.mark.asyncio
     async def test_returns_json_string(self):

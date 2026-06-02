@@ -170,7 +170,8 @@ steps:
           "--set-env-vars=^|^ADMIN_SEED_ALLOWED_SAS=${_ADMIN_SEED_ALLOWED_SAS}" \
           --set-env-vars=PLATFORM_OWNER_EMAIL=${_PLATFORM_OWNER_EMAIL} \
           --set-env-vars=AP_DEMO_BUCKET=${_AP_DEMO_BUCKET} \
-          --set-env-vars=DATASTORE_LOCATION=eu
+          --set-env-vars=DATASTORE_LOCATION=eu \
+          --set-env-vars=EXTRACTION_MODEL=gemini-3.5-flash
 
   # --- Post-deploy smoke: fail the build if any critical endpoint is not 200 ---
   # Per CLAUDE.md: no feature lands with manual-only verification. This step

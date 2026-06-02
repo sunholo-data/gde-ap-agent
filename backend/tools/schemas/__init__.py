@@ -145,6 +145,147 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         ],
         "required": ["contract_type", "parties"],
     },
+    # === AP-pipeline output contracts (SCHEMA-ENFORCE sprint) ===
+    # Each specialist's output is constrained by these schemas:
+    #   - invoice-extractor → ap_invoice
+    #   - ap-validator      → ap_verdict
+    #   - ap-poster         → ap_posting_record
+    # additionalProperties: false strips prompt-injected fields before they
+    # reach downstream consumers (defence in depth against output expansion
+    # attacks). No oneOf/anyOf — Gemini's constrained-decoding subset rejects
+    # those; conditional shapes use a flat enum discriminator with optional
+    # fields, enforced server-side via Draft 2020-12 if/then/else in the
+    # structured_extraction_callback validation pass.
+    "ap_invoice": {
+        "type": "object",
+        "description": "AP invoice extraction output (invoice-extractor specialist)",
+        "properties": {
+            "vendor_name": {"type": "string"},
+            "vendor_id": {"type": "string"},
+            "invoice_number": {"type": "string"},
+            "invoice_date": {"type": "string", "description": "YYYY-MM-DD"},
+            "due_date": {"type": "string", "description": "YYYY-MM-DD"},
+            "po_reference": {"type": "string"},
+            "currency": {"type": "string", "description": "ISO 4217 code, eg. EUR"},
+            "line_items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "description": {"type": "string"},
+                        "quantity": {"type": "number"},
+                        "unit_price": {"type": "number"},
+                        "amount": {"type": "number"},
+                    },
+                    "required": ["description", "amount"],
+                    "additionalProperties": False,
+                },
+            },
+            "subtotal": {"type": "number"},
+            "tax": {"type": "number"},
+            "total": {"type": "number"},
+            "confidence_notes": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Low-confidence fields for multimodal extractions (PDFs/scans)",
+            },
+            "arithmetic_warning": {
+                "type": "string",
+                "description": "Set when sum(line_items.amount)+tax != total",
+            },
+        },
+        "required": ["vendor_name", "invoice_number", "total", "currency"],
+        "additionalProperties": False,
+    },
+    "ap_verdict": {
+        "type": "object",
+        "description": "AP validator verdict (ap-validator specialist)",
+        "properties": {
+            "verdict": {
+                "type": "string",
+                "enum": ["pass", "needs_review"],
+            },
+            "reasons": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "check": {
+                            "type": "string",
+                            "enum": ["vendor", "po", "duplicate", "policy", "tax"],
+                        },
+                        "severity": {
+                            "type": "string",
+                            "enum": ["pass", "info", "warning", "fail"],
+                        },
+                        "detail": {"type": "string"},
+                        "citation": {
+                            "type": "string",
+                            "description": "Source datastore reference (eg. vendor-V-1042)",
+                        },
+                    },
+                    "required": ["check", "severity", "detail"],
+                    "additionalProperties": False,
+                },
+            },
+            "citations": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "All datastore document ids consulted",
+            },
+        },
+        "required": ["verdict", "reasons"],
+        "additionalProperties": False,
+    },
+    "ap_posting_record": {
+        "type": "object",
+        "description": (
+            "AP poster outcome (ap-poster specialist). Flat action enum + "
+            "optional fields rather than oneOf — Gemini's constrained-decoding "
+            "subset doesn't support oneOf. The if/then/else block below is "
+            "enforced server-side via Draft 2020-12 in the extraction "
+            "validation pass (not in Gemini's decode constraint)."
+        ),
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["post", "escalate"],
+            },
+            "invoice": {
+                "type": "object",
+                "description": "The validated invoice fields being acted on",
+            },
+            "posting_id": {
+                "type": "string",
+                "description": "ERP posting reference, present when action=post",
+            },
+            "ledger_account": {
+                "type": "string",
+                "description": "GL code the posting was applied to",
+            },
+            "escalation_reason": {
+                "type": "string",
+                "description": "Human-readable rationale, present when action=escalate",
+            },
+            "escalation_assignee": {
+                "type": "string",
+                "description": "Role/team to review (eg. Finance Manager)",
+            },
+            "audit_citations": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Datastore ids forwarded from the validator",
+            },
+        },
+        "required": ["action", "invoice"],
+        "additionalProperties": False,
+        # Conditional enforcement — server-side jsonschema (not Gemini decode):
+        # action="post" requires posting_id; action="escalate" requires
+        # escalation_reason. Draft 2020-12 if/then/else.
+        "if": {"properties": {"action": {"const": "post"}}},
+        "then": {"required": ["action", "invoice", "posting_id"]},
+        "else": {"required": ["action", "invoice", "escalation_reason"]},
+    },
     "meeting_minutes": {
         "type": "object",
         "description": "Extract structured data from meeting minutes",
@@ -201,3 +342,40 @@ def load_schema_from_file(file_path: str) -> dict[str, Any]:
     """Load a JSON Schema from a file."""
     with open(file_path) as f:
         return json.load(f)
+
+
+def resolve_schema_ref(value: str | dict | None) -> dict | None:
+    """Resolve a SkillMetadata.extraction_schema value into a JSON Schema dict.
+
+    SKILL.md frontmatter authors can write either:
+      extraction_schema: ap_invoice           # named reference
+      extraction_schema: { type: object, ... } # inline schema
+
+    Used at agent build time to seed app:extraction_schema in session state.
+
+    Args:
+        value: The raw extraction_schema field value from SkillMetadata.
+
+    Returns:
+        The resolved schema dict, or None when value is None.
+
+    Raises:
+        ValueError: When value is a string that does not match a registered
+            schema name. The error message lists available names so the
+            SKILL.md author can pick a valid one.
+    """
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        if value not in SCHEMAS:
+            available = ", ".join(sorted(SCHEMAS))
+            raise ValueError(
+                f"Unknown extraction_schema {value!r}. Available named schemas: {available}. "
+                "Or supply an inline JSON Schema dict instead."
+            )
+        return SCHEMAS[value]
+    raise ValueError(
+        f"extraction_schema must be a string (named ref) or dict (inline schema), got {type(value).__name__}"
+    )

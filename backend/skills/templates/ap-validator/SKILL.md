@@ -24,6 +24,9 @@ metadata:
     # only lights up in cloud mode.
     ai_search:
       datastore_id: ds-ap-vendors
+  # SCHEMA-ENFORCE: output contract for the validator's verdict object.
+  # See docs/design/forks/gde-ap-agent/schema-enforced-extraction.md.
+  extractionSchema: ap_verdict
   # Audit-View "Run Standalone": auditor supplies a pre-extracted invoice
   # (typically loaded from the last invoice-extractor run). See
   # docs/design/forks/gde-ap-agent/multi-agent-inspector-ux.md
