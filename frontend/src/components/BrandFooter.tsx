@@ -8,24 +8,29 @@ interface BrandFooterProps {
 export function BrandFooter({ variant = "full" }: BrandFooterProps) {
   if (variant === "slim") {
     return (
-      <footer className="w-full shrink-0 border-t border-border/40 bg-background px-4 py-1.5 text-center text-[10px] text-muted-foreground/70">
-        <span>Part of </span>
+      <footer className="flex w-full shrink-0 items-center justify-center gap-1.5 border-t border-border/40 bg-background px-4 py-1.5 text-[10px] text-muted-foreground/70">
+        <span>Part of</span>
         <a
-          className="hover:text-[hsl(var(--ailang))]"
+          className="inline-flex items-center gap-1 hover:text-[hsl(var(--ailang))]"
           href={BRANDING.links.ailang}
           target="_blank"
           rel="noopener noreferrer"
         >
-          AILANG
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={BRANDING.logo.familyMark} alt="" className="h-3 w-3" />
+          <span>AILANG</span>
         </a>
-        <span> · powered by </span>
+        <span>·</span>
+        <span>powered by</span>
         <a
-          className="hover:text-primary"
+          className="inline-flex items-center gap-1 hover:text-primary"
           href={BRANDING.links.ailangParse}
           target="_blank"
           rel="noopener noreferrer"
         >
-          ailang-parse
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={BRANDING.logo.chatAvatar} alt="" className="h-3 w-3" />
+          <span>ailang-parse</span>
         </a>
       </footer>
     );
@@ -37,20 +42,24 @@ export function BrandFooter({ variant = "full" }: BrandFooterProps) {
         <span className="font-display font-semibold">{BRANDING.appName}</span>
         <span aria-hidden="true">·</span>
         <a
-          className="hover:text-primary"
+          className="inline-flex items-center gap-1 hover:text-primary"
           href={BRANDING.links.ailangParse}
           target="_blank"
           rel="noopener noreferrer"
         >
-          ailang-parse ↗
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={BRANDING.logo.chatAvatar} alt="" className="h-3.5 w-3.5" />
+          <span>ailang-parse ↗</span>
         </a>
         <a
-          className="hover:text-[hsl(var(--ailang))]"
+          className="inline-flex items-center gap-1 hover:text-[hsl(var(--ailang))]"
           href={BRANDING.links.ailang}
           target="_blank"
           rel="noopener noreferrer"
         >
-          AILANG ↗
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={BRANDING.logo.familyMark} alt="" className="h-3.5 w-3.5" />
+          <span>AILANG ↗</span>
         </a>
         <a
           className="hover:text-foreground"
