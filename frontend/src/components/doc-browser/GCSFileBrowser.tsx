@@ -19,7 +19,7 @@ function Skeleton() {
 function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
-      className={`h-3 w-3 transition-transform ${open ? "rotate-90" : ""}`}
+      className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
@@ -29,6 +29,25 @@ function ChevronIcon({ open }: { open: boolean }) {
       aria-hidden="true"
     >
       <path d="M6 4l4 4-4 4" />
+    </svg>
+  );
+}
+
+function BucketIcon() {
+  return (
+    <svg
+      className="h-3.5 w-3.5 shrink-0 text-primary/70"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2.5 4h11l-1 9.2a1.2 1.2 0 0 1-1.2 1.05H4.7A1.2 1.2 0 0 1 3.5 13.2L2.5 4z" />
+      <path d="M1.5 4h13" />
+      <path d="M6 4V3.2A1.7 1.7 0 0 1 7.7 1.5h.6A1.7 1.7 0 0 1 10 3.2V4" />
     </svg>
   );
 }
@@ -59,16 +78,22 @@ export function GCSFileBrowser({ skillId = "" }: GCSFileBrowserProps) {
   }, []);
 
   return (
-    <div className="text-xs">
+    <div className="space-y-px bg-muted/30 px-2 py-2 text-xs">
       {/* Example Invoices */}
       <details
         open={demoOpen}
         onToggle={(e) => setDemoOpen((e.target as HTMLDetailsElement).open)}
-        className="group"
+        className="group overflow-hidden rounded border border-border/60 bg-background"
       >
-        <summary className="flex cursor-pointer select-none items-center gap-1.5 border-b border-border px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/50 hover:text-muted-foreground">
+        <summary className="flex cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-accent/40">
           <ChevronIcon open={demoOpen} />
-          Example Invoices
+          <BucketIcon />
+          <span className="flex-1 truncate">Example invoices</span>
+          {!demo.isLoading && !demo.error && demo.objects.length > 0 && (
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+              {demo.objects.length}
+            </span>
+          )}
         </summary>
         {demo.isLoading && <Skeleton />}
         {!demo.isLoading && demo.error && (
@@ -101,11 +126,17 @@ export function GCSFileBrowser({ skillId = "" }: GCSFileBrowserProps) {
       <details
         open={userOpen}
         onToggle={(e) => setUserOpen((e.target as HTMLDetailsElement).open)}
-        className="group"
+        className="group overflow-hidden rounded border border-border/60 bg-background"
       >
-        <summary className="flex cursor-pointer select-none items-center gap-1.5 border-b border-border px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/50 hover:text-muted-foreground">
+        <summary className="flex cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-accent/40">
           <ChevronIcon open={userOpen} />
-          Your GCS Bucket
+          <BucketIcon />
+          <span className="flex-1 truncate">{userBucket || "Your bucket"}</span>
+          {!user.isLoading && !user.error && user.objects.length > 0 && (
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+              {user.objects.length}
+            </span>
+          )}
         </summary>
         <div className="space-y-2 px-3 py-2">
           <GCSBucketInput onBucketChange={setUserBucket} onBrowse={() => user.refetch()} />
