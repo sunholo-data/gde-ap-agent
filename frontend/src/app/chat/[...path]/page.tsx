@@ -292,6 +292,50 @@ function ChatShell({
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [globeContext, setGlobeContext] = useState<{ vendor: string; country: string; amount?: number } | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(false);
+
+  // Doc-panel layout — side (default split), focus (~80% width), collapsed
+  // (tab bar only, body hidden). Persisted in localStorage so the user's
+  // preference survives reloads.
+  const [docPanelMode, setDocPanelMode] = useState<"side" | "focus" | "collapsed">(() => {
+    if (typeof window === "undefined") return "side";
+    const v = localStorage.getItem("docPanelMode");
+    return v === "focus" || v === "collapsed" ? v : "side";
+  });
+  const [docPanelWidthPx, setDocPanelWidthPx] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    const raw = localStorage.getItem("docPanelWidthPx");
+    if (!raw) return null;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : null;
+  });
+  useEffect(() => {
+    localStorage.setItem("docPanelMode", docPanelMode);
+  }, [docPanelMode]);
+  useEffect(() => {
+    if (docPanelWidthPx !== null) localStorage.setItem("docPanelWidthPx", String(docPanelWidthPx));
+  }, [docPanelWidthPx]);
+  const docPanelRef = useRef<HTMLDivElement | null>(null);
+  const startDocPanelResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = docPanelRef.current?.getBoundingClientRect().width ?? 0;
+    const minWidth = 320;
+    const maxWidth = window.innerWidth - 380;
+    function onMove(ev: MouseEvent) {
+      const next = Math.max(minWidth, Math.min(maxWidth, startWidth + (ev.clientX - startX)));
+      setDocPanelWidthPx(next);
+    }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, []);
   const [openInspectorKey, setOpenInspectorKey] = useState<SpecialistKey | null>(null);
   const lastUserMessageRef = useRef<string>("");
 
@@ -572,6 +616,8 @@ function ChatShell({
       ];
     });
     setActiveTabId(doc.id);
+    // Auto-expand from collapsed — user explicitly chose to view this doc.
+    setDocPanelMode((m) => (m === "collapsed" ? "side" : m));
   }, []);
 
   const handleTabClose = useCallback((id: string) => {
@@ -626,6 +672,8 @@ function ChatShell({
         tabs={openTabs}
         activeTabId={activeTabId}
         showBrowser={showDocBrowser}
+        docPanelMode={docPanelMode}
+        onSetDocPanelMode={setDocPanelMode}
         onSelect={setActiveTabId}
         onClose={handleTabClose}
         onToggleInclude={handleTabToggleInclude}
@@ -714,20 +762,46 @@ function ChatShell({
           </aside>
         )}
 
-        {activeTabId && (
-          <div className="flex w-1/2 shrink-0 flex-col overflow-hidden border-r">
-            <div className="min-h-0 flex-1 overflow-auto">
-              <DocumentPanel docId={activeTabId} />
+        {activeTabId && docPanelMode !== "collapsed" && (
+          <>
+            <div
+              ref={docPanelRef}
+              className="flex shrink-0 flex-col overflow-hidden border-r"
+              style={{
+                width:
+                  docPanelMode === "focus"
+                    ? "80%"
+                    : docPanelWidthPx !== null
+                      ? `${docPanelWidthPx}px`
+                      : "50%",
+              }}
+            >
+              <div className="min-h-0 flex-1 overflow-auto">
+                <DocumentPanel docId={activeTabId} />
+              </div>
+              <DocumentHistoryPanel
+                documentId={activeTabId}
+                activeSessionId={sessionId}
+                currentUserUid={user.uid}
+                onSelectSession={handleSelectSession}
+                onNewSession={handleNewSession}
+                onDeleteActive={handleNewSession}
+              />
             </div>
-            <DocumentHistoryPanel
-              documentId={activeTabId}
-              activeSessionId={sessionId}
-              currentUserUid={user.uid}
-              onSelectSession={handleSelectSession}
-              onNewSession={handleNewSession}
-              onDeleteActive={handleNewSession}
-            />
-          </div>
+            {docPanelMode === "side" && (
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize document panel"
+                onMouseDown={startDocPanelResize}
+                onDoubleClick={() => setDocPanelWidthPx(null)}
+                title="Drag to resize · double-click to reset"
+                className="group relative w-1 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/40"
+              >
+                <div className="absolute inset-y-0 -left-1 -right-1" />
+              </div>
+            )}
+          </>
         )}
 
         {/* MULTI-SURFACE-A2UI M3: workspace surface mount — takes the
