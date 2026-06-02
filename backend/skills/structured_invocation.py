@@ -47,6 +47,22 @@ class StructuredInputNotSupportedError(Exception):
         self.skill_id = skill_id
 
 
+class StandaloneAgentRunError(Exception):
+    """Raised when the agent stream surfaces a RUN_ERROR event mid-run.
+
+    Without this, a Vertex AI session-service failure (eg. invalid
+    Reasoning Engine, expired credentials) returned a quiet 200 with
+    zero tool calls and the UI showed "specialist returned no tool
+    calls". That looks like an agent bug to the user; it's actually a
+    server-side error worth a 500.
+    """
+
+    def __init__(self, message: str, code: str | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+
+
 def _resolve_schema(skill_id: str) -> dict[str, Any]:
     skill = get_skill(skill_id)
     if skill is None:
@@ -116,6 +132,9 @@ async def run_structured_invocation(
         SkillNotFoundError: skill missing or not visible to the caller.
         StructuredInputNotSupportedError: skill has no structuredInput schema.
         StructuredInputInvalidError: payload failed schema validation.
+        StandaloneAgentRunError: agent stream emitted RUN_ERROR (eg.
+            session-service failure) — propagated so callers surface the
+            real cause instead of returning a silent empty result.
     """
     validate_structured_input(skill_id, payload)
     message = serialize_input_as_message(payload)
@@ -171,6 +190,22 @@ async def run_structured_invocation(
             _ensure_tc_entry(tcid)
             if tcid:
                 tool_calls[tcid]["result"] = event.get("content")
+        elif et == "RUN_ERROR":
+            # ag_ui_adk + skill_processor surface upstream failures
+            # (Vertex session 404, budget exceeded, vertex auth, etc.)
+            # as a RUN_ERROR event. Without this branch the loop would
+            # complete normally and return an empty success — the user
+            # sees "no tool calls" with no clue why. Raise so the caller
+            # returns a meaningful 500 with the upstream message.
+            msg = str(event.get("message") or "Agent run failed")
+            code = event.get("code")
+            logger.warning(
+                "structured_invocation: skill=%s upstream RUN_ERROR code=%s msg=%s",
+                skill_id,
+                code,
+                msg,
+            )
+            raise StandaloneAgentRunError(msg, code=str(code) if code else None)
 
     duration_ms = int((time.monotonic() - started) * 1000)
     return {

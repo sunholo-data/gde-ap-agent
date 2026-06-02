@@ -663,6 +663,7 @@ async def invoke_skill_structured(
         404 if the skill is missing or not visible to the caller.
     """
     from skills.structured_invocation import (
+        StandaloneAgentRunError,
         StructuredInputInvalidError,
         StructuredInputNotSupportedError,
         run_structured_invocation,
@@ -691,6 +692,19 @@ async def invoke_skill_structured(
                 "error": "structured_input_invalid",
                 "message": exc.message,
                 "errors": exc.errors,
+            },
+        ) from exc
+    except StandaloneAgentRunError as exc:
+        # Upstream agent stream surfaced RUN_ERROR (Vertex session 404,
+        # auth, budget, etc). Return 502 — the FE renders the message
+        # as a prominent error in the Audit View instead of a silent
+        # "0 tool calls" panel.
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "agent_run_failed",
+                "message": exc.message,
+                "code": exc.code,
             },
         ) from exc
 

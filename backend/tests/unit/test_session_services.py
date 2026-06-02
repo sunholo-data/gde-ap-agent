@@ -8,8 +8,10 @@ from unittest.mock import patch
 import pytest
 
 from adk.session import (
+    _extract_agent_engine_location,
     _reset_artifact_service_for_tests,
     _reset_session_service_for_tests,
+    _resolve_agent_engine_location,
     get_artifact_service,
     get_session_service,
 )
@@ -132,3 +134,43 @@ class TestLocalSessionEscapeHatch:
         for val in ("memory", "Memory", "MEMORY", " memory", "memory ", "  Memory  "):
             with patch.dict(os.environ, {"AITANA_LOCAL_SESSION": val}):
                 assert _force_in_memory_session(), f"value {val!r} should opt in (case/trim)"
+
+
+class TestAgentEngineLocationResolution:
+    """Cross-region Reasoning Engine routing — Cloud Run can sit in a
+    region (eg. europe-west1) that Vertex AI doesn't support for
+    Reasoning Engines yet, so the engine has to live elsewhere
+    (eg. us-central1). The resource name carries its own region,
+    which beats GOOGLE_CLOUD_LOCATION.
+    """
+
+    def test_extracts_location_from_full_resource_name(self):
+        loc = _extract_agent_engine_location(
+            "projects/374404277595/locations/us-central1/reasoningEngines/1919019975155122176"
+        )
+        assert loc == "us-central1"
+
+    def test_extracts_location_with_project_id_form(self):
+        loc = _extract_agent_engine_location(
+            "projects/multivac-internal-dev/locations/europe-west4/reasoningEngines/42"
+        )
+        assert loc == "europe-west4"
+
+    def test_returns_none_for_bare_numeric_id(self):
+        assert _extract_agent_engine_location("1919019975155122176") is None
+
+    def test_returns_none_for_malformed_path(self):
+        assert _extract_agent_engine_location("projects/x/y/z") is None
+        assert _extract_agent_engine_location("") is None
+
+    def test_resolve_prefers_extracted_location_over_env(self):
+        """When the resource name carries a region, it wins over
+        GOOGLE_CLOUD_LOCATION (the Cloud Run region)."""
+        with patch.dict(os.environ, {"GOOGLE_CLOUD_LOCATION": "europe-west1"}):
+            loc = _resolve_agent_engine_location("projects/p/locations/us-central1/reasoningEngines/123")
+        assert loc == "us-central1"
+
+    def test_resolve_falls_back_to_env_for_bare_id(self):
+        with patch.dict(os.environ, {"GOOGLE_CLOUD_LOCATION": "europe-west1"}):
+            loc = _resolve_agent_engine_location("123")
+        assert loc == "europe-west1"

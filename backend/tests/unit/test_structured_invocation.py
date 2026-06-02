@@ -9,6 +9,7 @@ import pytest
 from db.models import SkillConfig
 from skills.skill_processor import SkillNotFoundError
 from skills.structured_invocation import (
+    StandaloneAgentRunError,
     StructuredInputInvalidError,
     StructuredInputNotSupportedError,
     serialize_input_as_message,
@@ -161,6 +162,42 @@ async def test_run_handles_snake_case_keys_defensively():
     assert len(result["tool_calls"]) == 1
     assert result["tool_calls"][0]["name"] == "list_documents"
     assert result["tool_calls"][0]["result"] == '[{"id": "d1"}]'
+
+
+@pytest.mark.asyncio
+async def test_run_raises_on_run_error_event():
+    """RUN_ERROR mid-stream means the agent / session service failed
+    (Vertex 404, budget, auth, etc). Without this guard the loop would
+    finish and return a 200 with 0 tool calls — the UI then shows the
+    misleading "specialist returned no tool calls" message. Propagate
+    as StandaloneAgentRunError so the route returns 502.
+    """
+    from skills.structured_invocation import run_structured_invocation
+
+    schema = {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}
+    events = [
+        {"type": "TOOL_CALL_START", "toolCallId": "tc-1", "toolCallName": "list_documents"},
+        {"type": "RUN_ERROR", "message": "404 NOT_FOUND. The ReasoningEngine does not exist.", "code": "VERTEX_404"},
+    ]
+
+    async def fake_proc(*args, **kwargs):
+        for e in events:
+            yield e
+
+    with (
+        patch("skills.structured_invocation.get_skill", return_value=_make_skill_with_schema(schema)),
+        patch("skills.structured_invocation.process_skill_request", side_effect=fake_proc),
+    ):
+        with pytest.raises(StandaloneAgentRunError) as ei:
+            await run_structured_invocation(
+                skill_id="test-skill",
+                user=None,  # type: ignore[arg-type]
+                access=None,  # type: ignore[arg-type]
+                payload={"x": "y"},
+                session_id=None,
+            )
+    assert "ReasoningEngine" in ei.value.message
+    assert ei.value.code == "VERTEX_404"
 
 
 def test_serialize_input_includes_audit_preamble_and_payload():

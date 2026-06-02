@@ -66,6 +66,45 @@ def _normalize_agent_engine_id(value: str) -> str:
     return value.rstrip("/").rsplit("/", 1)[-1] if "/" in value else value
 
 
+def _extract_agent_engine_location(value: str) -> str | None:
+    """Pull the location out of a full resource name, else return None.
+
+    Cloud Run can live in a region (eg. europe-west1) that Vertex AI does
+    not support for Reasoning Engines yet, so the engine itself runs in
+    a different region (eg. us-central1). When `AGENT_ENGINE_ID` carries
+    the full path `projects/.../locations/REGION/reasoningEngines/NNN`,
+    REGION is authoritative — use it for the SDK clients rather than the
+    Cloud Run `GOOGLE_CLOUD_LOCATION` env, otherwise every session call
+    404s with "The ReasoningEngine does not exist." Reified by the
+    fork bootstrap experience documented in README "Deployed-Fork Setup".
+
+    Returns the location string (eg. ``"us-central1"``) when the value
+    parses as a full resource name, else None — caller should fall back
+    to the GOOGLE_CLOUD_LOCATION env in that case.
+    """
+    if "/locations/" not in value:
+        return None
+    try:
+        # projects/<x>/locations/<region>/reasoningEngines/<id>
+        parts = value.strip().rstrip("/").split("/")
+        idx = parts.index("locations")
+        loc = parts[idx + 1]
+        return loc or None
+    except (ValueError, IndexError):
+        return None
+
+
+def _resolve_agent_engine_location(value: str) -> str:
+    """Region for the Reasoning Engine — derived from the resource name
+    when possible, falling back to GOOGLE_CLOUD_LOCATION (the Cloud
+    Run region) otherwise.
+    """
+    extracted = _extract_agent_engine_location(value)
+    if extracted:
+        return extracted
+    return os.environ["GOOGLE_CLOUD_LOCATION"]
+
+
 def _force_in_memory_session() -> bool:
     """Local-dev escape hatch — force InMemory* services even when
     AGENT_ENGINE_ID is set.
@@ -112,7 +151,7 @@ def get_session_service() -> InMemorySessionService | VertexAiSessionService:
         if agent_engine_id and not _force_in_memory_session():
             _session_service_singleton = VertexAiSessionService(
                 project=require_gcp_project(),
-                location=os.environ["GOOGLE_CLOUD_LOCATION"],
+                location=_resolve_agent_engine_location(agent_engine_id),
                 agent_engine_id=_normalize_agent_engine_id(agent_engine_id),
             )
         else:
@@ -126,7 +165,7 @@ def get_memory_service() -> InMemoryMemoryService | VertexAiMemoryBankService:
     if agent_engine_id and not _force_in_memory_session():
         return VertexAiMemoryBankService(
             project=require_gcp_project(),
-            location=os.environ["GOOGLE_CLOUD_LOCATION"],
+            location=_resolve_agent_engine_location(agent_engine_id),
             agent_engine_id=_normalize_agent_engine_id(agent_engine_id),
         )
     return InMemoryMemoryService()
