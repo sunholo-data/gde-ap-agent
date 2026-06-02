@@ -94,6 +94,9 @@ create-artifact-bucket:
 create-search-datastore:
 	@./scripts/create-search-datastore.sh
 
+load-vendor-master:
+	@./scripts/load-vendor-master.sh
+
 cli-selftest:
 	@echo "▶ mock smoke …"
 	@$(MAKE) --no-print-directory cli-selftest-mock
@@ -123,3 +126,4 @@ help:
 	@echo "make deploy-mcp-sandbox   — rebuild + redeploy the MCP sandbox (run after adding a widget)"
 	@echo "make create-artifact-bucket — create the ADK artifact GCS bucket + grant SA write access"
 	@echo "make create-search-datastore — create the AP-validator Vertex AI Search datastore (eu)"
+	@echo "make load-vendor-master     — import demo vendors/POs/policies into the datastore"

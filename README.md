@@ -151,9 +151,24 @@ needed when re-pointing to a different project (just update
 `GOOGLE_CLOUD_PROJECT`).
 
 > The datastore is created with `contentConfig: CONTENT_REQUIRED`
-> (structured-documents-required). Loading the actual vendor master
-> CSV is a follow-up — the empty datastore unblocks the validator's
-> tool-call path; results will be empty until data lands.
+> (structured-documents-required).
+
+Load the demo vendor master (5 vendors, 3 open POs, 3 prior invoices,
+3 approval policies — all cross-referenced with the example invoices
+in `infrastructure/demo-invoices/`):
+
+```bash
+make load-vendor-master
+```
+
+Idempotent — `reconciliationMode: INCREMENTAL` upserts each document
+by `id`, so re-runs after editing
+`infrastructure/demo-vendor-master/generate.py` update the records in
+place. The records ground every check the validator does: vendor
+approved (Acme GmbH = yes, BlockedCo = no), PO match (PO-2026-0189
+for €9,000 from Acme), duplicate detection (prior invoice
+INV-2025-187 has the same €9,000 from Acme two months ago), policy
+(Cloud Services threshold €10k), tax (DE 19%).
 
 ### 6. Seed the demo invoices bucket (optional)
 
