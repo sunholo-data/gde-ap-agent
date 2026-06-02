@@ -29,6 +29,8 @@ substitutions:
   _PLATFORM_OWNER_EMAIL: ''
   # MCP sandbox iframe URL. Leave blank to disable MCP Apps.
   _MCP_SANDBOX_URL: 'https://mcp-sandbox-374404277595.europe-west1.run.app'
+  # GCS demo bucket pre-loaded with AP invoice examples for the sidebar browser.
+  _AP_DEMO_BUCKET: 'gde-ap-agent-demo-invoices'
 
 tags: ['${_PROJECT_ID}', '${_SERVICE_NAME}']
 
@@ -165,7 +167,8 @@ steps:
           --set-env-vars=GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY=true \
           --set-env-vars=OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true \
           "--set-env-vars=^|^ADMIN_SEED_ALLOWED_SAS=${_ADMIN_SEED_ALLOWED_SAS}" \
-          --set-env-vars=PLATFORM_OWNER_EMAIL=${_PLATFORM_OWNER_EMAIL}
+          --set-env-vars=PLATFORM_OWNER_EMAIL=${_PLATFORM_OWNER_EMAIL} \
+          --set-env-vars=AP_DEMO_BUCKET=${_AP_DEMO_BUCKET}
 
   # --- Post-deploy smoke: fail the build if any critical endpoint is not 200 ---
   # Per CLAUDE.md: no feature lands with manual-only verification. This step
