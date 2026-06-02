@@ -78,7 +78,28 @@ this, the `--set-secrets=AGENT_ENGINE_ID=AGENT_ENGINE_ID:latest` flag is
 not injected and the deployed service falls back to in-memory sessions
 (chat works, but history is lost on every cold start).
 
-### 3. Seed the demo invoices bucket (optional)
+### 3. Build + deploy the MCP App sandbox
+
+The MCP App sandbox is a **separate Cloud Run service** that serves
+each widget's HTML from `infrastructure/mcp-sandbox/artefacts/<name>/index.html`.
+Importantly: the main `gde-ap-agent` Cloud Build does **not** rebuild
+the sandbox — when you add a new widget (eg. `ap-vendor-kg`), you
+must redeploy the sandbox separately, otherwise the iframe inside the
+Audit View shows a permanent spinner because the widget HTML returns 404.
+
+```bash
+make deploy-mcp-sandbox       # gcloud run deploy --source .
+make verify-mcp-artefacts     # asserts each local widget is reachable
+```
+
+`verify-mcp-artefacts` walks `infrastructure/mcp-sandbox/artefacts/` and
+probes each `${SANDBOX_URL}/artefacts/<name>/index.html`. It fails fast
+with an actionable hint when a local widget is missing from the
+deployed image — exactly the "I added it but forgot to redeploy" trap
+that surfaced as an empty Vendor Knowledge Graph in the validator
+Audit View.
+
+### 4. Seed the demo invoices bucket (optional)
 
 For the Example Invoices sidebar section to populate:
 
@@ -89,7 +110,7 @@ For the Example Invoices sidebar section to populate:
 This uploads 9 sample invoices to the `_AP_DEMO_BUCKET` bucket
 (`gde-ap-agent-demo-invoices` by default).
 
-### 4. Verify everything works
+### 5. Verify everything works
 
 After a deploy, run the verification scripts:
 
@@ -113,7 +134,8 @@ GCP_PROJECT=<project> ./scripts/tail-logs.sh tail    # live stream
 |---|---|---|
 | Chat returns 500, log shows `Invalid ReasoningEngine resource name` | `AGENT_ENGINE_ID` secret is `dummy_value` or missing | Step 1 |
 | Specialists show "Skill does not declare metadata.structuredInput" | Platform seed step skipped existing skills (pre-`fa1d150` builds) | Trigger a fresh deploy — the seed step now refreshes template fields |
-| Example Invoices section shows "No demo files" | `_AP_DEMO_BUCKET` empty or missing IAM grant for the SA | Step 3, or grant `roles/storage.objectViewer` to the Cloud Run SA |
+| MCP App iframe (eg. Vendor Knowledge Graph) shows a permanent spinner | Widget file is in the repo but the sandbox image doesn't include it | `make verify-mcp-artefacts` to confirm; `make deploy-mcp-sandbox` to ship |
+| Example Invoices section shows "No demo files" | `_AP_DEMO_BUCKET` empty or missing IAM grant for the SA | Step 4, or grant `roles/storage.objectViewer` to the Cloud Run SA |
 | Audit View chips never light up | AG-UI streaming not reaching the frontend | Check CORS + `/api/proxy/*` route in [frontend/src/app/api/proxy/[...path]/route.ts](frontend/src/app/api/proxy/[...path]/route.ts) |
 
 ## API Reference

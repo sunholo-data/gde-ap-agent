@@ -82,6 +82,12 @@ verify-skill-schemas:
 tail-logs:
 	@./scripts/tail-logs.sh $(ARGS)
 
+deploy-mcp-sandbox:
+	@./scripts/deploy-mcp-sandbox.sh
+
+verify-mcp-artefacts:
+	@./scripts/verify-mcp-artefacts.sh
+
 cli-selftest:
 	@echo "▶ mock smoke …"
 	@$(MAKE) --no-print-directory cli-selftest-mock
@@ -107,3 +113,5 @@ help:
 	@echo "make verify-skill-schemas — assert deployed platform skills declare structuredInput"
 	@echo "make verify-audit-view    — full audit-view verification (schemas + Run-Standalone probe)"
 	@echo "make tail-logs            — recent backend errors (set GCP_PROJECT + ARGS for filters)"
+	@echo "make verify-mcp-artefacts — check each MCP App widget is reachable on the deployed sandbox"
+	@echo "make deploy-mcp-sandbox   — rebuild + redeploy the MCP sandbox (run after adding a widget)"

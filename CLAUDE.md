@@ -238,6 +238,8 @@ Any local workflow that requires more than one manual step — setting env vars,
 | Verify deployed platform skills declare structuredInput | `make verify-skill-schemas` |
 | Full audit-view verification against a live deploy | `AIPLATFORM_ID_TOKEN=<token> make verify-audit-view` |
 | Tail deployed backend errors (chat 500s, etc.) | `GCP_PROJECT=<project> make tail-logs ARGS=chat` |
+| Verify every MCP App widget is reachable on the live sandbox | `make verify-mcp-artefacts` |
+| Rebuild + redeploy the MCP sandbox (run after adding a widget) | `make deploy-mcp-sandbox` |
 
 When adding a new workflow, add it to `scripts/` and the root `Makefile` in the same PR.
 
