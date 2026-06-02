@@ -160,7 +160,7 @@ steps:
           $${SECRETS:+--set-secrets="$${SECRETS}"} \
           --set-env-vars=TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886 \
           --set-env-vars=GOOGLE_CLOUD_PROJECT=${_PROJECT_ID} \
-          --set-env-vars=GOOGLE_CLOUD_LOCATION=${_REGION} \
+          --set-env-vars=GOOGLE_CLOUD_LOCATION=global \
           --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=True \
           --set-env-vars=ADK_ARTIFACT_BUCKET=${_PROJECT_ID}-artifacts \
           --set-env-vars=DOCUMENTS_BUCKET=${_PROJECT_ID}.firebasestorage.app \
