@@ -8,6 +8,8 @@ that wires `metadata.extraction_schema` into session state.
 
 from __future__ import annotations
 
+import typing
+
 from db.models import SkillConfig, SkillMetadata
 from tools.structured_extraction import _extraction_config_for_model
 
@@ -20,7 +22,7 @@ class TestExtractionConfigForModel:
     `_extraction_config_for_model` for the probe trail.
     """
 
-    SCHEMA = {"type": "object", "properties": {"x": {"type": "string"}}}
+    SCHEMA: typing.ClassVar[dict] = {"type": "object", "properties": {"x": {"type": "string"}}}
 
     def test_gemini_25_flash_uses_legacy_keys(self):
         cfg = _extraction_config_for_model("gemini-2.5-flash", self.SCHEMA)

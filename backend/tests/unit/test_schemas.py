@@ -25,7 +25,7 @@ class TestRegistry:
 
     def test_all_schemas_validate_against_metaschema(self):
         """Every registered schema must itself be a valid Draft 2020-12 JSON Schema."""
-        for name, schema in SCHEMAS.items():
+        for _name, schema in SCHEMAS.items():
             Draft202012Validator.check_schema(schema)
 
     def test_get_schema_returns_dict(self):
