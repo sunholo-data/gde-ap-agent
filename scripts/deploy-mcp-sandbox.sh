@@ -57,6 +57,9 @@ find "$SANDBOX_DIR/artefacts" -maxdepth 2 -name "index.html" 2>/dev/null \
 echo ""
 
 cd "$SANDBOX_DIR"
+# `--set-env-vars` treats commas as key=value delimiters. Use the
+# delimiter-override syntax `^@^` so commas inside ALLOWED_HOST_ORIGINS
+# (multi-origin lists) survive intact. See `gcloud topic escaping`.
 gcloud run deploy "$SERVICE" \
   --source . \
   --project="$PROJECT" \
@@ -66,7 +69,7 @@ gcloud run deploy "$SERVICE" \
   --max-instances=3 \
   --memory=512Mi \
   --cpu=1 \
-  --set-env-vars="ALLOWED_HOST_ORIGINS=${ALLOWED_ORIGINS}" \
+  --set-env-vars="^@^ALLOWED_HOST_ORIGINS=${ALLOWED_ORIGINS}" \
   --quiet
 
 echo ""
