@@ -6,6 +6,7 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import { ChatMessageList } from "@/components/chat/ChatMessageList";
 import type { DocTabData } from "@/components/doc-browser/DocTab";
 import { DocListView } from "@/components/doc-browser/DocListView";
+import { GCSFileBrowser } from "@/components/doc-browser/GCSFileBrowser";
 import { DocTabsBar } from "@/components/doc-browser/DocTabsBar";
 import { UploadDropZone } from "@/components/doc-browser/UploadDropZone";
 import type { ParsedDocument } from "@/hooks/useDocBrowser";
@@ -25,7 +26,11 @@ import { useSlugResolution } from "@/hooks/useSlugResolution";
 import { SkillSessionPanel } from "@/components/chat/SkillSessionPanel";
 import DocumentHistoryPanel from "@/components/chat/DocumentHistoryPanel";
 import { SkillsBar } from "@/components/navigation/SkillsBar";
-import { getSkillMeta } from "@/lib/skillMeta";
+import { getSkillMeta, findSkillByMetaKey } from "@/lib/skillMeta";
+import { InspectorPanel } from "@/components/audit/InspectorPanel";
+import { useSpecialistInvocations } from "@/hooks/useSpecialistInvocations";
+import { isAuditViewEnabled, type SpecialistKey } from "@/lib/auditViewFlag";
+import { skillHref } from "@/components/navigation/skillHref";
 import { AGUIProvider } from "@/providers/AGUIProvider";
 import {
   SurfaceRegistryProvider,
@@ -233,6 +238,7 @@ function ChatShell({
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [globeContext, setGlobeContext] = useState<{ vendor: string; country: string; amount?: number } | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [openInspectorKey, setOpenInspectorKey] = useState<SpecialistKey | null>(null);
   const lastUserMessageRef = useRef<string>("");
 
   // Session routing: read ?session= from URL, allow programmatic navigation
@@ -312,6 +318,59 @@ function ChatShell({
 
   const activeSkill = userSkills.find((s) => s.skillId === skillId) ?? null;
   const activeSkillMeta = activeSkill ? getSkillMeta(activeSkill) : null;
+
+  // Audit-View: derive per-specialist invocation state from the orchestrator's
+  // toolCalls stream. Drives the chip row + InspectorPanel. When the audit-view
+  // flag is off the state is computed but unused — cheap.
+  const invocations = useSpecialistInvocations(toolCalls, sessionId ?? agentSessionId);
+
+  // Legacy URL redirect: if the user landed on /chat/{specialist-skill-id} and
+  // the audit-view flag is on (and ?devmode=1 isn't set), bounce them to the
+  // orchestrator chat with that specialist's chip pre-selected. Preserves
+  // bookmarks/links from before the UX flip.
+  const devmode = searchParams.get("devmode") === "1";
+  useEffect(() => {
+    if (!isAuditViewEnabled() || devmode || !activeSkillMeta) return;
+    if (activeSkillMeta.role !== "specialist") return;
+    const orchestrator = findSkillByMetaKey(userSkills, "orchestrator");
+    if (!orchestrator) return;
+    // Resolve the specialist key from the current skill's meta — matchKey
+    // already returned "docparse" | "validator" | "poster".
+    const key = (
+      activeSkillMeta.tagline.toLowerCase().includes("document") ? "docparse" :
+      activeSkillMeta.tagline.toLowerCase().includes("validator") ? "validator" :
+      activeSkillMeta.tagline.toLowerCase().includes("poster") ? "poster" : null
+    ) as SpecialistKey | null;
+    const target = skillHref(orchestrator);
+    const params = new URLSearchParams(searchParams.toString());
+    if (sessionId) params.set("session", sessionId);
+    const qs = params.toString();
+    const hash = key ? `#audit=${key}` : "";
+    router.replace(`${target}${qs ? `?${qs}` : ""}${hash}`);
+  }, [activeSkillMeta, devmode, userSkills, router, searchParams, sessionId]);
+
+  // Hash-driven chip auto-open: redirect lands with #audit={key}; pluck it
+  // into openInspectorKey and clear the hash so a manual close stays closed.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const m = window.location.hash.match(/^#audit=(docparse|validator|poster)$/);
+    if (m) {
+      setOpenInspectorKey(m[1] as SpecialistKey);
+      // Clear hash without scrolling
+      const url = new URL(window.location.href);
+      url.hash = "";
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, []);
+
+  // Auto-close inspector when sidebar reopens and viewport is narrow, so the
+  // panel doesn't overlap the doc list. Sidebar collapse happens elsewhere
+  // (DocTabsBar toggle).
+  useEffect(() => {
+    if (openInspectorKey && showDocBrowser && typeof window !== "undefined" && window.innerWidth < 1100) {
+      setShowDocBrowser(false);
+    }
+  }, [openInspectorKey, showDocBrowser]);
 
   const userInitial = (user.displayName ?? user.email ?? "U").charAt(0).toUpperCase();
   const userDisplayName = user.displayName ?? user.email ?? "You";
@@ -492,6 +551,11 @@ function ChatShell({
         activeSkillId={skillId}
         isLoading={skillsLoading}
         onCreateClick={() => router.push("/skills/new")}
+        invocations={invocations}
+        openInspectorKey={openInspectorKey}
+        onChipSelect={(key) =>
+          setOpenInspectorKey((cur) => (cur === key ? null : key))
+        }
       />
 
       <DocTabsBar
@@ -549,6 +613,7 @@ function ChatShell({
                 />
               </div>
             </div>
+            <GCSFileBrowser skillId={skillId} />
             <DocListView uid={user.uid} onDocClick={handleDocClick} />
             <div className="border-t">
               <UploadDropZone skillId={skillId} />
@@ -685,6 +750,15 @@ function ChatShell({
         </div>
       </div>
       <LatencyHUD />
+      {/* AUDIT-VIEW M1: persistent right-side inspector panel for the
+          selected specialist. Open via SpecialistChip click; close via ✕,
+          ESC, or clicking the same chip again. */}
+      <InspectorPanel
+        open={openInspectorKey !== null}
+        specialistKey={openInspectorKey}
+        state={openInspectorKey ? invocations[openInspectorKey] : null}
+        onClose={() => setOpenInspectorKey(null)}
+      />
       {/* MULTI-SURFACE-A2UI M3: modal surface mount — fixed-position
           overlay at page root. Only visible when populated; M4 will wire
           the user-gesture guard so the agent can't pop one unprompted. */}
