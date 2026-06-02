@@ -127,10 +127,7 @@ def main() -> int:
     for skill, model in targets:
         result = probe_model(client, model, trials=args.trials)
         if result["ok"]:
-            print(
-                f"{skill:<22} {model:<28} "
-                f"{result['ttft_ms_best']:>6.0f}ms {result['ttft_ms_mean']:>6.0f}ms  OK"
-            )
+            print(f"{skill:<22} {model:<28} {result['ttft_ms_best']:>6.0f}ms {result['ttft_ms_mean']:>6.0f}ms  OK")
         else:
             any_failed = True
             print(f"{skill:<22} {model:<28} {'':>8} {'':>8}  FAIL — {result['error']}")
