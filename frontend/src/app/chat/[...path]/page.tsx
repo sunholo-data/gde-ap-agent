@@ -694,17 +694,17 @@ function ChatShell({
               </div>
             </SidebarSection>
 
-            <SidebarSection title="Buckets" defaultOpen bodyClassName="">
+            <SidebarSection title="Import from GCS bucket" defaultOpen bodyClassName="">
               <GCSFileBrowser skillId={skillId} />
             </SidebarSection>
 
             <SidebarSection title="My Documents" defaultOpen bodyClassName="">
-              <div className="max-h-[40vh]">
+              <div className="flex max-h-[40vh] flex-col overflow-hidden">
                 <DocListView uid={user.uid} onDocClick={handleDocClick} />
               </div>
             </SidebarSection>
 
-            <SidebarSection title="Upload" defaultOpen={false} bodyClassName="">
+            <SidebarSection title="Upload from your computer" defaultOpen={false} bodyClassName="">
               <UploadDropZone skillId={skillId} />
             </SidebarSection>
 
