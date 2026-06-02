@@ -142,6 +142,7 @@ steps:
           --project=${_PROJECT_ID} \
           --platform=managed \
           --allow-unauthenticated \
+          --min-instances=1 \
           --max-instances=3 \
           --session-affinity \
           --service-account=sa-${_SERVICE_NAME}@${_PROJECT_ID}.iam.gserviceaccount.com \
