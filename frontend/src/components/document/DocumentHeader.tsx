@@ -31,17 +31,6 @@ export function DocumentHeader({ doc }: DocumentHeaderProps) {
           {doc.sourceFormat}
         </span>
       )}
-      {doc.sourceUrl && (
-        <a
-          href={doc.sourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
-          title="Open original file"
-        >
-          ↗
-        </a>
-      )}
     </div>
   );
 }
