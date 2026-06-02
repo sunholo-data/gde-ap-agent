@@ -19,6 +19,11 @@ class GCSImportRequest(BaseModel):
     bucket: str
     path: str
     folder_id: str = ""
+    # Source-aware folder routing (sidebar-consolidation Option 2):
+    # caller supplies a human-readable folder name; backend finds-or-creates.
+    # Ignored when folder_id is set. Examples: "Example Invoices",
+    # "gs://my-vendor-bucket", "Local uploads".
+    folder_name: str = ""
     skill_id: str = ""
 
 
@@ -47,6 +52,7 @@ async def import_object(
         bucket_name=body.bucket,
         object_path=body.path,
         folder_id=body.folder_id,
+        folder_name=body.folder_name,
         skill_id=body.skill_id,
     )
     return result.model_dump(by_alias=True)

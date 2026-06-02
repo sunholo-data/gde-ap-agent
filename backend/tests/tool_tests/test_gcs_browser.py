@@ -208,6 +208,86 @@ class TestImportGCSObject:
         mock_parse.assert_awaited_once()
         mock_store.assert_called()
 
+    @patch("tools.gcs_browser.browser._store_document")
+    @patch("tools.gcs_browser.browser._run_parse", new_callable=AsyncMock)
+    @patch("tools.gcs_browser.browser._upload_to_gcs")
+    @patch("tools.gcs_browser.browser.folders_db")
+    @patch("tools.gcs_browser.browser.resolve_documents_bucket", return_value="user-docs-bucket")
+    @patch("tools.gcs_browser.browser.storage")
+    @pytest.mark.asyncio
+    async def test_import_routes_to_named_folder(
+        self, mock_storage, mock_resolve, mock_folders, mock_upload, mock_parse, mock_store
+    ):
+        """folder_name (no folder_id) → find_or_create_folder_by_name —
+        source-named folders so My Documents accordion reflects provenance.
+        """
+        from tools.gcs_browser.browser import import_gcs_object
+
+        mock_parse.return_value = ("parsed", [], 50, None)
+        mock_folders.find_or_create_folder_by_name.return_value = "folder-demo-42"
+
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_blob.download_as_bytes.return_value = b"fake"
+        mock_blob.content_type = "application/pdf"
+
+        user = _make_user()
+        result = await import_gcs_object(
+            user=user,
+            bucket_name="demo",
+            object_path="invoices/acme.pdf",
+            folder_id="",
+            folder_name="Example Invoices",
+            skill_id="ap-orchestrator",
+        )
+
+        assert result.folder_id == "folder-demo-42"
+        mock_folders.find_or_create_folder_by_name.assert_called_once_with(user.uid, "Example Invoices")
+        mock_folders.ensure_default_folder.assert_not_called()
+
+    @patch("tools.gcs_browser.browser._store_document")
+    @patch("tools.gcs_browser.browser._run_parse", new_callable=AsyncMock)
+    @patch("tools.gcs_browser.browser._upload_to_gcs")
+    @patch("tools.gcs_browser.browser.folders_db")
+    @patch("tools.gcs_browser.browser.resolve_documents_bucket", return_value="user-docs-bucket")
+    @patch("tools.gcs_browser.browser.storage")
+    @pytest.mark.asyncio
+    async def test_explicit_folder_id_wins_over_folder_name(
+        self, mock_storage, mock_resolve, mock_folders, mock_upload, mock_parse, mock_store
+    ):
+        """If both folder_id and folder_name are supplied, folder_id wins —
+        explicit pointer beats the name-resolution heuristic.
+        """
+        from tools.gcs_browser.browser import import_gcs_object
+
+        mock_parse.return_value = ("parsed", [], 50, None)
+
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_blob.download_as_bytes.return_value = b"fake"
+        mock_blob.content_type = "application/pdf"
+
+        user = _make_user()
+        result = await import_gcs_object(
+            user=user,
+            bucket_name="demo",
+            object_path="invoices/acme.pdf",
+            folder_id="explicit-folder-id",
+            folder_name="Example Invoices",
+            skill_id="",
+        )
+        assert result.folder_id == "explicit-folder-id"
+        mock_folders.find_or_create_folder_by_name.assert_not_called()
+        mock_folders.ensure_default_folder.assert_not_called()
+
     @pytest.mark.asyncio
     async def test_unsupported_extension_raises_400(self):
         from tools.gcs_browser.browser import import_gcs_object

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { ParsedDocument, ParseStatus } from "@/hooks/useDocBrowser";
 import { fetchWithAuth } from "@/lib/apiClient";
+import { cn } from "@/lib/utils";
 
 const STATUS_DOT: Record<ParseStatus, { color: string; title: string }> = {
   parsed: { color: "bg-emerald-500", title: "Parsed" },
@@ -25,9 +26,14 @@ const FORMAT_COLORS: Record<string, string> = {
 interface DocListItemProps {
   doc: ParsedDocument;
   onClick: (doc: ParsedDocument) => void;
+  /** True when the doc was just imported — flashes a primary ring/glow
+   * for ~3.5s so the user can connect the Import action to the new row. */
+  isHighlighted?: boolean;
+  /** Ref-callback so DocListView can scrollIntoView the highlighted item. */
+  onMount?: (docId: string, node: HTMLDivElement | null) => void;
 }
 
-export function DocListItem({ doc, onClick }: DocListItemProps) {
+export function DocListItem({ doc, onClick, isHighlighted, onMount }: DocListItemProps) {
   const [reparsing, setReparsing] = useState(false);
   const [reparseError, setReparseError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -86,9 +92,21 @@ export function DocListItem({ doc, onClick }: DocListItemProps) {
     }
   }
 
+  const setRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      onMount?.(doc.id, node);
+    },
+    [doc.id, onMount],
+  );
+
   return (
     <div
-      className="w-full group"
+      ref={setRef}
+      className={cn(
+        "w-full group rounded transition-all",
+        isHighlighted &&
+          "ring-2 ring-primary/60 bg-primary/5 shadow-[0_0_10px_rgba(232,168,0,0.25)] animate-pulse",
+      )}
       onMouseLeave={() => setConfirmDelete(false)}
     >
       <div

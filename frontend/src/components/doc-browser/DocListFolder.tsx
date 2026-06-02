@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Folder, ParsedDocument } from "@/hooks/useDocBrowser";
 import { DocListItem } from "./DocListItem";
 
@@ -10,6 +10,10 @@ interface DocListFolderProps {
   isActive: boolean;
   onSelect: (folderId: string) => void;
   onDocClick: (doc: ParsedDocument) => void;
+  /** Doc id to flash with a primary glow (Option-2 auto-highlight). */
+  highlightedDocId?: string | null;
+  /** Refcallback so the parent can scrollIntoView the highlighted item. */
+  onItemMount?: (docId: string, node: HTMLDivElement | null) => void;
 }
 
 export function DocListFolder({
@@ -18,6 +22,8 @@ export function DocListFolder({
   isActive,
   onSelect,
   onDocClick,
+  highlightedDocId,
+  onItemMount,
 }: DocListFolderProps) {
   const [open, setOpen] = useState(isActive);
 
@@ -25,6 +31,17 @@ export function DocListFolder({
     if (!open) onSelect(folder.id);
     setOpen((v) => !v);
   }
+
+  // Auto-open this folder when the highlighted doc lives inside it
+  // (sidebar-Option-2 import auto-highlight). Without this, a freshly
+  // imported doc would land in a collapsed accordion section and the
+  // glow would never be visible.
+  useEffect(() => {
+    if (!highlightedDocId) return;
+    if (documents.some((d) => d.id === highlightedDocId)) {
+      setOpen(true);
+    }
+  }, [highlightedDocId, documents]);
 
   return (
     <div>
@@ -66,7 +83,13 @@ export function DocListFolder({
             </p>
           )}
           {documents.map((doc) => (
-            <DocListItem key={doc.id} doc={doc} onClick={onDocClick} />
+            <DocListItem
+              key={doc.id}
+              doc={doc}
+              onClick={onDocClick}
+              isHighlighted={highlightedDocId === doc.id}
+              onMount={onItemMount}
+            />
           ))}
         </div>
       )}

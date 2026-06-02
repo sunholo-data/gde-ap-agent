@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useGCSBucket } from "@/hooks/useGCSBucket";
 import { GCSBucketInput } from "./GCSBucketInput";
 import { GCSFileItem } from "./GCSFileItem";
+import { subscribeDocumentImported } from "@/lib/documentEvents";
 
 function Skeleton() {
   return (
@@ -15,10 +16,10 @@ function Skeleton() {
   );
 }
 
-function ChevronIcon() {
+function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
-      className="h-3 w-3 transition-transform group-open:rotate-90"
+      className={`h-3 w-3 transition-transform ${open ? "rotate-90" : ""}`}
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
@@ -42,12 +43,31 @@ export function GCSFileBrowser({ skillId = "" }: GCSFileBrowserProps) {
   const demo = useGCSBucket("demo");
   const user = useGCSBucket(userBucket);
 
+  // Controlled accordion state so the source sections can auto-collapse
+  // after an import — sidebar real estate is tight and once the doc has
+  // moved into My Documents, the user's attention shifts there. The
+  // demo section stays open by default to advertise the example
+  // invoices to first-time visitors.
+  const [demoOpen, setDemoOpen] = useState(true);
+  const [userOpen, setUserOpen] = useState(false);
+
+  useEffect(() => {
+    return subscribeDocumentImported(() => {
+      setDemoOpen(false);
+      setUserOpen(false);
+    });
+  }, []);
+
   return (
     <div className="text-xs">
       {/* Example Invoices */}
-      <details open className="group">
+      <details
+        open={demoOpen}
+        onToggle={(e) => setDemoOpen((e.target as HTMLDetailsElement).open)}
+        className="group"
+      >
         <summary className="flex cursor-pointer select-none items-center gap-1.5 border-b border-border px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/50 hover:text-muted-foreground">
-          <ChevronIcon />
+          <ChevronIcon open={demoOpen} />
           Example Invoices
         </summary>
         {demo.isLoading && <Skeleton />}
@@ -78,9 +98,13 @@ export function GCSFileBrowser({ skillId = "" }: GCSFileBrowserProps) {
       </details>
 
       {/* Your GCS Bucket */}
-      <details className="group">
+      <details
+        open={userOpen}
+        onToggle={(e) => setUserOpen((e.target as HTMLDetailsElement).open)}
+        className="group"
+      >
         <summary className="flex cursor-pointer select-none items-center gap-1.5 border-b border-border px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/50 hover:text-muted-foreground">
-          <ChevronIcon />
+          <ChevronIcon open={userOpen} />
           Your GCS Bucket
         </summary>
         <div className="space-y-2 px-3 py-2">

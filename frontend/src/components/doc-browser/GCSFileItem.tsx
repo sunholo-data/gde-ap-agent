@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { fetchWithAuth } from "@/lib/apiClient";
 import type { GCSObject } from "@/hooks/useGCSBucket";
+import { notifyDocumentImported } from "@/lib/documentEvents";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -37,6 +38,11 @@ export function GCSFileItem({ obj, bucket, skillId = "" }: GCSFileItemProps) {
   const [state, setState] = useState<ImportState>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Source-aware folder routing: imports from the demo bucket land in
+  // "Example Invoices"; imports from a user-supplied bucket land in
+  // "gs://<bucket>". Preserves provenance in the My Documents accordion.
+  const folderName = bucket === "demo" ? "Example Invoices" : `gs://${bucket}`;
+
   async function handleImport() {
     setState("importing");
     setErrorMsg(null);
@@ -44,13 +50,33 @@ export function GCSFileItem({ obj, bucket, skillId = "" }: GCSFileItemProps) {
       const res = await fetchWithAuth("/api/proxy/api/gcs/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bucket, path: obj.name, skill_id: skillId }),
+        body: JSON.stringify({
+          bucket,
+          path: obj.name,
+          folder_name: folderName,
+          skill_id: skillId,
+        }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { detail?: string };
         throw new Error(body.detail ?? `Error ${res.status}`);
       }
+      const body = (await res.json().catch(() => ({}))) as {
+        docId?: string;
+        folderId?: string;
+        originalFilename?: string;
+      };
       setState("done");
+      // Broadcast so DocListView opens the right folder + flashes the
+      // new doc. Best-effort: a missing docId only suppresses the
+      // highlight; the doc still appears via the Firestore listener.
+      if (body.docId) {
+        notifyDocumentImported({
+          docId: body.docId,
+          folderName,
+          filename: body.originalFilename ?? obj.displayName,
+        });
+      }
     } catch (err) {
       setState("error");
       setErrorMsg(err instanceof Error ? err.message : "Import failed");

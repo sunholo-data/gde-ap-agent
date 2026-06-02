@@ -130,9 +130,18 @@ async def import_gcs_object(
     bucket_name: str,
     object_path: str,
     folder_id: str = "",
+    folder_name: str = "",
     skill_id: str = "",
 ) -> ParsedDocumentResponse:
-    """Download a GCS object and push it through the AP parse pipeline."""
+    """Download a GCS object and push it through the AP parse pipeline.
+
+    Folder routing priority:
+      1. `folder_id` — explicit pointer to an existing folder
+      2. `folder_name` — human-readable name; find-or-create per user
+         (eg. "Example Invoices" from the demo bucket source, or
+         "gs://my-bucket" from a user-supplied bucket)
+      3. Default — first folder, or "Uploads YYYY-MM-DD" if none
+    """
     if bucket_name == "demo":
         actual_bucket = os.getenv("AP_DEMO_BUCKET", "gde-ap-agent-demo-invoices")
     else:
@@ -150,7 +159,12 @@ async def import_gcs_object(
         )
 
     original_filename = PurePosixPath(object_path).name
-    effective_folder_id = folder_id.strip() or folders_db.ensure_default_folder(user.uid)
+    if folder_id.strip():
+        effective_folder_id = folder_id.strip()
+    elif folder_name.strip():
+        effective_folder_id = folders_db.find_or_create_folder_by_name(user.uid, folder_name)
+    else:
+        effective_folder_id = folders_db.ensure_default_folder(user.uid)
     dest_bucket = resolve_documents_bucket(user)
 
     # Download from the source GCS bucket

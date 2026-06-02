@@ -103,3 +103,24 @@ def ensure_default_folder(user_id: str) -> str:
     today = datetime.now(UTC).strftime("%Y-%m-%d")
     result = create_folder(user_id, f"Uploads {today}")
     return result["id"]
+
+
+def find_or_create_folder_by_name(user_id: str, name: str) -> str:
+    """Return the folder id matching ``name`` for the user, creating it
+    if absent. Used by source-aware imports so the sidebar's "My
+    Documents" accordion reflects provenance — "Example Invoices" for
+    the demo bucket, "gs://<bucket>" for user-supplied buckets,
+    "Local uploads" for direct drops.
+
+    Name matching is exact (case-sensitive) and uses the existing
+    folder list. Whitespace-only names fall back to ensure_default_folder
+    so a stray empty string never creates a phantom folder.
+    """
+    trimmed = name.strip()
+    if not trimmed:
+        return ensure_default_folder(user_id)
+    for folder in list_folders(user_id):
+        if folder.get("name") == trimmed:
+            return folder["id"]
+    result = create_folder(user_id, trimmed)
+    return result["id"]
