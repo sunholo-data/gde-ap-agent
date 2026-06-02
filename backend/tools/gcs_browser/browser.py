@@ -133,10 +133,14 @@ async def import_gcs_object(
     skill_id: str = "",
 ) -> ParsedDocumentResponse:
     """Download a GCS object and push it through the AP parse pipeline."""
-    try:
-        validate_bucket_name(bucket_name)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if bucket_name == "demo":
+        actual_bucket = os.getenv("AP_DEMO_BUCKET", "gde-ap-agent-demo-invoices")
+    else:
+        try:
+            validate_bucket_name(bucket_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        actual_bucket = bucket_name
 
     ext = PurePosixPath(object_path).suffix.lower()
     if ext not in _ALLOWED_EXTENSIONS:
@@ -151,7 +155,7 @@ async def import_gcs_object(
 
     # Download from the source GCS bucket
     client = storage.Client()
-    src_blob = client.bucket(bucket_name).blob(object_path)
+    src_blob = client.bucket(actual_bucket).blob(object_path)
     file_bytes = src_blob.download_as_bytes()
     content_type = _EXTENSION_CONTENT_TYPES.get(ext) or src_blob.content_type or "application/octet-stream"
 

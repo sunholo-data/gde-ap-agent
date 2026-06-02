@@ -269,6 +269,7 @@ def _extract_content(result: ParseResult, output_format: str) -> str | list | No
     if output_format == "blocks":
         if not result.blocks:
             return None
+
         # Firestore rejects nested arrays. Block.rows is List[List[Cell]] —
         # wrap inner row arrays in maps so the structure becomes array-of-maps.
         # Recurse so the same fix applies to nested children blocks.

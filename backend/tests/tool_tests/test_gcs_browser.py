@@ -238,6 +238,43 @@ class TestImportGCSObject:
             )
         assert exc_info.value.status_code == 400
 
+    @patch("tools.gcs_browser.browser._store_document")
+    @patch("tools.gcs_browser.browser._run_parse", new_callable=AsyncMock)
+    @patch("tools.gcs_browser.browser._upload_to_gcs")
+    @patch("tools.gcs_browser.browser.folders_db")
+    @patch("tools.gcs_browser.browser.resolve_documents_bucket", return_value="user-docs-bucket")
+    @patch("tools.gcs_browser.browser.storage")
+    @patch("tools.gcs_browser.browser.os.getenv", return_value="gde-ap-agent-demo-invoices")
+    @pytest.mark.asyncio
+    async def test_demo_sentinel_resolves_bucket(
+        self, mock_getenv, mock_storage, mock_resolve, mock_folders, mock_upload, mock_parse, mock_store
+    ):
+        from tools.gcs_browser.browser import import_gcs_object
+
+        mock_parse.return_value = ("parsed", [], 80, None)
+        mock_folders.ensure_default_folder.return_value = "folder-001"
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_blob.download_as_bytes.return_value = b"fake pdf"
+        mock_blob.content_type = "application/pdf"
+
+        user = _make_user()
+        result = await import_gcs_object(
+            user=user,
+            bucket_name="demo",
+            object_path="acme-invoice.pdf",
+            folder_id="",
+            skill_id="",
+        )
+
+        # Should resolve "demo" to the env-var bucket, not try gs://demo/
+        mock_client.bucket.assert_called_once_with("gde-ap-agent-demo-invoices")
+        assert result.status == "parsed"
+
 
 # ---------------------------------------------------------------------------
 # API routes (FastAPI TestClient)
