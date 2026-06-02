@@ -49,6 +49,14 @@ smoke-artifacts:
 smoke-auth:
 	WHOAMI_SMOKE_ENV=dev uv run pytest tests/integration/test_whoami_deployed.py -v --tb=short
 
+# Probe Vertex AI Gemini models for availability + streaming TTFT.
+# Default: reads model IDs from the ap-* SKILL.md files. Override:
+#   make check-models MODELS="gemini-3.5-flash gemini-3.1-flash-lite"
+# Or list every Gemini model the project can see:
+#   make check-models MODELS="--list"
+check-models:
+	uv run python scripts/check_models.py $(MODELS)
+
 # Automated Firestore rules verifier. Creates two `.test`-TLD users + a private
 # skill fixture via Admin SDK, then makes Firestore REST calls as each identity
 # to assert each rule branch (allow/deny) behaves as expected. Safe to re-run;
