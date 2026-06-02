@@ -73,6 +73,16 @@ export interface UseSkillAgentReturn {
     opts?: { documentIds?: string[]; resumedSession?: boolean },
   ) => Promise<void>;
   isLoading: boolean;
+  /**
+   * Milliseconds since the last AG-UI event was observed, OR null when not
+   * stalled (either no run in flight, or events arriving normally). Flips
+   * to a number past the configured soft threshold (default 20s) so the
+   * UI can render "still working… (Xs)" instead of a silent spinner. The
+   * hard threshold (default 90s) auto-aborts the run and surfaces
+   * `error` with a clear timeout message — see useSkillAgent's inactivity
+   * watchdog.
+   */
+  stalledMs: number | null;
   error: StreamError | null;
   clearError: () => void;
   stop: () => void;
@@ -148,8 +158,20 @@ function classifyRunError(event: unknown): StreamError {
  * We mirror `agent.messages` to React state on every change so consumers see
  * fresh renders. The agent keeps the canonical list; we just copy it.
  */
-export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAgentReturn {
+export function useSkillAgent(options?: {
+  _hangTimeoutMs?: number;
+  /** Threshold (ms) after which the UI flips into a "stalled" state showing
+   * a still-working indicator + an inactivity counter. Defaults to 20s. */
+  _stallSoftMs?: number;
+  /** Threshold (ms) after which the agent run is auto-aborted and a
+   * clear timeout error surfaces. Defaults to 90s. Covers a realistic
+   * orchestrator + 3-specialist + grounding pipeline; tune up if your
+   * pipeline routinely exceeds this. */
+  _stallHardMs?: number;
+}): UseSkillAgentReturn {
   const hangTimeoutMs = options?._hangTimeoutMs ?? 30_000;
+  const stallSoftMs = options?._stallSoftMs ?? 20_000;
+  const stallHardMs = options?._stallHardMs ?? 90_000;
   const agent = useAGUIAgent();
   // Sprint 2.10: read every active A2UI surface's snapshot at sendMessage
   // time and ride it back on `forwardedProps.a2ui_surface_state`. Optional
@@ -165,7 +187,23 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
   const [error, setError] = useState<StreamError | null>(null);
   const [stageLabel, setStageLabel] = useState<string | null>(null);
 
+  // Inactivity watchdog: bumps on every AG-UI event so the UI can flip into
+  // a "still working… (Xs)" indicator past `stallSoftMs` and auto-abort
+  // past `stallHardMs`. The pre-existing 30s hangTimeout only catches the
+  // case where RUN_STARTED never fires; this catches "stream stalled
+  // mid-run" (agent looping on a backend issue with no events flowing,
+  // eg. Firestore index missing → list_documents loops in the orchestrator).
+  // See docs/design/forks/gde-ap-agent/ for the stuck-session debrief.
+  const lastEventTsRef = useRef<number>(0);
+  const [stalledMs, setStalledMs] = useState<number | null>(null);
+
   const clearError = useCallback(() => setError(null), []);
+
+  /** Mark a fresh event arrival. Resets the stall counter. */
+  const bumpEvent = useCallback(() => {
+    lastEventTsRef.current = performance.now();
+    if (stalledMs !== null) setStalledMs(null);
+  }, [stalledMs]);
 
   // Set to true by onRunFailed so the sendMessage catch block doesn't overwrite
   // the real run_error with a spurious "protocol violation" network error.
@@ -225,8 +263,12 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
     sync(agentChanged);
 
     const sub = agent.subscribe({
-      onMessagesChanged: () => sync(),
+      onMessagesChanged: () => {
+        bumpEvent();
+        sync();
+      },
       onRunStartedEvent: () => {
+        bumpEvent();
         setIsLoading(true);
         setRunStarted(true);
         // Preserve completed tool calls from prior turns so their iframes
@@ -243,6 +285,7 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
         // survive the handshake so the user keeps seeing progress.
       },
       onCustomEvent: ({ event }: { event: { name?: unknown; value?: unknown } }) => {
+        bumpEvent();
         // Two server-authored Custom event types of interest:
         //   STAGE_PROGRESS  — per-stage label for the TypingIndicator
         //   LATENCY_REPORT  — final per-stage timings (only when ?probe=1)
@@ -259,6 +302,7 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
         }
       },
       onTextMessageStartEvent: ({ event }: { event: { messageId?: string } }) => {
+        bumpEvent();
         // First model token reached the wire — clear the stage label so
         // the UI handoff (TypingIndicator → StreamingBubble) is clean.
         setStageLabel(null);
@@ -280,16 +324,21 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
         }
       },
       onReasoningStartEvent: () => {
+        bumpEvent();
         setThinkingContent("");
         setIsThinking(true);
       },
       onReasoningMessageContentEvent: ({ reasoningMessageBuffer }: { reasoningMessageBuffer: string }) => {
+        bumpEvent();
         setThinkingContent(reasoningMessageBuffer);
       },
       onReasoningEndEvent: () => {
+        bumpEvent();
         setIsThinking(false);
       },
       onRunFinalized: () => {
+        bumpEvent();
+        setStalledMs(null);
         setIsLoading(false);
         setRunStarted(false);
         setStageLabel(null);
@@ -299,6 +348,8 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
         );
       },
       onRunFailed: (event: unknown) => {
+        bumpEvent();
+        setStalledMs(null);
         runFailedRef.current = true;
         const streamErr = classifyRunError(event);
         console.warn("stream_run_failed", streamErr);
@@ -311,6 +362,7 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
         );
       },
       onToolCallStartEvent: ({ event }: { event: { toolCallId: string; toolCallName: string; parentMessageId?: string } }) => {
+        bumpEvent();
         // F2a (2026-05-01): ADK doesn't emit parentMessageId on AG-UI
         // TOOL_CALL_START events. Without snapshotting at start time, every
         // unparented tool call inherits "latest assistant at render time" via
@@ -345,6 +397,7 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
         ]);
       },
       onToolCallArgsEvent: ({ event }: { event: { toolCallId: string; delta: string } }) => {
+        bumpEvent();
         // AG-UI emits ARGS as streaming deltas — concatenate into argsJson
         // so the final string is the complete JSON-encoded tool input by
         // the time TOOL_CALL_END fires. Consumers parse on read.
@@ -357,6 +410,7 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
         );
       },
       onToolCallEndEvent: ({ event }: { event: { toolCallId: string } }) => {
+        bumpEvent();
         setToolCalls((prev) =>
           prev.map((tc) =>
             tc.id === event.toolCallId ? { ...tc, status: "success" } : tc,
@@ -364,6 +418,7 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
         );
       },
       onToolCallResultEvent: ({ event }: { event: { toolCallId: string; content: string } }) => {
+        bumpEvent();
         setToolCalls((prev) =>
           prev.map((tc) =>
             tc.id === event.toolCallId ? { ...tc, resultContent: event.content } : tc,
@@ -372,7 +427,7 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
       },
     });
     return () => sub.unsubscribe();
-  }, [agent]);
+  }, [agent, bumpEvent]);
 
   // 30s watchdog: if loading starts but RUN_STARTED never fires, abort and surface error.
   useEffect(() => {
@@ -384,6 +439,37 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
     }, hangTimeoutMs);
     return () => clearTimeout(timer);
   }, [isLoading, runStarted, agent, hangTimeoutMs]);
+
+  // Inactivity watchdog (separate from the RUN_STARTED hangTimeout): while
+  // a run is in flight AND events were arriving but have now gone silent,
+  // surface "still working… (Xs)" in the TypingIndicator past the soft
+  // threshold and auto-abort past the hard threshold. Catches the class
+  // of bug where the agent loops on a backend issue (Firestore index,
+  // permission denied, sub-agent loop) with no observable progress —
+  // user previously saw the spinner forever. Polls every 2s while
+  // loading; stops the interval the moment loading flips off.
+  useEffect(() => {
+    if (!isLoading || !runStarted) return;
+    const interval = window.setInterval(() => {
+      const sinceLast = performance.now() - lastEventTsRef.current;
+      if (sinceLast >= stallHardMs) {
+        agent.abortRun();
+        setError({
+          kind: "network",
+          message: `Agent stopped responding (no events for ${Math.round(stallHardMs / 1000)}s). Try again.`,
+          retryable: true,
+          rawMessage: `stream_stalled_${Math.round(stallHardMs / 1000)}s`,
+        });
+        setIsLoading(false);
+        setStalledMs(null);
+        return;
+      }
+      if (sinceLast >= stallSoftMs) {
+        setStalledMs(Math.round(sinceLast));
+      }
+    }, 2000);
+    return () => window.clearInterval(interval);
+  }, [isLoading, runStarted, agent, stallSoftMs, stallHardMs]);
 
   const sendMessage = useCallback(
     async (
@@ -456,6 +542,7 @@ export function useSkillAgent(options?: { _hangTimeoutMs?: number }): UseSkillAg
     stageLabel,
     sendMessage,
     isLoading,
+    stalledMs,
     error,
     clearError,
     stop,

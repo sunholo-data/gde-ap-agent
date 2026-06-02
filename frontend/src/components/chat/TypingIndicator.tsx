@@ -21,11 +21,28 @@ interface TypingIndicatorProps {
    */
   stageLabel?: string | null;
   activeToolName?: string | null;
+  /**
+   * Milliseconds since the last AG-UI event. Set by useSkillAgent's
+   * inactivity watchdog past the soft threshold (default 20s). When
+   * present, overrides label / tool / dots with a "Still working… (Xs)"
+   * indicator so the user knows the agent is taking longer than expected
+   * but hasn't crashed. See useSkillAgent.stalledMs.
+   */
+  stalledMs?: number | null;
 }
 
-export function TypingIndicator({ stageLabel, activeToolName }: TypingIndicatorProps) {
-  const labelText = stageLabel ?? null;
+export function TypingIndicator({ stageLabel, activeToolName, stalledMs }: TypingIndicatorProps) {
+  const stalledText =
+    stalledMs && stalledMs > 0
+      ? `Still working… (${Math.round(stalledMs / 1000)}s)`
+      : null;
+  const labelText = stalledText ?? stageLabel ?? null;
   const toolText = !labelText && activeToolName ? activeToolName : null;
+
+  // Stalled state visually distinct from normal pulse (yellow vs orange)
+  // so the user can spot "agent is taking too long" at a glance.
+  const dotColor = stalledText ? "bg-yellow-500" : "bg-orange-400";
+  const labelColor = stalledText ? "text-yellow-700" : "text-muted-foreground";
 
   return (
     <div className="flex items-start gap-3 py-1">
@@ -33,8 +50,8 @@ export function TypingIndicator({ stageLabel, activeToolName }: TypingIndicatorP
       <div className="flex items-center gap-2 rounded-[2px_8px_8px_8px] border border-border bg-[hsl(0,0%,98%)] px-3 py-2.5">
         {labelText ? (
           <>
-            <span className="text-xs text-muted-foreground">{labelText}</span>
-            <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse" />
+            <span className={`text-xs ${labelColor}`}>{labelText}</span>
+            <span className={`h-1.5 w-1.5 rounded-full ${dotColor} animate-pulse`} />
           </>
         ) : toolText ? (
           <>

@@ -17,6 +17,7 @@ function makeReturn(overrides: Partial<UseSkillAgentReturn>): UseSkillAgentRetur
     thinkingContent: "",
     isThinking: false,
     stageLabel: null,
+    stalledMs: null,
     sendMessage: mockSendMessage,
     isLoading: false,
     error: null,

@@ -60,4 +60,42 @@ describe("TypingIndicator", () => {
       expect(container.querySelectorAll(".animate-bounce")).toHaveLength(3);
     });
   });
+
+  // stuck-session debrief 2026-06-02: the inactivity watchdog in
+  // useSkillAgent surfaces a stalledMs counter past the soft threshold
+  // (default 20s). TypingIndicator renders "Still working… (Xs)" with
+  // a visually distinct amber colour so the user knows the agent is
+  // taking longer than expected — not that it crashed.
+  describe("stalledMs (inactivity watchdog)", () => {
+    it("renders 'Still working… (Xs)' when stalledMs is set", () => {
+      render(<TypingIndicator stalledMs={22_400} />);
+      expect(screen.getByText("Still working… (22s)")).toBeInTheDocument();
+    });
+
+    it("stalledMs overrides stageLabel", () => {
+      render(<TypingIndicator stageLabel="Thinking…" stalledMs={25_000} />);
+      expect(screen.getByText("Still working… (25s)")).toBeInTheDocument();
+      expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
+    });
+
+    it("stalledMs overrides activeToolName", () => {
+      render(<TypingIndicator activeToolName="ap_validator" stalledMs={30_000} />);
+      expect(screen.getByText("Still working… (30s)")).toBeInTheDocument();
+      expect(screen.queryByText("ap_validator")).not.toBeInTheDocument();
+    });
+
+    it("does not flip into stalled mode when stalledMs is null", () => {
+      render(<TypingIndicator stalledMs={null} stageLabel="Reading 1 document…" />);
+      expect(screen.queryByText(/still working/i)).not.toBeInTheDocument();
+      expect(screen.getByText("Reading 1 document…")).toBeInTheDocument();
+    });
+
+    it("uses amber colour when stalled (visual distinction)", () => {
+      const { container } = render(<TypingIndicator stalledMs={20_000} />);
+      // Amber dot replaces the orange pulse so the user can spot
+      // the stalled state at a glance.
+      expect(container.querySelector(".bg-yellow-500")).toBeTruthy();
+      expect(container.querySelector(".bg-orange-400")).toBeNull();
+    });
+  });
 });

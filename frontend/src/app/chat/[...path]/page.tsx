@@ -279,6 +279,7 @@ function ChatShell({
     stageLabel,
     sendMessage,
     isLoading,
+    stalledMs,
     error,
     clearError,
     stop,
@@ -294,14 +295,10 @@ function ChatShell({
   const [globeContext, setGlobeContext] = useState<{ vendor: string; country: string; amount?: number } | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(false);
 
-  // Doc-panel layout — side (default split), focus (~80% width), collapsed
-  // (tab bar only, body hidden). Persisted in localStorage so the user's
-  // preference survives reloads.
-  const [docPanelMode, setDocPanelMode] = useState<"side" | "focus" | "collapsed">(() => {
-    if (typeof window === "undefined") return "side";
-    const v = localStorage.getItem("docPanelMode");
-    return v === "focus" || v === "collapsed" ? v : "side";
-  });
+  // Per-tab view mode lives on DocTabData ("minimized" | "side" | "focus").
+  // Default: every newly opened tab starts minimised — chat keeps the full
+  // width until the user picks a tab to expand. The doc-panel column width
+  // (used when one tab is in "side" mode) is still persisted globally.
   const [docPanelWidthPx, setDocPanelWidthPx] = useState<number | null>(() => {
     if (typeof window === "undefined") return null;
     const raw = localStorage.getItem("docPanelWidthPx");
@@ -309,9 +306,6 @@ function ChatShell({
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? n : null;
   });
-  useEffect(() => {
-    localStorage.setItem("docPanelMode", docPanelMode);
-  }, [docPanelMode]);
   useEffect(() => {
     if (docPanelWidthPx !== null) localStorage.setItem("docPanelWidthPx", String(docPanelWidthPx));
   }, [docPanelWidthPx]);
@@ -613,12 +607,21 @@ function ChatShell({
       if (prev.find((t) => t.id === doc.id)) return prev;
       return [
         ...prev,
-        { id: doc.id, filename: doc.originalFilename, format: doc.sourceFormat, included: true },
+        {
+          id: doc.id,
+          filename: doc.originalFilename,
+          format: doc.sourceFormat,
+          included: true,
+          // Default minimised — opening a doc adds a tab but doesn't steal the
+          // viewport. User clicks the panel/fullscreen icon on the tab to view.
+          viewMode: "minimized",
+          parseStatus: doc.parseStatus,
+          blockCount: doc.blockCount ?? null,
+          createdAt: doc.createdAt,
+        },
       ];
     });
     setActiveTabId(doc.id);
-    // Auto-expand from collapsed — user explicitly chose to view this doc.
-    setDocPanelMode((m) => (m === "collapsed" ? "side" : m));
   }, []);
 
   const handleTabClose = useCallback((id: string) => {
@@ -634,6 +637,28 @@ function ChatShell({
       prev.map((t) => (t.id === id ? { ...t, included: !t.included } : t)),
     );
   }, []);
+
+  // Mutually-exclusive expand: setting one tab to side/focus minimises any
+  // other tab that was previously expanded. Setting to "minimized" doesn't
+  // touch the others.
+  const handleSetTabViewMode = useCallback(
+    (id: string, mode: "minimized" | "side" | "focus") => {
+      setOpenTabs((prev) =>
+        prev.map((t) => {
+          if (t.id === id) return { ...t, viewMode: mode };
+          if (mode !== "minimized" && t.viewMode !== "minimized") {
+            return { ...t, viewMode: "minimized" };
+          }
+          return t;
+        }),
+      );
+      if (mode !== "minimized") setActiveTabId(id);
+    },
+    [],
+  );
+
+  // The single tab (if any) whose panel is currently rendered.
+  const expandedTab = openTabs.find((t) => t.viewMode !== "minimized") ?? null;
 
   const inputDisabled = isLoading || error !== null;
 
@@ -673,12 +698,11 @@ function ChatShell({
         tabs={openTabs}
         activeTabId={activeTabId}
         showBrowser={showDocBrowser}
-        docPanelMode={docPanelMode}
-        onSetDocPanelMode={setDocPanelMode}
         onSelect={setActiveTabId}
         onClose={handleTabClose}
         onToggleInclude={handleTabToggleInclude}
         onToggleBrowser={() => setShowDocBrowser((v) => !v)}
+        onSetViewMode={handleSetTabViewMode}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -763,14 +787,14 @@ function ChatShell({
           </aside>
         )}
 
-        {activeTabId && docPanelMode !== "collapsed" && (
+        {expandedTab && (
           <>
             <div
               ref={docPanelRef}
               className="flex shrink-0 flex-col overflow-hidden border-r"
               style={{
                 width:
-                  docPanelMode === "focus"
+                  expandedTab.viewMode === "focus"
                     ? "80%"
                     : docPanelWidthPx !== null
                       ? `${docPanelWidthPx}px`
@@ -778,10 +802,10 @@ function ChatShell({
               }}
             >
               <div className="min-h-0 flex-1 overflow-auto">
-                <DocumentPanel docId={activeTabId} />
+                <DocumentPanel docId={expandedTab.id} />
               </div>
               <DocumentHistoryPanel
-                documentId={activeTabId}
+                documentId={expandedTab.id}
                 activeSessionId={sessionId}
                 currentUserUid={user.uid}
                 onSelectSession={handleSelectSession}
@@ -789,7 +813,7 @@ function ChatShell({
                 onDeleteActive={handleNewSession}
               />
             </div>
-            {docPanelMode === "side" && (
+            {expandedTab.viewMode === "side" && (
               <div
                 role="separator"
                 aria-orientation="vertical"
@@ -806,14 +830,14 @@ function ChatShell({
         )}
 
         {/* MULTI-SURFACE-A2UI M3: workspace surface mount — takes the
-            doc-panel slot when no doc tab is active AND the agent has
-            published a workspace tree. Hidden in both other cases. */}
-        {!activeTabId && !globeContext && (
+            doc-panel slot when no doc tab is currently expanded AND the
+            agent has published a workspace tree. */}
+        {!expandedTab && !globeContext && (
           <WorkspaceSurfaceRegion sessionId={sessionId ?? agentSessionId} />
         )}
 
         {/* M4: Vendor globe — shown when ap-orchestrator fires show_vendor_globe */}
-        {!activeTabId && globeContext && !dashboardOpen && (
+        {!expandedTab && globeContext && !dashboardOpen && (
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-r md:max-w-xl">
             <VendorGlobePanel
               vendor={globeContext.vendor}
@@ -825,7 +849,7 @@ function ChatShell({
         )}
 
         {/* M5: AP analytics dashboard — shown when show_ap_dashboard fires */}
-        {!activeTabId && dashboardOpen && (
+        {!expandedTab && dashboardOpen && (
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-r md:max-w-xl">
             <APDashboardPanel onClose={() => setDashboardOpen(false)} />
           </div>
@@ -854,6 +878,7 @@ function ChatShell({
             userInitial={userInitial}
             userDisplayName={userDisplayName}
             stageLabel={stageLabel}
+            stalledMs={stalledMs}
             onAction={handleAction}
             mcpServerIds={mcpServerIds}
             sessionId={sessionId ?? agentSessionId}

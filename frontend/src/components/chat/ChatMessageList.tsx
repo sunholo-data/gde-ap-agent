@@ -40,6 +40,10 @@ interface ChatMessageListProps {
    * real model TTFT — see docs/design/v6.1.0/ttft-instrumentation.md.
    */
   stageLabel?: string | null;
+  /** Inactivity stall counter from useSkillAgent. Forwarded to the
+   * TypingIndicator so a stalled stream surfaces "Still working… (Xs)"
+   * to the user instead of a silent spinner. Null when not stalled. */
+  stalledMs?: number | null;
   /** MCP server IDs configured for the current skill (from
    * useSkillMeta.mcpServerIds) — passed to MessageBubble so
    * MCPAppToolCallRouter can attribute tool calls to a server and decide
@@ -75,6 +79,7 @@ export function ChatMessageList({
   onAction,
   errorBanner,
   stageLabel,
+  stalledMs,
   mcpServerIds,
   onChatMessage,
   sessionId,
@@ -221,7 +226,7 @@ export function ChatMessageList({
           )}
 
           {isTyping && (
-            <TypingIndicator stageLabel={stageLabel} activeToolName={activeToolName} />
+            <TypingIndicator stageLabel={stageLabel} activeToolName={activeToolName} stalledMs={stalledMs} />
           )}
 
           {errorBanner && <div className="text-left">{errorBanner}</div>}
