@@ -237,6 +237,7 @@ Any local workflow that requires more than one manual step — setting env vars,
 | Verify the `aiplatform` CLI works end-to-end | `make cli-selftest` |
 | Verify deployed platform skills declare structuredInput | `make verify-skill-schemas` |
 | Full audit-view verification against a live deploy | `AIPLATFORM_ID_TOKEN=<token> make verify-audit-view` |
+| Tail deployed backend errors (chat 500s, etc.) | `GCP_PROJECT=<project> make tail-logs ARGS=chat` |
 
 When adding a new workflow, add it to `scripts/` and the root `Makefile` in the same PR.
 

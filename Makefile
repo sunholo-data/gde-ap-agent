@@ -79,6 +79,9 @@ verify-audit-view:
 verify-skill-schemas:
 	@./scripts/verify-skill-schemas.sh
 
+tail-logs:
+	@./scripts/tail-logs.sh $(ARGS)
+
 cli-selftest:
 	@echo "▶ mock smoke …"
 	@$(MAKE) --no-print-directory cli-selftest-mock
@@ -103,3 +106,4 @@ help:
 	@echo
 	@echo "make verify-skill-schemas — assert deployed platform skills declare structuredInput"
 	@echo "make verify-audit-view    — full audit-view verification (schemas + Run-Standalone probe)"
+	@echo "make tail-logs            — recent backend errors (set GCP_PROJECT + ARGS for filters)"
