@@ -43,7 +43,7 @@ export function GCSFileBrowser({ skillId = "" }: GCSFileBrowserProps) {
   const user = useGCSBucket(userBucket);
 
   return (
-    <div className="border-b border-border text-xs">
+    <div className="text-xs">
       {/* Example Invoices */}
       <details open className="group">
         <summary className="flex cursor-pointer select-none items-center gap-1.5 border-b border-border px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/50 hover:text-muted-foreground">
@@ -69,7 +69,7 @@ export function GCSFileBrowser({ skillId = "" }: GCSFileBrowserProps) {
           </p>
         )}
         {!demo.isLoading && demo.objects.length > 0 && (
-          <div className="py-0.5">
+          <div className="max-h-[32vh] overflow-y-auto py-0.5">
             {demo.objects.map((obj) => (
               <GCSFileItem key={obj.name} obj={obj} bucket="demo" skillId={skillId} />
             ))}
@@ -102,7 +102,7 @@ export function GCSFileBrowser({ skillId = "" }: GCSFileBrowserProps) {
             <p className="text-[10px] text-muted-foreground">No files found in this bucket.</p>
           )}
           {!user.isLoading && user.objects.length > 0 && (
-            <div className="py-0.5">
+            <div className="max-h-[32vh] overflow-y-auto py-0.5">
               {user.objects.map((obj) => (
                 <GCSFileItem key={obj.name} obj={obj} bucket={userBucket} skillId={skillId} />
               ))}

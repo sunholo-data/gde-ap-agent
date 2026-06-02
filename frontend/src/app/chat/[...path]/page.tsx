@@ -91,6 +91,56 @@ function SidebarSurfaceRegion({ sessionId }: { sessionId: string | null }) {
   );
 }
 
+function SectionChevron() {
+  return (
+    <svg
+      className="h-3 w-3 shrink-0 transition-transform group-open:rotate-90"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 4l4 4-4 4" />
+    </svg>
+  );
+}
+
+/**
+ * Uniform collapsible sidebar section. Headers are always visible so the user
+ * can reach every section regardless of which others are expanded; each body
+ * is constrained so a single long section can't push others off-screen.
+ */
+function SidebarSection({
+  title,
+  defaultOpen = true,
+  badge,
+  action,
+  bodyClassName,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  badge?: React.ReactNode;
+  action?: React.ReactNode;
+  bodyClassName?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details open={defaultOpen} className="group border-b border-border">
+      <summary className="flex cursor-pointer select-none items-center gap-1.5 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60 hover:text-muted-foreground">
+        <SectionChevron />
+        <span className="flex-1 truncate">{title}</span>
+        {badge}
+        {action}
+      </summary>
+      <div className={bodyClassName ?? "px-3 pb-3 pt-1"}>{children}</div>
+    </details>
+  );
+}
+
 function ModalSurfaceRegion({ sessionId }: { sessionId: string | null }) {
   const state = useSurfaceState("modal");
   if (!state?.surface) return null;
@@ -584,15 +634,16 @@ function ChatShell({
 
       <div className="flex min-h-0 flex-1">
         {showDocBrowser && (
-          <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-border bg-background">
-            {/* Skill info card — shows active skill description + role */}
+          <aside className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-border bg-background">
             {activeSkillMeta && (
-              <div className="border-b border-border px-3 py-3">
+              <SidebarSection title="Skill" defaultOpen bodyClassName="px-3 pb-3 pt-1">
                 <div className="mb-1.5 flex items-center gap-2">
                   <span className="shrink-0 text-primary">{activeSkillMeta.icon}</span>
-                  <span className="text-xs font-semibold text-foreground truncate">{activeSkillMeta.tagline}</span>
+                  <span className="truncate text-xs font-semibold text-foreground">{activeSkillMeta.tagline}</span>
                   {activeSkillMeta.isEntryPoint && (
-                    <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary">Hub</span>
+                    <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary">
+                      Hub
+                    </span>
                   )}
                 </div>
                 <p className="text-[10px] leading-relaxed text-muted-foreground">{activeSkillMeta.description}</p>
@@ -603,21 +654,36 @@ function ChatShell({
                     </span>
                   </div>
                 )}
-              </div>
+              </SidebarSection>
             )}
-            <div className="border-b border-border px-3 py-2.5">
-              <div className="flex items-center justify-between">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/50">Sessions</p>
+
+            <SidebarSection
+              title="Sessions"
+              defaultOpen
+              badge={
+                sessions.length > 0 ? (
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+                    {sessions.length}
+                  </span>
+                ) : null
+              }
+              action={
                 <button
                   type="button"
-                  onClick={handleNewSession}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleNewSession();
+                  }}
                   title="New conversation"
                   className="rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[9px] font-semibold text-primary/70 transition-colors hover:bg-primary/15 hover:text-primary"
                 >
                   + New
                 </button>
-              </div>
-              <div className="mt-1.5 max-h-40 overflow-y-auto">
+              }
+              bodyClassName="px-3 pb-2"
+            >
+              <div className="max-h-48 overflow-y-auto">
                 <SkillSessionPanel
                   sessions={sessions}
                   activeSessionId={sessionId}
@@ -626,15 +692,24 @@ function ChatShell({
                   onDelete={(sid) => void handleDeleteSkillSession(sid)}
                 />
               </div>
-            </div>
-            <GCSFileBrowser skillId={skillId} />
-            <DocListView uid={user.uid} onDocClick={handleDocClick} />
-            <div className="border-t">
+            </SidebarSection>
+
+            <SidebarSection title="Buckets" defaultOpen bodyClassName="">
+              <GCSFileBrowser skillId={skillId} />
+            </SidebarSection>
+
+            <SidebarSection title="My Documents" defaultOpen bodyClassName="">
+              <div className="max-h-[40vh]">
+                <DocListView uid={user.uid} onDocClick={handleDocClick} />
+              </div>
+            </SidebarSection>
+
+            <SidebarSection title="Upload" defaultOpen={false} bodyClassName="">
               <UploadDropZone skillId={skillId} />
-            </div>
+            </SidebarSection>
+
             {/* MULTI-SURFACE-A2UI M3: sidebar surface mount — only visible
-                when agent populates the surface. Sits below the doc list +
-                upload zone so it doesn't disturb the existing sidebar UX. */}
+                when agent populates the surface. */}
             <SidebarSurfaceRegion sessionId={sessionId ?? agentSessionId} />
           </aside>
         )}
