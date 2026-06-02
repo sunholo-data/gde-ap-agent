@@ -1,0 +1,60 @@
+From invoices@acme-gmbh.de Sun Jun 01 09:00:00 2026
+From: Billing <invoices@acme-gmbh.de>
+To: ap@gde-ap-agent.com
+Subject: Invoice INV-2026-042 — EUR 9,000.00
+Date: Sun, 01 Jun 2026 09:00:00 +0200
+Message-ID: <inv-042-orig@acme-gmbh.de>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Dear Team,
+
+Please find enclosed Invoice INV-2026-042 for cloud services rendered in May 2026.
+Amount: EUR 9,000.00 (incl. 19% VAT). Due: 01 July 2026.
+PO Reference: PO-2026-0189.
+
+GL Coding suggestion: 5200-OPEX
+
+Regards,
+Klaus Weber, Acme GmbH Finance
+
+From ap-manager@gde-ap-agent.com Mon Jun 02 10:15:00 2026
+From: Sarah Chen <ap-manager@gde-ap-agent.com>
+To: ap@gde-ap-agent.com
+Subject: Re: Invoice INV-2026-042 — EUR 9,000.00 — APPROVAL REQUIRED
+Date: Mon, 02 Jun 2026 10:15:00 +0100
+Message-ID: <approval-req-042@gde-ap-agent.com>
+In-Reply-To: <inv-042-orig@acme-gmbh.de>
+References: <inv-042-orig@acme-gmbh.de>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Team,
+
+I've reviewed INV-2026-042 from Acme GmbH. The amounts match PO-2026-0189.
+GL coding 5200-OPEX is correct per our chart of accounts.
+
+Requesting approval from Finance Director before posting.
+
+— Sarah Chen, AP Manager
+
+From finance-director@gde-ap-agent.com Mon Jun 02 14:30:00 2026
+From: James Okonkwo <finance-director@gde-ap-agent.com>
+To: ap@gde-ap-agent.com
+Subject: Re: Invoice INV-2026-042 — EUR 9,000.00 — APPROVED
+Date: Mon, 02 Jun 2026 14:30:00 +0100
+Message-ID: <approved-042@gde-ap-agent.com>
+In-Reply-To: <approval-req-042@gde-ap-agent.com>
+References: <inv-042-orig@acme-gmbh.de> <approval-req-042@gde-ap-agent.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+X-AP-Status: APPROVED
+X-AP-Approved-By: James Okonkwo
+X-AP-Approved-Date: 2026-06-02
+
+APPROVED.
+
+INV-2026-042 (Acme GmbH, EUR 9,000.00) is approved for posting.
+GL: 5200-OPEX. Cost centre: CC-INFRA-EU. Post to accounting period June 2026.
+
+— James Okonkwo, Finance Director

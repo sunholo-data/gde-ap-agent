@@ -1,0 +1,5 @@
+invoice_number,invoice_date,due_date,vendor_name,vendor_country,vendor_vat,po_number,description,gl_code,currency,subtotal,vat_rate_pct,vat_amount,total_amount,payment_terms,bank_iban,bank_bic,notes
+INV-2026-042,2026-06-01,2026-07-01,Acme GmbH,DE,DE123456789,PO-2026-0189,Cloud Infrastructure Services June 2026,5200-OPEX,EUR,7563.00,19,1436.97,9000.00,NET30,DE89370400440532013000,COBADEFFXXX,German VAT applies
+INV-2026-018,2026-06-01,2026-07-01,TechCorp Ltd,GB,GB123456789,PO-UK-2026-0045,Software Licences Q2 2026 (5 products),5400-SOFT,GBP,10625.00,20,2125.00,12750.00,NET30,GB29NWBK60161331926819,BARCGB22,UK VAT 20%
+INV-2026-889,2026-06-01,2026-07-01,Nordic Parts AB,SE,SE556123456701,PO-2026-0234,Hydraulic Parts — May 2026 supply,5100-COGS,EUR,3200.00,0,0.00,3200.00,NET30,SE3550000000054910000003,NDEASESS,EU reverse charge — zero VAT
+INV-2026-103,2026-06-01,2026-07-31,Apex Consulting LLC,US,US-EIN-47-1234567,PO-US-2026-0012,Digital Transformation Consulting — May 2026,5300-CONSULT,USD,22000.00,0,0.00,22000.00,NET60,,CHASUS33,US entity — no EU VAT. W-9 on file.
