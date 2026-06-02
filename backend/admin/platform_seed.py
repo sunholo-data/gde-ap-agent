@@ -45,6 +45,7 @@ _LEGACY_OWNER_UIDS: frozenset[str] = frozenset({"aitana-platform"})
 @dataclass
 class SeedSummary:
     created: int = 0
+    updated: int = 0
     skipped: int = 0
     purged: int = 0
     failed: list[str] = field(default_factory=list)
@@ -53,6 +54,7 @@ class SeedSummary:
     def as_dict(self) -> dict[str, Any]:
         return {
             "created": self.created,
+            "updated": self.updated,
             "skipped": self.skipped,
             "purged": self.purged,
             "failed": self.failed,
@@ -94,6 +96,15 @@ def _parse_template(skill_md: Path) -> dict[str, Any]:
 def _existing_platform_skill_names() -> set[str]:
     configs = skill_config.list_skills(owner_id=PLATFORM_OWNER_UID, limit=200)
     return {c.name for c in configs}
+
+
+def _find_platform_skill_id(name: str) -> str | None:
+    """Resolve a platform skill's Firestore id from its template name."""
+    configs = skill_config.list_skills(owner_id=PLATFORM_OWNER_UID, limit=200)
+    for cfg in configs:
+        if cfg.name == name:
+            return cfg.skill_id
+    return None
 
 
 def _ensure_tool_permissions_wildcard() -> bool:
@@ -220,7 +231,44 @@ def seed(templates_root: Path | None = None) -> SeedSummary:
             continue
 
         if parsed["name"] in existing:
-            summary.skipped += 1
+            # Refresh template-sourced fields so SKILL.md edits (eg. new
+            # metadata.structuredInput, instruction tweaks) propagate to
+            # Firestore on the next deploy. Owner-customisable fields
+            # (slug, accessControl, displayName, tags, initialMessage)
+            # are preserved — only description / instructions /
+            # skillMetadata flow from the template, since those have
+            # no UI to override.
+            existing_id = _find_platform_skill_id(parsed["name"])
+            if existing_id is None:
+                logger.warning(
+                    "platform_seed: could not locate skill_id for existing %r; skipping refresh",
+                    parsed["name"],
+                )
+                summary.skipped += 1
+                continue
+            try:
+                skill_config.update_skill(
+                    existing_id,
+                    {
+                        "description": parsed["description"],
+                        "instructions": parsed["instructions"],
+                        "skillMetadata": parsed["metadata"],
+                    },
+                )
+                logger.info(
+                    "platform_seed: refreshed template fields for %r (%s)",
+                    parsed["name"],
+                    existing_id,
+                )
+                summary.updated += 1
+            except Exception as e:
+                logger.warning(
+                    "platform_seed: failed to refresh %r (%s): %s",
+                    parsed["name"],
+                    existing_id,
+                    e,
+                )
+                summary.failed.append(parsed["name"])
             continue
 
         try:

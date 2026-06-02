@@ -46,6 +46,8 @@ def _fake_template_dir(tmp_path, name: str, body: str = "Be helpful.", metadata:
 def _make_config(name: str, **overrides) -> SkillConfig:
     defaults = {
         "name": name,
+        "description": "Pre-existing description.",
+        "instructions": "Pre-existing instructions.",
         "skillId": f"platform-{name}",
         "ownerId": "gde-ap-agent",
         "ownerEmail": "platform@aitanalabs.com",
@@ -102,21 +104,54 @@ def test_seed_empty_firestore_creates_all(tmp_path):
         assert kwargs["accessControl"] == {"type": "public"}
 
 
-def test_seed_idempotent_skips_existing(tmp_path):
-    """Second run: templates already present → skip, don't recreate."""
+def test_seed_refreshes_template_fields_on_existing(tmp_path):
+    """Second run: templates already present → refresh template-sourced
+    fields (description, instructions, skillMetadata) so SKILL.md edits
+    (eg. new metadata.structuredInput) propagate to Firestore on deploy.
+    Owner-customisable fields (slug, accessControl, displayName) are
+    untouched. See multi-agent-inspector-ux sprint follow-up.
+    """
+    _fake_template_dir(tmp_path, "alpha", metadata={"model": "gemini-2.5-flash"})
+    _fake_template_dir(tmp_path, "beta", metadata={"model": "gemini-2.5-flash"})
+
+    with (
+        patch("admin.platform_seed.skill_config.list_skills") as mock_list,
+        patch("admin.platform_seed.skill_config.create_skill") as mock_create,
+        patch("admin.platform_seed.skill_config.update_skill") as mock_update,
+    ):
+        mock_list.return_value = [_make_config("alpha"), _make_config("beta")]
+        summary = seed(templates_root=tmp_path)
+
+    assert summary.created == 0
+    assert summary.updated == 2
+    assert summary.failed == []
+    mock_create.assert_not_called()
+    # Each existing skill received the refresh call with template-sourced fields.
+    assert mock_update.call_count == 2
+    call_args = mock_update.call_args_list[0]
+    updated_id, updated_payload = call_args.args
+    assert updated_id == "platform-alpha"
+    assert set(updated_payload.keys()) == {"description", "instructions", "skillMetadata"}
+    assert updated_payload["skillMetadata"] == {"model": "gemini-2.5-flash"}
+
+
+def test_seed_refresh_failure_does_not_abort(tmp_path):
+    """If update_skill raises for one template, the run continues and
+    the failure is recorded — never bring down a deploy on a refresh."""
     _fake_template_dir(tmp_path, "alpha")
     _fake_template_dir(tmp_path, "beta")
 
     with (
         patch("admin.platform_seed.skill_config.list_skills") as mock_list,
         patch("admin.platform_seed.skill_config.create_skill") as mock_create,
+        patch("admin.platform_seed.skill_config.update_skill") as mock_update,
     ):
         mock_list.return_value = [_make_config("alpha"), _make_config("beta")]
+        mock_update.side_effect = [RuntimeError("Firestore unavailable"), None]
         summary = seed(templates_root=tmp_path)
 
-    assert summary.created == 0
-    assert summary.skipped == 2
-    assert summary.failed == []
+    assert summary.updated == 1
+    assert summary.failed == ["alpha"]
     mock_create.assert_not_called()
 
 
