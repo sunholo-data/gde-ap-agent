@@ -9,7 +9,7 @@ description: >
 metadata:
   author: aitana
   version: "0.1"
-  model: gemini-2.5-flash
+  model: gemini-3-flash
   tools:
     - ai_search
   toolConfigs:

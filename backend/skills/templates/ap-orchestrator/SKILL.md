@@ -8,7 +8,7 @@ description: >
 metadata:
   author: aitana
   version: "0.1"
-  model: gemini-2.5-pro
+  model: gemini-3.5-flash
   tools:
     - list_documents
   toolConfigs:
