@@ -19,7 +19,9 @@ ap-orchestrator (Gemini 2.5 Pro)
     ↓ ap-poster     — post clean or escalate exceptions
 ```
 
-**Visual features**: Navy+gold AP theme · live pipeline step visualizer · A2UI invoice review card · MCP App vendor globe · MCP App analytics dashboard
+**Visual features**: Navy+gold AP theme · live pipeline step visualizer · A2UI invoice review card · MCP App vendor globe · MCP App analytics dashboard · per-specialist **Audit View** with live chips, history, structured-input runs, and an `ap-vendor-kg` MCP App showcasing AG-UI + A2UI + MCP Apps together
+
+**One pipeline, four cooperating agents.** Drop an invoice — the orchestrator delegates extraction, validation, and posting, then returns a single audit-ready decision. Each specialist&apos;s work is observable live via the Audit View chip + side panel.
 
 See [SUBMISSION.md](./SUBMISSION.md) for full details and live demo URL.
 

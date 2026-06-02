@@ -30,9 +30,12 @@ function msg(id: string, role: SkillMessage["role"], content: string): SkillMess
 }
 
 describe("ChatMessageList", () => {
-  it("renders a placeholder when there are no messages", () => {
+  it("renders the AP hero card when there are no messages", () => {
+    // Competition polish (2872a1e) replaced the generic "Send a message"
+    // placeholder with APHeroEmpty — the navy+gold landing card. Assert
+    // on a stable string from that card so the test survives copy tweaks.
     render(<ChatMessageList messages={[]} {...baseProps} />);
-    expect(screen.getByText(/send a message/i)).toBeInTheDocument();
+    expect(screen.getByText(/AI-Powered Accounts Payable/i)).toBeInTheDocument();
   });
 
   it("maps N messages to N bubbles", () => {

@@ -62,16 +62,21 @@ describe("SkillsBar", () => {
     expect(screen.getByTestId("skill-tabs-skeleton")).toBeInTheDocument();
   });
 
-  it("shows empty state when user has no skills", () => {
+  it("shows loading copy when user has no skills (post-competition design)", () => {
+    // Per the competition design, the Create button + "No skills" empty
+    // state were replaced with a passive "Loading skills…" copy — the AP
+    // demo has a fixed roster of 4 skills, never an empty marketplace.
     render(<SkillsBar skills={[]} activeSkillId="" isLoading={false} onCreateClick={() => {}} />);
-    expect(screen.getByText(/no skills yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/loading skills/i)).toBeInTheDocument();
   });
 
-  it("calls onCreateClick when + button is pressed", async () => {
+  it("does not render a create button (hidden per competition design)", () => {
+    // onCreateClick is kept on the API surface for upstream parity but
+    // the button is hidden in this fork — see SkillsBar.tsx JSDoc.
     const handleCreate = vi.fn();
     render(<SkillsBar skills={[]} activeSkillId="" isLoading={false} onCreateClick={handleCreate} />);
-    await userEvent.click(screen.getByLabelText(/create a new skill/i));
-    expect(handleCreate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText(/create a new skill/i)).not.toBeInTheDocument();
+    expect(handleCreate).not.toHaveBeenCalled();
   });
 
   it("uses friendly URL on tab when slug is set, UUID fallback otherwise", () => {
@@ -82,5 +87,57 @@ describe("SkillsBar", () => {
     render(<SkillsBar skills={skills} activeSkillId="uuid-1" isLoading={false} onCreateClick={() => {}} />);
     expect(screen.getByText("Research").closest("a")).toHaveAttribute("href", "/chat/@mark/research");
     expect(screen.getByText("No-Slug").closest("a")).toHaveAttribute("href", "/chat/uuid-2");
+  });
+
+  // === Audit View (multi-agent-inspector-ux.md) ===
+
+  it("renders Audit View chips when invocations + onChipSelect are provided", () => {
+    const invocations = {
+      docparse: { current: null, history: [], status: "idle" as const },
+      validator: { current: null, history: [], status: "idle" as const },
+      poster: { current: null, history: [], status: "idle" as const },
+    };
+    render(
+      <SkillsBar
+        skills={[]}
+        activeSkillId=""
+        isLoading={false}
+        onCreateClick={() => {}}
+        invocations={invocations}
+        openInspectorKey={null}
+        onChipSelect={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("audit-view-bar")).toBeInTheDocument();
+    expect(screen.getByTestId("audit-chip-docparse")).toBeInTheDocument();
+    expect(screen.getByTestId("audit-chip-validator")).toBeInTheDocument();
+    expect(screen.getByTestId("audit-chip-poster")).toBeInTheDocument();
+  });
+
+  it("does not render Audit View chips when no invocations are passed", () => {
+    render(<SkillsBar skills={[]} activeSkillId="" isLoading={false} onCreateClick={() => {}} />);
+    expect(screen.queryByTestId("audit-view-bar")).not.toBeInTheDocument();
+  });
+
+  it("fires onChipSelect when a specialist chip is clicked", async () => {
+    const invocations = {
+      docparse: { current: null, history: [], status: "idle" as const },
+      validator: { current: null, history: [], status: "idle" as const },
+      poster: { current: null, history: [], status: "idle" as const },
+    };
+    const onChipSelect = vi.fn();
+    render(
+      <SkillsBar
+        skills={[]}
+        activeSkillId=""
+        isLoading={false}
+        onCreateClick={() => {}}
+        invocations={invocations}
+        openInspectorKey={null}
+        onChipSelect={onChipSelect}
+      />,
+    );
+    await userEvent.click(screen.getByTestId("audit-chip-validator"));
+    expect(onChipSelect).toHaveBeenCalledWith("validator");
   });
 });

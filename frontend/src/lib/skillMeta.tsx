@@ -7,6 +7,8 @@ export interface SkillMeta {
   isEntryPoint: boolean;
   subAgentCount?: number;
   icon: ReactElement;
+  /** "hub" → top-level chat tab; "specialist" → audit-view chip (not a chat) */
+  role: "hub" | "specialist";
 }
 
 // Icons sized for skill tabs (h-4 w-4)
@@ -62,6 +64,7 @@ const META: Record<string, SkillMeta> = {
     isEntryPoint: true,
     subAgentCount: 3,
     icon: <OrchestratorIcon />,
+    role: "hub",
   },
   docparse: {
     tagline: "Document Parser",
@@ -69,6 +72,7 @@ const META: Record<string, SkillMeta> = {
       "Extracts structured data from invoices: vendor, line items, tax, GL codes. Feeds clean JSON to the Validator.",
     isEntryPoint: false,
     icon: <DocParseIcon />,
+    role: "specialist",
   },
   validator: {
     tagline: "AP Validator",
@@ -76,6 +80,7 @@ const META: Record<string, SkillMeta> = {
       "Validates extracted invoice data against business rules: PO matching, vendor whitelist, GL code mapping, duplicate checks.",
     isEntryPoint: false,
     icon: <ValidatorIcon />,
+    role: "specialist",
   },
   poster: {
     tagline: "ERP Poster",
@@ -83,6 +88,7 @@ const META: Record<string, SkillMeta> = {
       "Posts approved invoices to the ERP ledger and records the complete audit trail with timestamps and agent signatures.",
     isEntryPoint: false,
     icon: <PosterIcon />,
+    role: "specialist",
   },
 };
 
@@ -98,4 +104,22 @@ function matchKey(skill: Skill): string | null {
 export function getSkillMeta(skill: Skill): SkillMeta | null {
   const key = matchKey(skill);
   return key ? META[key] : null;
+}
+
+/** Direct lookup for the audit-view layer (chips, panel) which iterates
+ * specialist keys without holding the full Skill object.
+ */
+export function getMetaByKey(key: "orchestrator" | "docparse" | "validator" | "poster"): SkillMeta {
+  return META[key];
+}
+
+/** Find a skill from the user's skill list whose meta matches the given key.
+ * Returns null when the list doesn't contain a matching skill (eg. legacy
+ * fork without the specialist enrolled).
+ */
+export function findSkillByMetaKey(
+  skills: Skill[],
+  key: "orchestrator" | "docparse" | "validator" | "poster",
+): Skill | null {
+  return skills.find((s) => matchKey(s) === key) ?? null;
 }

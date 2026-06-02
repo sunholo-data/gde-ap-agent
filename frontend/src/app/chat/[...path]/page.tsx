@@ -27,7 +27,11 @@ import { SkillSessionPanel } from "@/components/chat/SkillSessionPanel";
 import DocumentHistoryPanel from "@/components/chat/DocumentHistoryPanel";
 import { SkillsBar } from "@/components/navigation/SkillsBar";
 import { getSkillMeta, findSkillByMetaKey } from "@/lib/skillMeta";
-import { InspectorPanel } from "@/components/audit/InspectorPanel";
+import {
+  InspectorPanel,
+  loadPersistedInspectorKey,
+  persistInspectorKey,
+} from "@/components/audit/InspectorPanel";
 import { useSpecialistInvocations } from "@/hooks/useSpecialistInvocations";
 import { isAuditViewEnabled, type SpecialistKey } from "@/lib/auditViewFlag";
 import { skillHref } from "@/components/navigation/skillHref";
@@ -351,17 +355,27 @@ function ChatShell({
 
   // Hash-driven chip auto-open: redirect lands with #audit={key}; pluck it
   // into openInspectorKey and clear the hash so a manual close stays closed.
+  // Falls back to sessionStorage persistence (survives refresh).
   useEffect(() => {
     if (typeof window === "undefined") return;
     const m = window.location.hash.match(/^#audit=(docparse|validator|poster)$/);
     if (m) {
       setOpenInspectorKey(m[1] as SpecialistKey);
-      // Clear hash without scrolling
       const url = new URL(window.location.href);
       url.hash = "";
       window.history.replaceState(null, "", url.toString());
+      return;
     }
+    const persisted = loadPersistedInspectorKey(sessionId ?? agentSessionId);
+    if (persisted) setOpenInspectorKey(persisted);
+    // Mount-once: dependencies intentionally empty.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Persist open key whenever it changes so refresh keeps the inspector.
+  useEffect(() => {
+    persistInspectorKey(sessionId ?? agentSessionId, openInspectorKey);
+  }, [openInspectorKey, sessionId, agentSessionId]);
 
   // Auto-close inspector when sidebar reopens and viewport is narrow, so the
   // panel doesn't overlap the doc list. Sidebar collapse happens elsewhere
@@ -758,6 +772,9 @@ function ChatShell({
         specialistKey={openInspectorKey}
         state={openInspectorKey ? invocations[openInspectorKey] : null}
         onClose={() => setOpenInspectorKey(null)}
+        skills={userSkills}
+        sessionId={sessionId ?? agentSessionId}
+        uid={user.uid}
       />
       {/* MULTI-SURFACE-A2UI M3: modal surface mount — fixed-position
           overlay at page root. Only visible when populated; M4 will wire

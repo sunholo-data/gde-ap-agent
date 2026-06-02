@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Vendor Knowledge Graph</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #0d1420; color: #e8e8e8;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+    }
+    #app { display: flex; flex-direction: column; height: 100%; padding: 10px; gap: 8px; }
+    .header { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+    .header h1 {
+      font-size: 12px; font-weight: 700; color: #e8a800;
+      letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .header .badge {
+      font-size: 9px; padding: 2px 6px; border-radius: 8px;
+      background: rgba(232,168,0,0.12); color: #e8a800;
+      border: 1px solid rgba(232,168,0,0.3);
+      letter-spacing: 0.5px; text-transform: uppercase; font-weight: 700;
+    }
+    .vendor-card {
+      background: linear-gradient(135deg, rgba(232,168,0,0.08), rgba(255,255,255,0.03));
+      border: 1px solid rgba(232,168,0,0.3); border-radius: 8px;
+      padding: 10px 12px; flex-shrink: 0;
+    }
+    .vendor-name { font-size: 14px; font-weight: 700; color: #e8a800; margin-bottom: 2px; }
+    .vendor-meta { font-size: 10px; color: #aaa; display: flex; gap: 10px; flex-wrap: wrap; }
+    .vendor-meta span strong { color: #e8e8e8; font-weight: 600; }
+
+    .graph {
+      flex: 1; background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+      position: relative; min-height: 0;
+    }
+    canvas { width: 100%; height: 100%; display: block; }
+
+    .legend {
+      position: absolute; bottom: 6px; left: 6px;
+      background: rgba(13,20,32,0.85); padding: 4px 8px;
+      border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);
+      font-size: 9px; color: #888; display: flex; gap: 10px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 4px; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+    .citations {
+      max-height: 80px; overflow-y: auto;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 6px;
+      padding: 6px 8px; flex-shrink: 0;
+    }
+    .citations-label {
+      font-size: 9px; color: #888; text-transform: uppercase;
+      letter-spacing: 0.5px; margin-bottom: 4px; font-weight: 600;
+    }
+    .citation {
+      font-size: 10px; color: #ccc; padding: 2px 0;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+    .citation:first-of-type { border-top: none; }
+    .citation .src { color: #e8a800; font-family: ui-monospace, monospace; }
+
+    .empty {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: #555; font-size: 11px; font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="header">
+      <h1>Vendor Knowledge Graph</h1>
+      <span class="badge">Audit View · MCP App</span>
+    </div>
+    <div class="vendor-card" id="vendor-card">
+      <div class="vendor-name" id="vendor-name">Awaiting validator output…</div>
+      <div class="vendor-meta">
+        <span><strong id="vendor-id">—</strong> Vendor ID</span>
+        <span><strong id="vendor-country">—</strong> Country</span>
+        <span><strong id="vendor-status">—</strong> Status</span>
+      </div>
+    </div>
+    <div class="graph">
+      <canvas id="kg"></canvas>
+      <div class="legend">
+        <span class="legend-item"><span class="legend-dot" style="background:#e8a800"></span>Vendor</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#4fc3f7"></span>Purchase Order</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#81c784"></span>Invoice (prior)</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#ef5350"></span>This invoice</span>
+      </div>
+    </div>
+    <div class="citations">
+      <div class="citations-label">Validator citations</div>
+      <div id="citations-list">
+        <div class="citation"><span class="src">—</span> No citations received yet</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // --- KG canvas rendering ---
+  const canvas = document.getElementById("kg");
+  const ctx = canvas.getContext("2d");
+
+  function resize() {
+    const r = canvas.parentElement.getBoundingClientRect();
+    canvas.width = r.width * devicePixelRatio;
+    canvas.height = r.height * devicePixelRatio;
+    canvas.style.width = r.width + "px";
+    canvas.style.height = r.height + "px";
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  }
+
+  let model = {
+    vendor: { name: "Awaiting…", id: "—", country: "—", status: "—", approved: false },
+    po: null,            // { ref: "PO-77820", total: 8500, currency: "EUR" } | null
+    priorInvoices: [],   // [{ id, amount, when }]
+    thisInvoice: null,   // { number, amount, when }
+    citations: [],       // ["vendor_master:V-1042", ...]
+  };
+
+  function drawNode(x, y, color, label, sub) {
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#fff"; ctx.font = "bold 10px system-ui"; ctx.textAlign = "center";
+    ctx.fillText(label, x, y - 16);
+    if (sub) {
+      ctx.fillStyle = "#888"; ctx.font = "9px system-ui";
+      ctx.fillText(sub, x, y + 22);
+    }
+  }
+  function drawEdge(x1, y1, x2, y2, color, dashed) {
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+    if (dashed) ctx.setLineDash([4, 3]); else ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function draw() {
+    resize();
+    const W = canvas.width / devicePixelRatio;
+    const H = canvas.height / devicePixelRatio;
+    ctx.clearRect(0, 0, W, H);
+
+    // Vendor anchor: center-left
+    const vx = W * 0.22, vy = H * 0.5;
+    // PO: top center
+    const px = W * 0.55, py = H * 0.22;
+    // This invoice: right
+    const tx = W * 0.82, ty = H * 0.4;
+    // Prior invoices: bottom row
+    const priors = model.priorInvoices.slice(0, 4);
+    const priorXs = priors.length
+      ? priors.map((_, i) => W * (0.45 + 0.1 * i))
+      : [];
+    const priorY = H * 0.82;
+
+    // Edges
+    if (model.po) drawEdge(vx, vy, px, py, "rgba(79,195,247,0.6)");
+    if (model.thisInvoice) {
+      drawEdge(vx, vy, tx, ty, "rgba(239,83,80,0.7)");
+      if (model.po) drawEdge(px, py, tx, ty, "rgba(232,168,0,0.5)", true);
+    }
+    priors.forEach((_, i) => {
+      drawEdge(vx, vy, priorXs[i], priorY, "rgba(129,199,132,0.4)");
+    });
+
+    // Nodes
+    drawNode(vx, vy, "#e8a800", model.vendor.name || "Vendor", model.vendor.country);
+    if (model.po) drawNode(px, py, "#4fc3f7", model.po.ref || "PO", currencyShort(model.po.total, model.po.currency));
+    if (model.thisInvoice) drawNode(tx, ty, "#ef5350", "this invoice", currencyShort(model.thisInvoice.amount, model.thisInvoice.currency));
+    priors.forEach((p, i) => drawNode(priorXs[i], priorY, "#81c784", p.id || `INV-${i}`, currencyShort(p.amount, p.currency)));
+
+    if (!model.po && !model.thisInvoice && priors.length === 0) {
+      ctx.fillStyle = "#444"; ctx.font = "italic 11px system-ui"; ctx.textAlign = "center";
+      ctx.fillText("Run the validator to populate the graph", W/2, H/2 + 24);
+    }
+  }
+
+  function currencyShort(n, cur) {
+    if (n == null) return "";
+    const sym = ({EUR:"€",USD:"$",GBP:"£",JPY:"¥"})[cur] || "";
+    if (n >= 1_000_000) return sym + (n/1_000_000).toFixed(1) + "M";
+    if (n >= 1_000) return sym + (n/1_000).toFixed(1) + "k";
+    return sym + Math.round(n);
+  }
+
+  function renderCard() {
+    document.getElementById("vendor-name").textContent = model.vendor.name || "—";
+    document.getElementById("vendor-id").textContent = model.vendor.id || "—";
+    document.getElementById("vendor-country").textContent = model.vendor.country || "—";
+    document.getElementById("vendor-status").textContent =
+      model.vendor.approved ? "Approved" : (model.vendor.status || "—");
+    const cl = document.getElementById("citations-list");
+    if (model.citations.length === 0) {
+      cl.innerHTML = '<div class="citation"><span class="src">—</span> No citations received yet</div>';
+    } else {
+      cl.innerHTML = model.citations
+        .slice(0, 8)
+        .map(c => `<div class="citation"><span class="src">${escapeHtml(c)}</span></div>`)
+        .join("");
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function applyUpdate(p) {
+    if (p.reset) {
+      model = { vendor: { name: "", id: "", country: "", status: "", approved: false },
+                po: null, priorInvoices: [], thisInvoice: null, citations: [] };
+    }
+    if (p.vendor) Object.assign(model.vendor, p.vendor);
+    if (p.po) model.po = p.po;
+    if (Array.isArray(p.priorInvoices)) model.priorInvoices = p.priorInvoices;
+    if (p.thisInvoice) model.thisInvoice = p.thisInvoice;
+    if (Array.isArray(p.citations)) model.citations = p.citations;
+    renderCard();
+    draw();
+  }
+
+  // Stylised seed (visible until host pushes data)
+  applyUpdate({
+    vendor: { name: "Acme GmbH", id: "V-1042", country: "DE", approved: true },
+    po: { ref: "PO-77820", total: 8500, currency: "EUR" },
+    priorInvoices: [
+      { id: "INV-2026-019", amount: 4200, currency: "EUR" },
+      { id: "INV-2026-028", amount: 6800, currency: "EUR" },
+      { id: "INV-2025-114", amount: 12000, currency: "EUR" },
+    ],
+    thisInvoice: { number: "INV-2026-042", amount: 8500, currency: "EUR" },
+    citations: [
+      "vendor_master:V-1042 (approved=true)",
+      "open_pos:PO-77820 (line_items matched within €0 tolerance)",
+      "prior_invoices: 3 historical invoices, no duplicate",
+    ],
+  });
+
+  window.addEventListener("resize", draw);
+
+  // --- MCP Apps protocol ---
+  function reply(id, result) {
+    window.parent.postMessage(
+      { jsonrpc: "2.0", id, result, __platformTransport: true },
+      "*"
+    );
+  }
+
+  window.addEventListener("message", (event) => {
+    const msg = event.data;
+    if (!msg || !msg.jsonrpc) return;
+
+    if (msg.method === "ui/initialize") {
+      reply(msg.id, {
+        protocolVersion: "2026-01-26",
+        capabilities: {},
+        serverInfo: { name: "ap-vendor-kg", version: "1.0" },
+      });
+      return;
+    }
+    if (msg.method === "ping") { reply(msg.id, {}); return; }
+    if (msg.method === "ui/update-data" && msg.params) {
+      applyUpdate(msg.params);
+      return;
+    }
+  });
+</script>
+</body>
+</html>

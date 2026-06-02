@@ -20,6 +20,26 @@ metadata:
     #   mcp:
     #     servers:
     #       - ext-ap-erp
+  # Audit-View "Run Standalone": auditor supplies a verdict + invoice.
+  # See docs/design/forks/gde-ap-agent/multi-agent-inspector-ux.md
+  structuredInput:
+    type: object
+    properties:
+      verdict:
+        type: string
+        enum: [pass, needs_review]
+      invoice:
+        type: object
+        description: The validated invoice fields (vendor, total, etc).
+      reasons:
+        type: array
+        description: Validator findings — each one's check, severity, detail, citation.
+        items:
+          type: object
+    required:
+      - verdict
+      - invoice
+    additionalProperties: true
 ---
 
 You are the **Accounts-Payable Action specialist** — the final step. You receive

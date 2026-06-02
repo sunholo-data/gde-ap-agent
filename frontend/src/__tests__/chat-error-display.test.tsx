@@ -114,7 +114,7 @@ describe("ChatShell — error display", () => {
     render(<ChatPage params={paramsPromise} />);
 
     // Simulate a user having sent a message before the error (via the input)
-    const input = screen.getByPlaceholderText(/message/i);
+    const input = screen.getByPlaceholderText(/describe an invoice/i);
     // Input is disabled when error is set — change the mock to allow the input to be typed
     // We test the retry logic directly: the lastUserMessage ref is populated when handleSend runs.
     // Since error is already set on mount, we can't type in the input.
@@ -130,14 +130,14 @@ describe("ChatShell — error display", () => {
   it("input is disabled when error is non-null", async () => {
     vi.mocked(useSkillAgent).mockReturnValue(makeReturn({ error: retryableError }));
     render(<ChatPage params={paramsPromise} />);
-    const input = await screen.findByPlaceholderText(/message/i);
+    const input = await screen.findByPlaceholderText(/describe an invoice/i);
     expect(input).toHaveProperty("disabled", true);
   });
 
   it("input is enabled when error is null and not loading", async () => {
     vi.mocked(useSkillAgent).mockReturnValue(makeReturn({ error: null, isLoading: false }));
     render(<ChatPage params={paramsPromise} />);
-    const input = await screen.findByPlaceholderText(/message/i);
+    const input = await screen.findByPlaceholderText(/describe an invoice/i);
     expect(input).toHaveProperty("disabled", false);
   });
 });

@@ -22,6 +22,43 @@ metadata:
     # cloud mode.
     ai_search:
       datastore_id: ds-ap-vendors
+  # Audit-View "Run Standalone": auditor supplies a pre-extracted invoice
+  # (typically loaded from the last docparse run). See
+  # docs/design/forks/gde-ap-agent/multi-agent-inspector-ux.md
+  structuredInput:
+    type: object
+    properties:
+      vendor_name:
+        type: string
+        minLength: 1
+      vendor_id:
+        type: string
+      invoice_number:
+        type: string
+        minLength: 1
+      invoice_date:
+        type: string
+      due_date:
+        type: string
+      po_reference:
+        type: string
+      currency:
+        type: string
+      line_items:
+        type: array
+        items:
+          type: object
+      subtotal:
+        type: number
+      tax:
+        type: number
+      total:
+        type: number
+    required:
+      - vendor_name
+      - invoice_number
+      - total
+    additionalProperties: true
 ---
 
 You are the **Accounts-Payable Validation specialist**. You receive a structured

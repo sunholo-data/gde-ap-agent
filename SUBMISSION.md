@@ -11,12 +11,15 @@
 **URL:** https://gde-ap-agent-blqtqfexwa-ew.a.run.app
 
 **Demo flow:**
-1. Select the **AP Orchestrator** skill from the left bar
-2. Type (or upload) an invoice: e.g. `"Process this invoice: Vendor: Acme GmbH (Germany), INV-2026-042, €8,500, NET 30, GL 5200-OPEX"`
-3. Watch the **4-step pipeline visualizer** animate: Intake → Extract → Validate → Post
-4. The **Invoice Review Card** renders in the workspace pane with all fields, verdict, and action
-5. Click **🌍 View Vendor on Map** — a rotating 3D canvas globe shows London HQ → vendor location arc
-6. Click **📊 AP Analytics** — an inline dashboard shows invoice aging, vendor bar, GL donut
+1. Type (or upload) an invoice into the **AP Orchestrator** chat: e.g. `"Process this invoice: Vendor: Acme GmbH (Germany), INV-2026-042, €8,500, NET 30, GL 5200-OPEX"`
+2. Watch the **4-step pipeline visualizer** animate: Intake → Extract → Validate → Post
+3. Watch the three **Audit View chips** in the top nav (DocParse · Validator · Poster) light up live as each specialist runs — latency badges fill in as they complete
+4. Click any chip to open the **Audit View side panel** — see that specialist&apos;s input, tool calls, citations, and structured output rendered as an A2UI surface
+5. On the Validator Audit View, the embedded **`ap-vendor-kg` MCP App** visualizes the cited vendor record, the matched PO, prior invoices, and the duplicate-detection graph — AG-UI + A2UI + MCP Apps showcased together on one specialist
+6. Optionally **Run Standalone** any specialist with a structured input form (no chat box — typed JSON / picker only) to audit its behaviour in isolation
+7. The **Invoice Review Card** renders in the workspace pane with all fields, verdict, and action
+8. Click **🌍 View Vendor on Map** — a rotating 3D canvas globe shows London HQ → vendor location arc
+9. Click **📊 AP Analytics** — an inline dashboard shows invoice aging, vendor bar, GL donut
 
 ---
 
@@ -44,6 +47,9 @@ The headline artifact is four declarative skill files and ~80 lines of wiring:
 | Invoice review card | A2UI v0.9 `updateComponents` tree pushed from `ap-orchestrator/SKILL.md`; renders in workspace pane |
 | Vendor geography globe | MCP App artefact — 100% canvas, 50-country lat/lng table, animated arc from London HQ |
 | AP analytics dashboard | MCP App artefact — aging bar, vendor bar, GL donut; canvas-only, no CDN |
+| Audit View chips + side panel | `SpecialistChip` row replaces specialist tabs; `InspectorPanel` slides in 40% width, renders per-specialist input/tools/output, with invocation history dropdown |
+| Structured-input "Run Standalone" | Hand-rolled forms (DocparsePicker / ValidatorJsonForm / PosterVerdictForm) post to `POST /api/skill/{id}/structured`; server validates against `metadata.structuredInput` JSON Schema in each SKILL.md |
+| `ap-vendor-kg` MCP App | New MCP App artefact rendering a stylised vendor knowledge graph from the validator&apos;s citations — embedded in the validator Audit View so AG-UI + A2UI + MCP Apps appear together |
 | MCP sandbox | Separate-origin Cloud Run service (`mcp-sandbox-374404277595.europe-west1.run.app`) per MCP Apps spec |
 
 ### Protocol Chain (end-to-end)

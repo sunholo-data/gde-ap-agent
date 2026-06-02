@@ -233,10 +233,11 @@ async def local_mode_status():
 # --- Custom endpoints (beyond ADK's built-in agent routes) ---
 
 import json  # noqa: E402
+import typing  # noqa: E402
 from contextlib import AsyncExitStack, asynccontextmanager  # noqa: E402
 
 from fastapi import Depends, HTTPException, Request  # noqa: E402
-from fastapi.responses import StreamingResponse  # noqa: E402
+from fastapi.responses import JSONResponse, StreamingResponse  # noqa: E402
 from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
 
 from admin.routes import router as admin_router  # noqa: E402
@@ -621,6 +622,79 @@ async def stream_skill(
             reset_current_tracker(_tracker_token)
 
     return StreamingResponse(_sse(), media_type="text/event-stream")
+
+
+class _StructuredInvocationRequest(BaseModel):
+    """Body schema for POST /api/skill/{skill_id}/structured.
+
+    Audit View "Run Standalone": invokes one specialist directly with a
+    JSON Schema-validated input, bypassing the orchestrator.
+    """
+
+    # Accept any JSON value — actual shape is constrained by the skill's
+    # ``metadata.structuredInput`` JSON Schema, enforced server-side in
+    # ``run_structured_invocation``.
+    input: typing.Any = None
+    sessionId: str | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+@app.post("/api/skill/{skill_id}/structured")
+async def invoke_skill_structured(
+    skill_id: str,
+    body: _StructuredInvocationRequest,
+    request: Request,
+    user: User = Depends(get_current_user),  # noqa: B008
+) -> JSONResponse:
+    """Run one structured-input turn of `skill_id` and return the
+    collected AG-UI events as a single JSON response.
+
+    Used by the Audit View panel's "Run Standalone" forms — specialists
+    (docparse / ap-validator / ap-poster) declare a JSON Schema in their
+    SKILL.md frontmatter under ``metadata.structuredInput``; the form
+    validates against that schema before posting, and this endpoint
+    re-validates server-side as a defence-in-depth.
+
+    Returns:
+        200 with ``{skill_id, duration_ms, text, tool_calls, raw_events}``.
+        400 if the input fails schema validation or the skill doesn't
+        declare a structuredInput schema.
+        404 if the skill is missing or not visible to the caller.
+    """
+    from skills.structured_invocation import (
+        StructuredInputInvalidError,
+        StructuredInputNotSupportedError,
+        run_structured_invocation,
+    )
+
+    access = request.state.access
+    try:
+        result = await run_structured_invocation(
+            skill_id=skill_id,
+            user=user,
+            access=access,
+            payload=body.input,
+            session_id=body.sessionId,
+        )
+    except SkillNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Skill not found") from exc
+    except StructuredInputNotSupportedError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "structured_input_not_supported", "message": str(exc)},
+        ) from exc
+    except StructuredInputInvalidError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "structured_input_invalid",
+                "message": exc.message,
+                "errors": exc.errors,
+            },
+        ) from exc
+
+    return JSONResponse(result)
 
 
 # TODO: Direct API endpoints (backward compat with v5 CLI)

@@ -14,6 +14,19 @@ metadata:
     - list_documents
     - get_document_content
     - structured_extraction
+  # Audit-View "Run Standalone": frontend renders this as a typed form,
+  # backend validates the body before invoking the agent. See
+  # docs/design/forks/gde-ap-agent/multi-agent-inspector-ux.md
+  structuredInput:
+    type: object
+    properties:
+      document_id:
+        type: string
+        description: Firestore parsed_documents ID to extract fields from.
+        minLength: 1
+    required:
+      - document_id
+    additionalProperties: false
 ---
 
 You are the **DocParse extraction specialist**. The document has already been

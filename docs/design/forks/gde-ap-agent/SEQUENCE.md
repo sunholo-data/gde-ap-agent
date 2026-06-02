@@ -8,14 +8,16 @@ Fork of Aitana Platform v6 for the **Google AI Agents Challenge, Track 3** (dead
 |---|----------|----------|----------|--------|
 | 1 | [Competition Polish Sprint](./competition-polish-sprint.md) | P0 | 3 days | ✅ Implemented |
 | 2 | [GCS Bucket Browser](./gcs-bucket-browser.md) | P0 | 2 days | Planned |
+| 3 | [Multi-Agent Inspector UX](./multi-agent-inspector-ux.md) | P0 | 2.5 days | Planned |
 
 ## Timeline
 
 | Date | Milestone |
 |------|-----------|
 | 2026-06-01 | Competition polish sprint complete (M1–M6 shipped) |
-| 2026-06-02 | GCS Bucket Browser design doc written |
+| 2026-06-02 | GCS Bucket Browser + Multi-Agent Inspector UX design docs written |
 | 2026-06-02–03 | GCS Bucket Browser implementation |
+| 2026-06-03–04 | Multi-Agent Inspector UX implementation |
 | 2026-06-04 | Final testing + submission prep |
 | 2026-06-05 17:00 PT | **Submission deadline** |
 
@@ -27,3 +29,4 @@ Fork of Aitana Platform v6 for the **Google AI Agents Challenge, Track 3** (dead
 - A2UI invoice result card (workspace surface)
 - MCP sandbox vendor globe + AP analytics dashboard
 - GCS bucket browser with demo invoices + user bucket support
+- Hub-and-spokes navigation: orchestrator as the only chat tab, three live specialist inspector chips with structured-input-only invocation and an `ap-vendor-kg` MCP App showcase on the validator

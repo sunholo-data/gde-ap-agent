@@ -41,6 +41,10 @@ class SkillMetadata(BaseModel):
     tools: list[str] = []
     tool_configs: dict = Field(default_factory=dict, alias="toolConfigs")
     sub_skills: list[str] = Field(default_factory=list, alias="subSkills")
+    # Audit-View: optional JSON Schema describing the typed payload for
+    # POST /api/skill/{skill_id}/structured. None when the skill doesn't
+    # expose a standalone-invocation form (eg. the orchestrator).
+    structured_input: dict | None = Field(default=None, alias="structuredInput")
 
     model_config = {"populate_by_name": True}
 

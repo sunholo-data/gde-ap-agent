@@ -1,0 +1,91 @@
+{
+  "sprint_id": "AUDIT-VIEW",
+  "round": 1,
+  "evaluated_at": "2026-06-02T08:30:00Z",
+  "design_doc": "docs/design/forks/gde-ap-agent/multi-agent-inspector-ux.md",
+  "sprint_plan": "docs/design/forks/gde-ap-agent/multi-agent-inspector-ux-sprint.md",
+  "result": "pass",
+  "score": 90,
+  "threshold": 70,
+  "hard_fails": [],
+  "breakdown": {
+    "frontend_tests": {
+      "score": 10,
+      "max": 10,
+      "evidence": "543/543 tests pass after fixing the pre-existing localStorage stub + stale copy assertions"
+    },
+    "backend_tests": {
+      "score": 10,
+      "max": 10,
+      "evidence": "1361 passed, 1 skipped, 12 deselected — including 6 new tests for structured_invocation.py"
+    },
+    "lint_typecheck": {
+      "score": 10,
+      "max": 10,
+      "evidence": "ruff check + ruff format-check + tsc + next lint + auth-fetch guard all clean"
+    },
+    "acceptance_criteria": {
+      "score": 24,
+      "max": 30,
+      "criteria_met": "9/10 (90%, 80-99% bracket)",
+      "evidence": [
+        "PASS: Frontend tests passing",
+        "PASS: Backend tests passing",
+        "PASS: Lint + typecheck clean",
+        "PASS: Top nav shows hub tab + 3 live chips (SkillsBar.tsx, AuditViewBar.tsx)",
+        "PARTIAL: Chip click opens InspectorPanel with input/tools/output — rendered as raw JSON instead of backend-authored A2UI tree (M2 deferral documented in sprint plan)",
+        "PASS: Run-Standalone form per specialist posts to /api/skill/{id}/structured (RunStandaloneSection.tsx + 3 forms + endpoint)",
+        "PASS: Validator inspector embeds ap-vendor-kg MCP App (VendorKgPanel.tsx + iframe widget); citation-click-to-highlight not wired (gilding, not core)",
+        "PASS: Legacy URL redirect implemented (page.tsx useEffect → orchestrator + #audit= hash)",
+        "PASS: NEXT_PUBLIC_INSPECTOR_UX=0 reverts (auditViewFlag.ts gate)",
+        "PASS: SUBMISSION.md demo flow updated, README.md headline updated"
+      ]
+    },
+    "code_quality": {
+      "score": 15,
+      "max": 15,
+      "evidence": [
+        "All new files <300 lines: InspectorPanel.tsx ~210, RunStandaloneSection.tsx ~190, useSpecialistInvocations.ts ~135, structured_invocation.py ~170, VendorKgPanel.tsx ~130, ap-vendor-kg/index.html ~240",
+        "Reuses existing fetchWithAuth, useDocBrowser, StaticArtefactFrame, get_skill, process_skill_request — no duplication",
+        "Security: JSON Schema validation (Draft202012Validator) server-side; reuses Depends(get_current_user) + access context; escapeHtml() in widget; iframe sandbox unchanged"
+      ]
+    },
+    "documentation": {
+      "score": 13,
+      "max": 15,
+      "evidence": [
+        "All new modules have docstrings/JSDoc with cross-refs to design doc",
+        "Sprint plan complete with all 4 milestones, acceptance criteria, risks, deferral notes",
+        "Design doc status still 'Planned' — should flip to 'Implemented' once committed (–2)"
+      ]
+    },
+    "design_fidelity": {
+      "score": 4,
+      "max": 5,
+      "evidence": [
+        "Hub-and-spokes layout, AG-UI chip driving, MCP App on validator, structured-only invocation, persistent panel — all match design",
+        "A2UI server-authored inspector tree intentionally deferred to follow-up (documented); raw JSON shown instead — minor deviation"
+      ]
+    },
+    "axiom_alignment": {
+      "score": 4,
+      "max": 5,
+      "evidence": [
+        "INSTANT FEEL +1: chip reducer is pure, sub-200ms on event arrival",
+        "EARNED TRUST +1: raw tool args + result shown verbatim; widget surfaces citations",
+        "SKILLS NOT FEATURES +1: specialists remain real ADK sub-agents",
+        "GRACEFUL DEGRADATION +1: empty state, JSON schema validation pre-send, widget seed fallback",
+        "PROTOCOL OVER CUSTOM +1: JSON Schema + MCP Apps spec + AG-UI events — no custom protocols",
+        "OBSERVABLE BY DEFAULT +1: chips, history dropdown, structured runs",
+        "THIN CLIENT FAT PROTOCOL: mild regression — VendorKgPanel does client-side extraction of vendor/PO from validator result instead of receiving a server-shaped payload"
+      ]
+    }
+  },
+  "recommendations": [
+    "(non-blocking) Flip design doc Status: Planned → Implemented and move it under docs/design/forks/gde-ap-agent/implemented/ after merge",
+    "(future sprint) Wire backend audit-view A2UI emission so inspector content is server-authored — recovers the THIN CLIENT axiom and design-fidelity points",
+    "(polish) Add citation-click-to-highlight in the ap-vendor-kg widget for the 'audit click-through' demo moment",
+    "(polish) Add a per-form integration test for /api/skill/{id}/structured (currently only the validator module is unit-tested)"
+  ],
+  "ship_decision": "Ready to commit. Deferred items are documented and non-blocking for the competition submission."
+}
