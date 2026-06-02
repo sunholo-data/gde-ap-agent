@@ -126,7 +126,36 @@ deployed image — exactly the "I added it but forgot to redeploy" trap
 that surfaced as an empty Vendor Knowledge Graph in the validator
 Audit View.
 
-### 5. Seed the demo invoices bucket (optional)
+### 5. Create the AP-Validator Vertex AI Search datastore
+
+The validator skill uses `VertexAiSearchTool` to ground vendor-master /
+PO / approval-policy lookups. Without a datastore at the configured
+resource path, every validation call fails with:
+
+```
+400 INVALID_ARGUMENT.
+tools[0].retrieval.vertex_ai_search.datastore: Invalid Vertex AI datastore resource name
+```
+
+```bash
+./scripts/create-search-datastore.sh <project-id> eu
+```
+
+Defaults to `multivac-internal-dev`/`eu` with id `ds-ap-vendors`.
+Idempotent — re-runs no-op on existing datastores. Cloud Build's
+substitutions set `DATASTORE_LOCATION=eu`, and the backend's
+`_expand_datastore_id` helper turns the bare `ds-ap-vendors` token
+in [ap-validator/SKILL.md](backend/skills/templates/ap-validator/SKILL.md)
+into the full resource name at agent-build time — no SKILL.md change
+needed when re-pointing to a different project (just update
+`GOOGLE_CLOUD_PROJECT`).
+
+> The datastore is created with `contentConfig: CONTENT_REQUIRED`
+> (structured-documents-required). Loading the actual vendor master
+> CSV is a follow-up — the empty datastore unblocks the validator's
+> tool-call path; results will be empty until data lands.
+
+### 6. Seed the demo invoices bucket (optional)
 
 For the Example Invoices sidebar section to populate:
 
@@ -137,7 +166,7 @@ For the Example Invoices sidebar section to populate:
 This uploads 9 sample invoices to the `_AP_DEMO_BUCKET` bucket
 (`gde-ap-agent-demo-invoices` by default).
 
-### 6. Verify everything works
+### 7. Verify everything works
 
 After a deploy, run the verification scripts:
 
@@ -163,6 +192,7 @@ GCP_PROJECT=<project> ./scripts/tail-logs.sh tail    # live stream
 | Specialists show "Skill does not declare metadata.structuredInput" | Platform seed step skipped existing skills (pre-`fa1d150` builds) | Trigger a fresh deploy — the seed step now refreshes template fields |
 | MCP App iframe (eg. Vendor Knowledge Graph) shows a permanent spinner | Widget file is in the repo but the sandbox image doesn't include it | `make verify-mcp-artefacts` to confirm; `make deploy-mcp-sandbox` to ship |
 | Document load / artifact write fails with `404 ... bucket does not exist` | ADK artifact bucket missing for the project | `make create-artifact-bucket` (Step 3) |
+| AP Validator returns `400 INVALID_ARGUMENT ... Invalid Vertex AI datastore resource name` | Vertex AI Search datastore missing | `make create-search-datastore` (Step 5) |
 | Example Invoices section shows "No demo files" | `_AP_DEMO_BUCKET` empty or missing IAM grant for the SA | Step 4, or grant `roles/storage.objectViewer` to the Cloud Run SA |
 | Audit View chips never light up | AG-UI streaming not reaching the frontend | Check CORS + `/api/proxy/*` route in [frontend/src/app/api/proxy/[...path]/route.ts](frontend/src/app/api/proxy/[...path]/route.ts) |
 

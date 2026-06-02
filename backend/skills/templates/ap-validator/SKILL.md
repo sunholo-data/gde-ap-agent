@@ -13,13 +13,15 @@ metadata:
   tools:
     - ai_search
   toolConfigs:
-    # Enterprise grounding corpus (M7): vendor master, open POs, approval
-    # policy. `datastore_id` is the key the resolver reads (adk/agent.py) and
-    # must be the FULL Vertex AI Search resource ID once the datastore exists
-    # (Phase 3), e.g.
-    #   projects/<proj>/locations/<loc>/collections/default_collection/dataStores/ds-ap-vendors
-    # In LOCAL_MODE vertex_search is stubbed, so grounding only lights up in
-    # cloud mode.
+    # Enterprise grounding corpus: vendor master, open POs, approval policy.
+    # `datastore_id` accepts either a bare id (eg. "ds-ap-vendors") or the
+    # full Vertex AI Search resource name. The backend expands bare ids
+    # via `tools/search_agent._expand_datastore_id` using
+    # GOOGLE_CLOUD_PROJECT + DATASTORE_LOCATION (default "eu") env vars
+    # set in cloudbuild.yaml. The datastore itself is created by
+    # `scripts/create-search-datastore.sh` (see README "Deployed-Fork
+    # Setup"). In LOCAL_MODE vertex_search is stubbed, so grounding
+    # only lights up in cloud mode.
     ai_search:
       datastore_id: ds-ap-vendors
   # Audit-View "Run Standalone": auditor supplies a pre-extracted invoice

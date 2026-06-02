@@ -18,6 +18,8 @@ separate AgentTool instances in that case.
 
 from __future__ import annotations
 
+import os
+
 from google.adk.agents import LlmAgent
 from google.adk.tools import VertexAiSearchTool, google_search, url_context
 
@@ -45,19 +47,46 @@ def create_web_search_agent() -> LlmAgent:
     )
 
 
+def _expand_datastore_id(datastore_id: str) -> str:
+    """Accept a bare datastore id (eg. "ds-ap-vendors") OR a full resource
+    name; return the full resource name expected by VertexAiSearchTool.
+
+    Vertex rejects bare ids with:
+      400 INVALID_ARGUMENT ... Invalid Vertex AI datastore resource name.
+
+    Bare-id form is convenient for SKILL.md authors (one short token to
+    edit) so the resolver fills in the project + location from env.
+    Falls back to the default Vertex AI Search location ``eu`` when
+    DATASTORE_LOCATION is unset — that's where scripts/create-search-
+    datastore.sh creates the bootstrap datastore.
+    """
+    if "/" in datastore_id:
+        return datastore_id  # already fully qualified
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT_ID")
+    if not project:
+        # Let Vertex emit its own error rather than synthesising a bogus name.
+        return datastore_id
+    location = os.environ.get("DATASTORE_LOCATION") or "eu"
+    return f"projects/{project}/locations/{location}/collections/default_collection/dataStores/{datastore_id}"
+
+
 def create_enterprise_search_agent(datastore_id: str) -> LlmAgent:
     """Gemini agent with VertexAiSearchTool for enterprise corpus queries.
 
     Args:
-        datastore_id: Full Vertex AI Search resource ID:
-            projects/{project}/locations/{location}/collections/{collection}/dataStores/{id}
+        datastore_id: Either a full Vertex AI Search resource ID
+            ``projects/{p}/locations/{l}/collections/{c}/dataStores/{id}`` OR
+            a bare datastore id (eg. ``ds-ap-vendors``), which is expanded
+            using ``GOOGLE_CLOUD_PROJECT`` + ``DATASTORE_LOCATION`` (default
+            ``eu``).
     """
+    resolved = _expand_datastore_id(datastore_id)
     return LlmAgent(
         name="enterprise_search_agent",
         model="gemini-2.5-flash",
         description="Searches the enterprise knowledge base. Use for document and corpus search.",
         instruction=_ENTERPRISE_INSTRUCTION,
-        tools=[VertexAiSearchTool(data_store_id=datastore_id)],
+        tools=[VertexAiSearchTool(data_store_id=resolved)],
     )
 
 

@@ -35,7 +35,7 @@ def test_seed_populates_collections_in_local_mode(monkeypatch):
     seed_local_fixture()
     client = get_client()
     assert len(list(client.collection("users").stream())) == 1
-    # 6 demo skills + 4 AP bundle (ap-orchestrator, docparse, ap-validator, ap-poster)
+    # 6 demo skills + 4 AP bundle (ap-orchestrator, invoice-extractor, ap-validator, ap-poster)
     assert len(list(client.collection("skills").stream())) == 10
     assert len(list(client.collection("documents").stream())) == 1
 

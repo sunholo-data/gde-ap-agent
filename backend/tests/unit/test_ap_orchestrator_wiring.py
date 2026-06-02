@@ -5,7 +5,7 @@ Three assertions that would have caught the original wiring bugs:
 1. _parse_template on ap-orchestrator/SKILL.md yields sub_skills in the
    expected order.
 2. After seeding, create_agent("ap-orchestrator") returns an LlmAgent
-   whose sub_agents are named docparse / ap-validator / ap-poster in that
+   whose sub_agents are named invoice-extractor / ap-validator / ap-poster in that
    order.
 3. create_agent("ap-validator") returns an LlmAgent whose tools include
    an AgentTool wrapping an agent named enterprise_search_agent — proving
@@ -66,8 +66,8 @@ _TEMPLATES_ROOT = Path(__file__).resolve().parents[2] / "skills" / "templates"
 def test_parse_ap_orchestrator_template_has_correct_sub_skills():
     parsed = _parse_template(_TEMPLATES_ROOT / "ap-orchestrator" / "SKILL.md")
     sub_skills = parsed["metadata"].get("subSkills", [])
-    assert sub_skills == ["docparse", "ap-validator", "ap-poster"], (
-        f"Expected ['docparse', 'ap-validator', 'ap-poster'], got {sub_skills!r}"
+    assert sub_skills == ["invoice-extractor", "ap-validator", "ap-poster"], (
+        f"Expected ['invoice-extractor', 'ap-validator', 'ap-poster'], got {sub_skills!r}"
     )
 
 
@@ -88,7 +88,7 @@ def test_create_agent_ap_orchestrator_has_correct_sub_agents(_seeded_ap_skills):
     assert isinstance(agent, LlmAgent)
     sub_names = [s.name for s in agent.sub_agents]
     expected = [
-        _safe_agent_name("docparse"),
+        _safe_agent_name("invoice-extractor"),
         _safe_agent_name("ap-validator"),
         _safe_agent_name("ap-poster"),
     ]

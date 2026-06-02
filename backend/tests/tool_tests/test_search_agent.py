@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from unittest.mock import patch
+
 from google.adk.agents import LlmAgent
 from google.adk.tools import AgentTool, VertexAiSearchTool, google_search, url_context
 
@@ -35,6 +38,57 @@ class TestCreateWebSearchAgent:
         assert not any(isinstance(t, VertexAiSearchTool) for t in create_web_search_agent().tools)
 
 
+class TestExpandDatastoreId:
+    """Bare-id → full resource name expansion.
+
+    Vertex AI Search rejects bare ids with:
+      400 INVALID_ARGUMENT ... Invalid Vertex AI datastore resource name.
+
+    SKILL.md authors write a short token (eg. "ds-ap-vendors"); the
+    backend expands it at agent-build time using GOOGLE_CLOUD_PROJECT
+    + DATASTORE_LOCATION env vars set in cloudbuild.yaml.
+    """
+
+    def test_passes_full_resource_name_unchanged(self):
+        from tools.search_agent import _expand_datastore_id
+
+        full = "projects/p/locations/eu/collections/default_collection/dataStores/x"
+        assert _expand_datastore_id(full) == full
+
+    def test_expands_bare_id_with_project_and_location(self):
+        from tools.search_agent import _expand_datastore_id
+
+        with patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "proj-1", "DATASTORE_LOCATION": "eu"}):
+            result = _expand_datastore_id("ds-ap-vendors")
+        assert result == ("projects/proj-1/locations/eu/collections/default_collection/dataStores/ds-ap-vendors")
+
+    def test_falls_back_to_eu_when_datastore_location_unset(self):
+        from tools.search_agent import _expand_datastore_id
+
+        env = {"GOOGLE_CLOUD_PROJECT": "proj-1"}
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("DATASTORE_LOCATION", None)
+            result = _expand_datastore_id("x")
+        assert result.startswith("projects/proj-1/locations/eu/")
+
+    def test_returns_bare_id_when_no_project_env(self):
+        """Without a project we let Vertex emit its own actionable error
+        rather than synthesising a bogus resource name silently."""
+        from tools.search_agent import _expand_datastore_id
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("GOOGLE_CLOUD_PROJECT", None)
+            os.environ.pop("GCP_PROJECT_ID", None)
+            assert _expand_datastore_id("x") == "x"
+
+    def test_accepts_gcp_project_id_alias(self):
+        from tools.search_agent import _expand_datastore_id
+
+        with patch.dict(os.environ, {"GCP_PROJECT_ID": "alt-proj", "DATASTORE_LOCATION": "us"}, clear=False):
+            os.environ.pop("GOOGLE_CLOUD_PROJECT", None)
+            assert "alt-proj" in _expand_datastore_id("x")
+
+
 class TestCreateEnterpriseSearchAgent:
     """Enterprise agent uses VertexAiSearchTool exclusively.
 
@@ -58,12 +112,16 @@ class TestCreateEnterpriseSearchAgent:
         assert len(create_enterprise_search_agent("my-ds").tools) == 1
 
     def test_includes_vertex_search_with_correct_datastore(self):
+        """When passed a full resource name, the factory uses it verbatim
+        (no expansion). Bare ids go through _expand_datastore_id —
+        covered separately in TestExpandDatastoreId."""
         from tools.search_agent import create_enterprise_search_agent
 
-        agent = create_enterprise_search_agent("my-ds")
+        full = "projects/p/locations/eu/collections/default_collection/dataStores/my-ds"
+        agent = create_enterprise_search_agent(full)
         vertex_tools = [t for t in agent.tools if isinstance(t, VertexAiSearchTool)]
         assert len(vertex_tools) == 1
-        assert vertex_tools[0].data_store_id == "my-ds"
+        assert vertex_tools[0].data_store_id == full
 
     def test_no_google_search_or_url_context(self):
         from tools.search_agent import create_enterprise_search_agent

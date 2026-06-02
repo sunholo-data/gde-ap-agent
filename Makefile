@@ -91,6 +91,9 @@ verify-mcp-artefacts:
 create-artifact-bucket:
 	@./scripts/create-artifact-bucket.sh
 
+create-search-datastore:
+	@./scripts/create-search-datastore.sh
+
 cli-selftest:
 	@echo "▶ mock smoke …"
 	@$(MAKE) --no-print-directory cli-selftest-mock
@@ -119,3 +122,4 @@ help:
 	@echo "make verify-mcp-artefacts — check each MCP App widget is reachable on the deployed sandbox"
 	@echo "make deploy-mcp-sandbox   — rebuild + redeploy the MCP sandbox (run after adding a widget)"
 	@echo "make create-artifact-bucket — create the ADK artifact GCS bucket + grant SA write access"
+	@echo "make create-search-datastore — create the AP-validator Vertex AI Search datastore (eu)"
