@@ -60,7 +60,7 @@ export function SkillsBar({
           />
         </div>
         <div className="hidden flex-col leading-none sm:flex">
-          <span className="gradient-text-gold text-[13px] font-bold tracking-tight">
+          <span className="gradient-text-brand font-display text-[13px] font-bold tracking-tight">
             {BRANDING.appName}
           </span>
           <span className="mt-0.5 text-[10px] text-primary/60">
@@ -68,6 +68,18 @@ export function SkillsBar({
           </span>
         </div>
       </Link>
+
+      <a
+        href={BRANDING.links.ailang}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="ailang-chip hidden shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-wider transition md:flex"
+        aria-label="Part of AILANG — visit ailang.sunholo.com"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={BRANDING.logo.familyMark} alt="" className="h-3.5 w-3.5" />
+        <span>part of AILANG</span>
+      </a>
 
       <div className="h-5 w-px shrink-0 bg-border" />
 

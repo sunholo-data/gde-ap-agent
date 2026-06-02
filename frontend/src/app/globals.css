@@ -4,42 +4,44 @@
 
 @layer base {
   :root {
-    /* AP finance palette — slate white background, deep navy foreground, gold primary */
-    --background: 210 20% 98%;
-    --foreground: 222 47% 11%;
-    --muted: 214 32% 94%;
-    --muted-foreground: 215 16% 47%;
-    --border: 214 32% 89%;
-    --input: 214 32% 89%;
-    --ring: 43 96% 46%;
-    --primary: 43 96% 46%;
-    --primary-foreground: 222 47% 8%;
-    --secondary: 214 32% 94%;
-    --secondary-foreground: 222 47% 11%;
-    --accent: 214 32% 94%;
-    --accent-foreground: 222 47% 11%;
+    /* ailang-parse palette — slate white background, deep navy fg, parse-blue primary */
+    --background: 0 0% 100%;
+    --foreground: 216 65% 14%;
+    --muted: 215 28% 95%;
+    --muted-foreground: 215 20% 40%;
+    --border: 215 28% 88%;
+    --input: 215 28% 88%;
+    --ring: 217 91% 50%;
+    --primary: 217 91% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 28% 95%;
+    --secondary-foreground: 216 65% 14%;
+    --accent: 215 28% 93%;
+    --accent-foreground: 216 65% 14%;
     --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 100%;
     --radius: 0.5rem;
+    /* AILANG-family Sunholo red — scoped utility only, not used by shadcn components. */
+    --ailang: 10 86% 50%;
   }
 
   .dark {
-    /* Dark mode: deep navy canvas, gold primary, slate accents */
-    --background: 222 47% 5%;
-    --foreground: 210 40% 96%;
-    --muted: 222 32% 10%;
-    --muted-foreground: 215 20% 52%;
-    --border: 222 32% 13%;
-    --input: 222 32% 10%;
-    --ring: 43 96% 50%;
-    --primary: 43 96% 50%;
-    --primary-foreground: 222 47% 5%;
-    --secondary: 222 32% 10%;
-    --secondary-foreground: 210 40% 96%;
-    --accent: 222 32% 12%;
-    --accent-foreground: 210 40% 96%;
-    --destructive: 0 62% 38%;
-    --destructive-foreground: 210 40% 98%;
+    --background: 216 65% 8%;
+    --foreground: 215 30% 96%;
+    --muted: 216 50% 12%;
+    --muted-foreground: 215 20% 60%;
+    --border: 216 50% 16%;
+    --input: 216 50% 14%;
+    --ring: 217 91% 60%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 216 65% 8%;
+    --secondary: 216 50% 12%;
+    --secondary-foreground: 215 30% 96%;
+    --accent: 216 50% 14%;
+    --accent-foreground: 215 30% 96%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --ailang: 10 86% 55%;
   }
 }
 
@@ -55,21 +57,21 @@
 
 /* Dot-grid texture */
 body {
-  background-image: radial-gradient(circle, rgba(100, 130, 180, 0.055) 1px, transparent 1px);
+  background-image: radial-gradient(circle, rgba(37, 99, 235, 0.05) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 .dark body {
-  background-image: radial-gradient(circle, rgba(100, 140, 200, 0.07) 1px, transparent 1px);
+  background-image: radial-gradient(circle, rgba(96, 165, 250, 0.07) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
-/* Gold glow pulse — brand logo */
+/* Brand glow pulse — ailang-parse blue */
 @keyframes glow-pulse {
   0%, 100% {
-    filter: drop-shadow(0 0 6px rgba(232, 168, 0, 0.35)) drop-shadow(0 0 16px rgba(232, 168, 0, 0.12));
+    filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.35)) drop-shadow(0 0 16px rgba(37, 99, 235, 0.12));
   }
   50% {
-    filter: drop-shadow(0 0 10px rgba(232, 168, 0, 0.55)) drop-shadow(0 0 28px rgba(232, 168, 0, 0.22));
+    filter: drop-shadow(0 0 10px rgba(37, 99, 235, 0.55)) drop-shadow(0 0 28px rgba(37, 99, 235, 0.22));
   }
 }
 
@@ -77,10 +79,30 @@ body {
   animation: glow-pulse 3s ease-in-out infinite;
 }
 
-/* Gradient gold text */
-.gradient-text-gold {
-  background: linear-gradient(90deg, #fbbf24, #e8a800, #f59e0b);
+/* Gradient brand text — ailang-parse blues */
+.gradient-text-brand {
+  background: linear-gradient(90deg, #3b82f6, #2563eb, #60a5fa);
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
+}
+
+/* Gradient AILANG attribution — Sunholo red → orange */
+.gradient-text-ailang {
+  background: linear-gradient(90deg, #e73c17, #dd6b20);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+/* AILANG-family attribution chip — Sunholo red tones, scoped to one element */
+.ailang-chip {
+  color: hsl(var(--muted-foreground));
+  border-color: hsl(var(--ailang) / 0.25);
+  background-color: hsl(var(--ailang) / 0.06);
+}
+.ailang-chip:hover {
+  color: hsl(var(--ailang));
+  border-color: hsl(var(--ailang) / 0.5);
+  background-color: hsl(var(--ailang) / 0.1);
 }

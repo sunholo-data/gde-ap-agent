@@ -1,6 +1,10 @@
 # GDE AP Agent
 
-**AI-Powered Accounts Payable** — autonomous multi-agent invoice processing on Google ADK.
+**Now branded in the UI as `ailang-parse · AP Showcase`** — a live demo of
+[ailang-parse](https://www.sunholo.com/ailang-parse) (deterministic invoice
+extraction) running inside a Google ADK multi-agent AP pipeline. Part of the
+[AILANG](https://ailang.sunholo.com) family. The underlying pipeline is unchanged;
+only the visual identity of the deployed app has been rebranded.
 
 Built for the [Google for Startups AI Agents Challenge, Track 3](./SUBMISSION.md). Live demo: https://gde-ap-agent-blqtqfexwa-ew.a.run.app
 

@@ -34,23 +34,32 @@ export const TRANSPORT_FIELD = `__${process.env.NEXT_PUBLIC_APP_SLUG ?? "platfor
 
 export const BRANDING = {
   /** Short product name used in page <title>, banners, marketing hero. */
-  appName: "GDE AP Agent",
+  appName: "ailang-parse · AP Showcase",
 
   /** One-line product tagline shown under the logo on the welcome screen. */
-  tagline: "AI-Powered Accounts Payable",
+  tagline: "Universal document parsing in AILANG — invoice intake, extraction, validation, posting.",
 
   /** Long form description used in <meta name="description">. */
-  description: "Autonomous accounts-payable processing — invoice intake, extraction, validation, and posting powered by Google ADK multi-agent AI.",
+  description: "A live showcase of ailang-parse — deterministic invoice extraction running inside a Google ADK multi-agent AP pipeline. Part of the AILANG family.",
 
   /** Public-facing logo paths. Swap the files in /public/images/logo/ to
    * rebrand without touching this object. */
   logo: {
     /** Browser tab favicon (SVG — works in all modern browsers). */
-    favicon: "/images/logo/gde-ap-agent-logo.svg",
+    favicon: "/images/logo/ailang-parse-logo.svg",
     /** Welcome-screen mark (SVG). */
-    heroAnimated: "/images/logo/gde-ap-agent-logo.svg",
+    heroAnimated: "/images/logo/ailang-parse-hero.svg",
     /** Square chat-message-bubble avatar (SVG). */
-    chatAvatar: "/images/logo/gde-ap-agent-avatar.svg",
+    chatAvatar: "/images/logo/ailang-parse-logo.svg",
+    /** Small attribution mark used to indicate AILANG family membership. */
+    familyMark: "/images/logo/ailang-logo.svg",
+  },
+
+  /** Outbound links to the parent project family. */
+  links: {
+    ailang: "https://ailang.sunholo.com",
+    ailangParse: "https://www.sunholo.com/ailang-parse",
+    sunholo: "https://www.sunholo.com",
   },
 
   /** Contact / community links exposed in CONTRIBUTING + workshop docs. */

@@ -256,8 +256,8 @@ function APHeroEmpty() {
       </div>
 
       {/* Headlines */}
-      <h1 className="gradient-text-gold mb-2 text-2xl font-bold tracking-tight">
-        AI-Powered Accounts Payable
+      <h1 className="gradient-text-brand font-display mb-2 text-2xl font-bold tracking-tight">
+        ailang-parse · AP Showcase
       </h1>
       <p className="mb-10 max-w-xs text-sm leading-relaxed text-muted-foreground">
         Multi-agent invoice processing — extract, validate, and post with a complete audit trail.
