@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useRef, useState } from "react";
+import { BrandFooter } from "@/components/BrandFooter";
 import { ChatMessageList } from "@/components/chat/ChatMessageList";
 import type { DocTabData } from "@/components/doc-browser/DocTab";
 import { DocListView } from "@/components/doc-browser/DocListView";
@@ -707,7 +708,7 @@ function ChatShell({
 
             <SidebarSection
               title="Sessions"
-              defaultOpen
+              defaultOpen={false}
               badge={
                 sessions.length > 0 ? (
                   <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
@@ -742,11 +743,11 @@ function ChatShell({
               </div>
             </SidebarSection>
 
-            <SidebarSection title="Import from GCS bucket" defaultOpen bodyClassName="">
+            <SidebarSection title="Import from GCS bucket" defaultOpen={false} bodyClassName="">
               <GCSFileBrowser skillId={skillId} />
             </SidebarSection>
 
-            <SidebarSection title="My Documents" defaultOpen bodyClassName="">
+            <SidebarSection title="My Documents" defaultOpen={false} bodyClassName="">
               <div className="flex max-h-[40vh] flex-col overflow-hidden">
                 <DocListView uid={user.uid} onDocClick={handleDocClick} />
               </div>
@@ -929,6 +930,7 @@ function ChatShell({
           overlay at page root. Only visible when populated; M4 will wire
           the user-gesture guard so the agent can't pop one unprompted. */}
       <ModalSurfaceRegion sessionId={sessionId ?? agentSessionId} />
+      <BrandFooter variant="slim" />
     </main>
     </SurfaceRegistryProvider>
   );

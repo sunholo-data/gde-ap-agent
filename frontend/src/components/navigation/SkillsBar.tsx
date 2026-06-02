@@ -59,39 +59,12 @@ export function SkillsBar({
             className="relative h-8 w-8 animate-glow-pulse"
           />
         </div>
-        <div className="hidden flex-col leading-none sm:flex">
-          <span className="gradient-text-brand font-display text-[13px] font-bold tracking-tight">
-            {BRANDING.appName}
-          </span>
-          <span className="mt-0.5 text-[10px] text-primary/60">
-            {BRANDING.tagline}
-          </span>
-        </div>
+        <span className="gradient-text-brand font-display hidden text-[13px] font-bold tracking-tight sm:inline">
+          {BRANDING.appName}
+        </span>
       </Link>
 
-      <a
-        href={BRANDING.links.ailang}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="ailang-chip hidden shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-wider transition md:flex"
-        aria-label="Part of AILANG — visit ailang.sunholo.com"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={BRANDING.logo.familyMark} alt="" className="h-3.5 w-3.5" />
-        <span>part of AILANG</span>
-      </a>
-
       <div className="h-5 w-px shrink-0 bg-border" />
-
-      {/* Agent-chain badge — explains the multi-agent AP pipeline */}
-      <div className="hidden items-center gap-1.5 lg:flex shrink-0">
-        <span className="rounded-full border border-primary/20 bg-primary/8 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary/70">
-          4 Agents
-        </span>
-        <span className="rounded-full border border-emerald-500/20 bg-emerald-500/8 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-emerald-400/70">
-          Live
-        </span>
-      </div>
 
       <nav
         className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
