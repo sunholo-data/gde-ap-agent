@@ -1,12 +1,12 @@
 # Multi-Agent Workflow Pipeline (ADK SequentialAgent)
 
-**Status**: Planned
+**Status**: Implemented
 **Priority**: P0 (Submission centerpiece)
 **Estimated**: 2.5 days
 **Scope**: Fullstack (backend agent factory + skill templates + new MCP server; frontend verification)
 **Dependencies**: [Schema-Enforced Structured Extraction](./schema-enforced-extraction.md) (✅ shipped), [Multi-Agent Inspector UX](./multi-agent-inspector-ux.md) (✅ shipped)
 **Created**: 2026-06-02
-**Last Updated**: 2026-06-02
+**Last Updated**: 2026-06-03
 
 > **Submission documentation.** This doc doubles as the architectural narrative for the Google AI Agents Challenge Track 3 submission. Each section maps a pipeline stage to one open protocol, demonstrating *fluency* with the agent stack (Agent Skills, ADK, AG-UI, A2UI, A2A, MCP, MCP Apps) rather than just *familiarity* with the names.
 
@@ -436,3 +436,69 @@ ap-pipeline (SequentialAgent)   ← Workflow lives in ADK Python, not a prompt
 - [A2A spec](https://a2a-protocol.org/latest/specification/) — AgentCard schema + extensions mechanism
 - [A2UI v0.9 spec](https://a2ui.org/specification/v0_9/) — declarative UI message protocol, decoupled pattern
 - [MCP spec](https://modelcontextprotocol.io/docs/) — tool integration protocol
+
+---
+
+## Implementation Report
+
+**Completed**: 2026-06-03
+**Actual Effort**: ~1 day (vs 2.5 estimated — high velocity riding on the SCHEMA-ENFORCE and AUDIT-VIEW foundations)
+**Sprint**: WORKFLOW-PIPELINE (commits 084d578, fd68e9e, 405e6c6, 93e1447)
+
+### What Was Built
+
+**M1 — SequentialAgent factory wiring (commit 084d578)** — Added `agent_type: Literal["llm","sequential"] = "llm"` to `SkillMetadata` (with `agentType` camelCase alias). `create_agent` in `adk/agent.py` branches on `agent_type == "sequential"` and builds a `google.adk.agents.SequentialAgent` instead of an `LlmAgent`. Two helper factories `_make_intake_gate` and `_make_final_progress` produce the before/after callbacks. Intake gate returns `types.Content` with a friendly "please upload an invoice" message when `state["app:docs_loaded"]` is empty, short-circuiting the pipeline per ADK's `BaseAgent._handle_before_agent_callback` contract. Final progress emits a "Done — invoice processed" STAGE_PROGRESS for telemetry.
+
+**M2 — Skill template restructuring (commit fd68e9e)** — New `backend/skills/templates/ap-pipeline/SKILL.md` (`agentType: sequential`, `subSkills: [invoice-extractor, ap-validator, ap-poster]`, no instruction body). `ap-orchestrator/SKILL.md` now has `subSkills: [ap-pipeline]` and a simplified "chat or transfer once" instruction. The 80-line Invoice Review Card JSON moved from orchestrator to `ap-poster/SKILL.md` (the only specialist that knows the final action). `ap-validator` references `vendor-master` in `tool_configs.mcp.servers`; `ap-poster` references `erp-posting`.
+
+**M3 — Simulated FastMCP servers (commit 405e6c6)** — New `backend/protocols/mcp_servers/` package with `vendor_master.py` and `erp_posting.py`. Each is a `FastMCP` instance mounted at `/mcp/vendor-master` and `/mcp/erp-posting` alongside the existing `/mcp` server. Vendor-master exposes `lookup_vendor` (synthetic table covering the demo invoices) and `check_duplicate`. ERP exposes `post_to_ledger` (POST-<8 hex>) and `route_to_approval` (APPR-<8 hex>, 24h SLA). Mount order matters — specific paths must register before generic `/mcp` or Starlette swallows every subpath. Seeded via `scripts/seed_mcp_servers.py` with `--backend-base-url` flag for local dev override.
+
+**M4 — A2A extension + STAGE_PROGRESS labels (commit 93e1447)** — `adk-workflow-v1` added to `SUPPORTED_EXTENSIONS` in `backend/protocols/a2a.py` so peer agents discovering this platform via `/.well-known/agent.json` know it exposes deterministic workflow agents. Per-specialist STAGE_PROGRESS labels via `_emit_specialist_stage_label` — lookup by SKILL.md name (stable) so re-seeding into a fresh Firestore doesn't break the labels. The orchestrator and ap-pipeline emit no label, only the three specialists do.
+
+**M5 — Verify + finalize** — `scripts/verify-judge-path.sh` ships with two layers: unauthenticated (frontend reachable, Cloud Run revision ≥ 55) always runs, authenticated (skill structure checks via `/api/proxy/api/skills/by-slug/...`) gated on `AIPLATFORM_ID_TOKEN`. Prints the manual UI verification checklist for the parts a script cannot reach (live AG-UI stream, workspace card rendering, STAGE_PROGRESS surfacing in the typing indicator).
+
+### Files Changed
+
+**New:**
+- `backend/skills/templates/ap-pipeline/SKILL.md` (M2)
+- `backend/protocols/mcp_servers/__init__.py` (M3)
+- `backend/protocols/mcp_servers/vendor_master.py` (M3)
+- `backend/protocols/mcp_servers/erp_posting.py` (M3)
+- `backend/tests/tool_tests/test_vendor_master_mcp.py` (M3)
+- `backend/tests/tool_tests/test_erp_posting_mcp.py` (M3)
+- `scripts/verify-judge-path.sh` (M5)
+
+**Modified:**
+- `backend/db/models/__init__.py` — added `agent_type` to `SkillMetadata` (M1)
+- `backend/adk/agent.py` — SequentialAgent branch, intake gate, final progress, specialist STAGE_PROGRESS labels (M1, M4)
+- `backend/db/local_fixture.py` — seed ap-pipeline alongside the four other AP skills (M2)
+- `backend/skills/templates/ap-orchestrator/SKILL.md` — transfers to ap-pipeline only (M2)
+- `backend/skills/templates/ap-poster/SKILL.md` — gains Invoice Review Card emission + erp-posting MCP ref (M2)
+- `backend/skills/templates/ap-validator/SKILL.md` — gains vendor-master MCP ref (M2)
+- `backend/fast_api_app.py` — mounts the two new FastMCP servers with lifespan composition + correct mount order (M3)
+- `backend/scripts/seed_mcp_servers.py` — Firestore entries for vendor-master + erp-posting (M3)
+- `backend/protocols/a2a.py` — adk-workflow-v1 in SUPPORTED_EXTENSIONS (M4)
+- `backend/tests/unit/test_create_agent.py` — 12 new tests for SequentialAgent build + intake gate + final progress + specialist labels (M1, M4)
+- `backend/tests/unit/test_models.py` — agent_type round-trip + validation tests (M1)
+- `backend/tests/unit/test_platform_seed.py` — ap-pipeline template parse + orchestrator subSkills assertion (M2)
+- `backend/tests/unit/test_ap_orchestrator_wiring.py` — reworked for two-level hierarchy: orchestrator → pipeline → specialists (M2)
+- `backend/tests/unit/test_local_fixture.py` — skill count 10 → 11 (M2)
+- `backend/tests/api_tests/test_a2a.py` — adk-workflow-v1 advertisement test (M4)
+- `docs/design/forks/gde-ap-agent/SEQUENCE.md` — entry + ✅ Implemented status
+
+### Test Count
+
+- Backend: **1463 passing**, 1 skipped, 12 deselected
+- Frontend: 577 passing (unchanged — no frontend code changes)
+
+### Deviations from Plan
+
+- **Per-specialist incremental A2UI sections deferred.** The design doc proposed `invoice-extractor` and `ap-validator` each append a section to the workspace surface as they finish. M2 instead kept the full Invoice Review Card emission on `ap-poster` (the final stage). The structural change — deterministic SequentialAgent — is what matters for the submission; the "growing card" visual polish can land as a follow-up if time allows.
+- **Sprint completed in ~1 day vs 2.5 estimated.** SCHEMA-ENFORCE and AUDIT-VIEW had landed the foundations (schema validation, per-agent audit panes), so M1's factory branch + M2's template restructuring were short. M3 was the biggest milestone by LOC and went smoothly because the existing FastMCP pattern at `backend/protocols/mcp_server.py` was directly reusable.
+
+### Lessons Learned
+
+- **Starlette mount order is a footgun.** A more-specific path (`/mcp/vendor-master`) registered AFTER a less-specific path (`/mcp`) gets swallowed. Documented this inline in `fast_api_app.py` with a code comment so the next person doesn't repeat it.
+- **`from __future__ import annotations` doesn't free you from importing `Literal` at runtime.** Pydantic resolves annotations at model-build time even with the future import, so adding a `Literal[...]` field requires adding the import. Caught this when ruff didn't flag it but Pydantic would have at import time.
+- **Lookup by stable name (`skill.name`), not skill_id.** The skill_id is a fresh UUID per Firestore environment, but the SKILL.md `name` field is stable. STAGE_PROGRESS labels and AP-specific behaviour key off `name`, so re-seeding into a fresh project never breaks them.
+- **The fork's `/.well-known/agent.json` is unreachable externally** because the combined-container Cloud Run service serves Next.js at the root and only proxies `/api/*` to the backend. The A2A discovery surface works for backend-internal callers but not for external A2A crawlers. Pre-existing issue, not in scope for this sprint, but noted for a follow-up.

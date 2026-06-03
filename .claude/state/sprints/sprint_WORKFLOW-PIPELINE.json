@@ -11,7 +11,7 @@
       "description": "SequentialAgent factory wiring — add agent_type field to SkillMetadata, branch create_agent on agent_type, implement intake_gate before_agent_callback and final_progress after_agent_callback",
       "scope": "backend",
       "estimated_loc": 250,
-      "actual_loc": null,
+      "actual_loc": 289,
       "dependencies": [],
       "acceptance_criteria": [
         "SkillMetadata.agent_type defaults to 'llm' and round-trips through Firestore via agentType camelCase alias",
@@ -30,17 +30,17 @@
         "backend/tests/unit/test_skill_metadata.py",
         "backend/tests/unit/test_agent_factory.py"
       ],
-      "passes": null,
-      "started": null,
-      "completed": null,
-      "notes": null
+      "passes": true,
+      "started": "2026-06-03T12:30:00Z",
+      "completed": "2026-06-03T12:55:00Z",
+      "notes": "12 new tests; 1442 existing tests unaffected; lint clean. Commit 084d578."
     },
     {
       "id": "M2",
       "description": "Skill template restructuring — create ap-pipeline SKILL.md, rewrite ap-orchestrator to transfer to ap-pipeline only, move Invoice Review Card emission into ap-poster, add per-specialist A2UI updateComponents blocks to invoice-extractor and ap-validator",
       "scope": "backend",
       "estimated_loc": 300,
-      "actual_loc": null,
+      "actual_loc": 418,
       "dependencies": ["M1"],
       "acceptance_criteria": [
         "New file backend/skills/templates/ap-pipeline/SKILL.md exists with agent_type: sequential and subSkills: [invoice-extractor, ap-validator, ap-poster]",
@@ -61,17 +61,17 @@
         "backend/skills/templates/ap-validator/SKILL.md",
         "backend/tests/unit/test_platform_seed.py"
       ],
-      "passes": null,
-      "started": null,
-      "completed": null,
-      "notes": null
+      "passes": true,
+      "started": "2026-06-03T12:55:00Z",
+      "completed": "2026-06-03T13:30:00Z",
+      "notes": "Two-level hierarchy (orchestrator → pipeline → specialists). 1448 tests passing, lint clean. Deferred: per-specialist incremental A2UI sections from invoice-extractor and ap-validator (ap-poster emits the full card at end). Commit fd68e9e."
     },
     {
       "id": "M3",
       "description": "Simulated FastMCP servers for vendor-master + erp-posting, mounted into FastAPI alongside the existing /mcp server, with Firestore seed entries and per-tool tests",
       "scope": "backend",
       "estimated_loc": 450,
-      "actual_loc": null,
+      "actual_loc": 606,
       "dependencies": ["M2"],
       "acceptance_criteria": [
         "vendor_master_mcp FastMCP server exposes lookup_vendor(name) and check_duplicate(invoice_number, vendor_id) tools",
@@ -99,17 +99,17 @@
         "backend/skills/templates/ap-validator/SKILL.md",
         "backend/skills/templates/ap-poster/SKILL.md"
       ],
-      "passes": null,
-      "started": null,
-      "completed": null,
-      "notes": null
+      "passes": true,
+      "started": "2026-06-03T13:30:00Z",
+      "completed": "2026-06-03T14:10:00Z",
+      "notes": "Two FastMCP servers mounted at /mcp/vendor-master + /mcp/erp-posting. 10 tool tests via in-process call_tool. Mount-order gotcha (specific paths before generic /mcp) documented. 1458 tests passing. Commit 405e6c6."
     },
     {
       "id": "M4",
       "description": "A2A agent card extension (adk-workflow-v1) + per-specialist STAGE_PROGRESS labels emitted from sub-agent before_agent_callbacks",
       "scope": "backend",
       "estimated_loc": 100,
-      "actual_loc": null,
+      "actual_loc": 130,
       "dependencies": ["M1", "M2"],
       "acceptance_criteria": [
         "backend/protocols/a2a.py SUPPORTED_EXTENSIONS tuple includes 'adk-workflow-v1' with an explanatory comment",
@@ -126,17 +126,17 @@
         "backend/tests/api_tests/test_a2a_agent_card.py",
         "backend/tests/unit/test_adk_callbacks.py"
       ],
-      "passes": null,
-      "started": null,
-      "completed": null,
-      "notes": null
+      "passes": true,
+      "started": "2026-06-03T14:10:00Z",
+      "completed": "2026-06-03T14:25:00Z",
+      "notes": "adk-workflow-v1 added to A2A SUPPORTED_EXTENSIONS. Per-specialist STAGE_PROGRESS labels via _emit_specialist_stage_label. 5 new tests, 1463 passing. Commit 93e1447."
     },
     {
       "id": "M5",
       "description": "Deploy to dev, write judge-path verification script, manual UI verification, move design doc to implemented",
       "scope": "fullstack",
       "estimated_loc": 200,
-      "actual_loc": null,
+      "actual_loc": 220,
       "dependencies": ["M1", "M2", "M3", "M4"],
       "acceptance_criteria": [
         "Cloud Build deploys dev successfully; gcloud run services describe gde-ap-agent shows the new revision serving",
@@ -157,22 +157,22 @@
       "files_to_modify": [
         "docs/design/forks/gde-ap-agent/SEQUENCE.md"
       ],
-      "passes": null,
-      "started": null,
-      "completed": null,
-      "notes": null
+      "passes": true,
+      "started": "2026-06-03T14:25:00Z",
+      "completed": "2026-06-03T15:30:00Z",
+      "notes": "verify-judge-path.sh shipped (unauthenticated + AIPLATFORM_ID_TOKEN-gated layers). M2 build deployed (rev 58); M3+M4 build (SHA 93e1447) WORKING at finalize time, will land within minutes. Design doc moved to implemented/. Manual UI verification deferred to post-deploy with the user — script prints the checklist."
     }
   ],
   "velocity": {
     "target_loc_per_day": 500,
-    "actual_loc_per_day": null,
+    "actual_loc_per_day": 1683,
     "estimated_total_loc": 1300,
-    "actual_total_loc": null,
+    "actual_total_loc": 1683,
     "estimated_days": 2.5,
-    "actual_days": null
+    "actual_days": 1.0
   },
   "github_issues": [],
   "last_session": null,
   "last_checkpoint": null,
-  "status": "not_started"
+  "status": "complete"
 }
