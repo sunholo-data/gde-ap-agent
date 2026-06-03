@@ -45,6 +45,18 @@ export interface A2UISurfaceMountProps {
    * push path still works through `forwardedProps`.
    */
   sessionId?: string | null;
+  /**
+   * Client-side handler for actions fired by the surface. Invoked
+   * BEFORE the backend POST so e.g. opening a globe modal from a
+   * workspace button doesn't wait on the round-trip. When unset (the
+   * default) all actions go to the backend only — which is correct
+   * for skills whose action loop is purely server-side (the
+   * InstructionProvider reads ``a2ui_surface_context.lastAction`` on
+   * the next turn). Set this from a parent that also renders inline
+   * A2UI bubbles so workspace actions reach the same handler as
+   * inline-bubble actions.
+   */
+  onAction?: (event: { actionName: string; context: Record<string, unknown> }) => void;
 }
 
 export function A2UISurfaceMount({
@@ -52,6 +64,7 @@ export function A2UISurfaceMount({
   policy,
   className,
   sessionId,
+  onAction,
 }: A2UISurfaceMountProps) {
   const ref = useRef<HTMLDivElement>(null);
   const registry = useSurfaceRegistry();
@@ -64,13 +77,39 @@ export function A2UISurfaceMount({
     };
   }, [surfaceId, policy, registry]);
 
-  // Subscribe to surface actions and POST each one to the backend's
-  // surface-action endpoint. Re-subscribes whenever the SurfaceModel
+  // Subscribe to surface actions and (a) invoke the optional
+  // client-side onAction handler synchronously so e.g. opening a
+  // globe modal doesn't wait on the network, then (b) POST the
+  // action to the backend's surface-action endpoint for the
+  // server-side action loop. Re-subscribes whenever the SurfaceModel
   // identity changes (clearSurface → new createSurface).
   useEffect(() => {
     if (!state?.surface) return;
-    if (!sessionId) return;
     const sub = state.surface.onAction.subscribe(async (action) => {
+      // Fire the client-side handler first — this is what opens the
+      // vendor-globe modal / AP-analytics dashboard from a workspace
+      // button click. Synchronous; never gated on session presence
+      // or backend reachability.
+      if (onAction) {
+        try {
+          onAction({
+            actionName: action.name,
+            context: (action.context ?? {}) as Record<string, unknown>,
+          });
+        } catch (err) {
+          if (process.env.NODE_ENV !== "production") {
+            console.error(
+              `[A2UISurfaceMount] onAction client handler threw for surface "${surfaceId}":`,
+              err,
+            );
+          }
+        }
+      }
+
+      // Backend POST is still useful for skills that opted into the
+      // server-side action loop. Skip silently when no session
+      // (fresh chat) — there's nowhere to write the namespaced state.
+      if (!sessionId) return;
       try {
         const res = await fetchWithAuth(
           `/api/proxy/api/sessions/${encodeURIComponent(sessionId)}/surface-action`,
@@ -107,7 +146,7 @@ export function A2UISurfaceMount({
       }
     });
     return () => sub.unsubscribe();
-  }, [state?.surface, surfaceId, sessionId]);
+  }, [state?.surface, surfaceId, sessionId, onAction]);
 
   return (
     <div ref={ref} className={className} data-surface={surfaceId}>

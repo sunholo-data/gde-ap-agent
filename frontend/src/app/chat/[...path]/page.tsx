@@ -59,7 +59,13 @@ import { APDashboardPanel } from "@/components/workspace/APDashboardPanel";
  *   - modal     : fixed-position overlay at page root (M4 wires the
  *                 user-gesture guard; M3 just shows it when populated)
  */
-function WorkspaceSurfaceRegion({ sessionId }: { sessionId: string | null }) {
+function WorkspaceSurfaceRegion({
+  sessionId,
+  onAction,
+}: {
+  sessionId: string | null;
+  onAction?: (event: { actionName: string; context: Record<string, unknown> }) => void;
+}) {
   const state = useSurfaceState("workspace");
   if (!state?.surface) return null;
   // Workspace is a flex sibling of the chat panel. Each gets `flex-1
@@ -76,6 +82,7 @@ function WorkspaceSurfaceRegion({ sessionId }: { sessionId: string | null }) {
           surfaceId="workspace"
           className="h-full"
           sessionId={sessionId}
+          onAction={onAction}
         />
       </div>
     </div>
@@ -834,7 +841,7 @@ function ChatShell({
             doc-panel slot when no doc tab is currently expanded AND the
             agent has published a workspace tree. */}
         {!expandedTab && !globeContext && (
-          <WorkspaceSurfaceRegion sessionId={sessionId ?? agentSessionId} />
+          <WorkspaceSurfaceRegion sessionId={sessionId ?? agentSessionId} onAction={handleAction} />
         )}
 
         {/* M4: Vendor globe — shown when ap-orchestrator fires show_vendor_globe */}
