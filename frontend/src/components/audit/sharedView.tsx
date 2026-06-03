@@ -39,23 +39,61 @@ export function formatDuration(ms: number): string {
  *  - already-parsed objects (stringify)
  *  - plain strings (return as-is, trimmed)
  *  - null/undefined → empty string
+ *
+ * Recursively unwraps string values that themselves contain JSON (depth-
+ * capped at 4). This matters for the `send_a2ui_json_to_client` input
+ * `{ "a2ui_json": "[escaped JSON]" }` — without the unwrap the auditor's
+ * Raw JSON disclosure shows escape-soup instead of the nested array.
  */
 export function formatJsonish(value: unknown): string {
   if (value == null) return "";
+  let parsed: unknown;
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (!trimmed) return "";
     try {
-      return JSON.stringify(JSON.parse(trimmed), null, 2);
+      parsed = JSON.parse(trimmed);
     } catch {
       return trimmed;
     }
+  } else {
+    parsed = value;
   }
   try {
-    return JSON.stringify(value, null, 2);
+    return JSON.stringify(deepUnwrapJson(parsed), null, 2);
   } catch {
     return String(value);
   }
+}
+
+function looksLikeJson(s: string): boolean {
+  if (s.length === 0) return false;
+  const c = s[0];
+  return c === "{" || c === "[" || c === '"';
+}
+
+function deepUnwrapJson(value: unknown, depth = 0): unknown {
+  if (depth > 4) return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!looksLikeJson(trimmed)) return value;
+    try {
+      return deepUnwrapJson(JSON.parse(trimmed), depth + 1);
+    } catch {
+      return value;
+    }
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => deepUnwrapJson(v, depth + 1));
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = deepUnwrapJson(v, depth + 1);
+    }
+    return out;
+  }
+  return value;
 }
 
 /**

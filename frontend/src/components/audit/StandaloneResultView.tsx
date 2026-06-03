@@ -1,8 +1,14 @@
 "use client";
 
-import { formatDuration, InputOutputCard, SectionLabel } from "./sharedView";
+import { A2UIRenderer } from "@/components/protocols/A2UIRenderer";
+import { tryBuildFinalResponseCard } from "./finalResponseRender";
+import { formatDuration, SectionLabel } from "./sharedView";
+import { StandaloneToolCallCard } from "./StandaloneToolCallCard";
 
 export interface StandaloneResult {
+  /** Backend echoes the skill_id it ran; used here to namespace A2UI
+   * fallback surface ids when the LLM forgot to emit createSurface. */
+  skill_id?: string;
   duration_ms: number;
   text: string;
   tool_calls: Array<{ name: string; args?: string; result?: unknown }>;
@@ -16,13 +22,19 @@ interface StandaloneResultViewProps {
 /**
  * Prominent rendering of an Audit View "Run Standalone" result. Replaces
  * the EmptyState in the InspectorPanel body when the user runs a
- * specialist directly. Designed so the agent's actual output (tool
- * calls + their results) is the first thing the user sees — not buried
- * behind a `<details>` summary like the v1 footer-only render.
+ * specialist directly. Designed so the agent's actual output (rendered
+ * A2UI cards from the tool calls + a card built from the final response
+ * JSON when applicable) is the first thing the user sees — not buried
+ * behind a `<details>` summary like the v1 footer-only render, and not
+ * dumped as escape-soup like the v2 raw-JSON render.
  */
 export function StandaloneResultView({ result, onClear }: StandaloneResultViewProps) {
   const hasText = result.text.trim().length > 0;
   const toolCount = result.tool_calls.length;
+  const skillId = result.skill_id ?? "standalone";
+  const finalResponseCard = hasText
+    ? tryBuildFinalResponseCard(result.text, skillId)
+    : null;
 
   return (
     <section
@@ -50,10 +62,31 @@ export function StandaloneResultView({ result, onClear }: StandaloneResultViewPr
         </button>
       </header>
 
-      {/* Final assistant text — usually empty for tool-only specialists like docparse */}
+      {/* Final assistant text — rendered as an A2UI card when JSON-only;
+          falls back to <pre> for prose; placeholder for tool-only specialists. */}
       <div>
         <SectionLabel>Final response</SectionLabel>
-        {hasText ? (
+        {hasText && finalResponseCard ? (
+          <div className="mt-1 space-y-1.5">
+            <div
+              data-testid="audit-final-response-card"
+              className="rounded border border-border bg-background p-2"
+            >
+              <A2UIRenderer
+                messages={finalResponseCard}
+                fallbackSurfaceId={`audit-final-${skillId}`}
+              />
+            </div>
+            <details className="rounded border border-border bg-muted/20">
+              <summary className="cursor-pointer select-none px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground">
+                Raw text
+              </summary>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap border-t border-border bg-background p-2 text-[11px] leading-relaxed text-foreground/85">
+                {result.text}
+              </pre>
+            </details>
+          </div>
+        ) : hasText ? (
           <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded border border-border bg-background p-2 text-[11px] leading-relaxed text-foreground/90">
             {result.text}
           </pre>
@@ -65,18 +98,19 @@ export function StandaloneResultView({ result, onClear }: StandaloneResultViewPr
         )}
       </div>
 
-      {/* Tool calls — expanded by default, with results */}
+      {/* Tool calls — each rendered as a real A2UI card when the result is
+          a send_a2ui_json_to_client envelope, with raw JSON tucked behind a
+          disclosure. Non-A2UI tools fall back to InputOutputCard. */}
       {toolCount > 0 ? (
         <div>
           <SectionLabel>Tool calls (structured output)</SectionLabel>
           <ul className="mt-1 space-y-2">
             {result.tool_calls.map((tc, i) => (
               <li key={i}>
-                <InputOutputCard
+                <StandaloneToolCallCard
                   index={i + 1}
-                  title={tc.name}
-                  input={tc.args}
-                  output={tc.result}
+                  toolCall={tc}
+                  skillId={skillId}
                 />
               </li>
             ))}
