@@ -307,6 +307,56 @@ class SurfaceStore {
       return;
     }
 
+    // Placeholder root: if after processing the surface still has no
+    // `root` component, inject one as a literal-text placeholder. The
+    // `<A2uiSurface>` DeferredChild renders the literal "[Loading
+    // root...]" when `componentsModel.get("root")` is undefined — a
+    // confusing dev string that has shown up live when the LLM
+    // emitted updateDataModel without updateComponents (observed in
+    // the broken-demo screenshot on 2026-06-03). Using a literal
+    // `text` value (not a `{path: ...}` binding) means the
+    // placeholder does NOT touch the data model and so cannot
+    // overwrite real agent data already present on the surface. When
+    // the agent's real updateComponents for `root` arrives later, the
+    // SDK replaces this placeholder by id (different component type →
+    // recreate; see message-processor.js processUpdateComponentsMessage).
+    const surfaceAfter = processor.model.getSurface(surfaceId);
+    if (surfaceAfter && surfaceAfter.componentsModel.get("root") === undefined) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(
+          `[SurfaceRegistry] surface "${surfaceId}" has no 'root' component ` +
+            `after processing — injecting placeholder. Skill prompt should ` +
+            `emit updateComponents that defines a 'root' component id.`,
+        );
+      }
+      try {
+        processor.processMessages([
+          {
+            version: "v0.9",
+            updateComponents: {
+              surfaceId,
+              components: [
+                {
+                  id: "root",
+                  component: "Text",
+                  text: "Waiting for the agent…",
+                  variant: "body",
+                },
+              ],
+            },
+          } as A2uiMessage,
+        ]);
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") {
+          console.error(
+            `[SurfaceRegistry] placeholder root injection failed for ` +
+              `surface "${surfaceId}":`,
+            err,
+          );
+        }
+      }
+    }
+
     const surface = processor.model.getSurface(surfaceId) ?? null;
     entry.state = {
       surface,

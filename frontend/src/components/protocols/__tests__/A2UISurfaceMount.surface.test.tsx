@@ -25,6 +25,13 @@ vi.mock("@a2ui/web_core/v0_9", () => {
       id: string;
       catalog: { id: string };
       dataModel: { lastValue: unknown };
+      // Minimal componentsModel — registry's placeholder injection
+      // logic queries componentsModel.get("root") and pushes a
+      // placeholder updateComponents when missing.
+      componentsModel: {
+        components: Map<string, { type: string }>;
+        get: (id: string) => { type: string } | undefined;
+      };
       onAction: { subscribe: (h: ActionHandler) => { unsubscribe: () => void } };
       // Test-only escape hatch — sprint 2.10 mount subscribes to
       // surface.onAction; tests use this to fire a synthetic action
@@ -44,10 +51,15 @@ vi.mock("@a2ui/web_core/v0_9", () => {
           if (this.surfaces.has(p.surfaceId))
             throw new Error(`Surface ${p.surfaceId} already exists.`);
           const handlers = new Set<ActionHandler>();
+          const components = new Map<string, { type: string }>();
           this.surfaces.set(p.surfaceId, {
             id: p.surfaceId,
             catalog: { id: p.catalogId },
             dataModel: { lastValue: undefined },
+            componentsModel: {
+              components,
+              get: (id: string) => components.get(id),
+            },
             onAction: {
               subscribe: (h: ActionHandler) => {
                 handlers.add(h);
@@ -59,6 +71,16 @@ vi.mock("@a2ui/web_core/v0_9", () => {
             },
             dispose: () => {},
           });
+        } else if (msg.updateComponents) {
+          const p = msg.updateComponents as {
+            surfaceId: string;
+            components: Array<{ id: string; component: string }>;
+          };
+          const s = this.surfaces.get(p.surfaceId);
+          if (!s) throw new Error(`Surface not found: ${p.surfaceId}`);
+          for (const comp of p.components) {
+            s.componentsModel.components.set(comp.id, { type: comp.component });
+          }
         } else if (msg.deleteSurface) {
           const p = msg.deleteSurface as { surfaceId: string };
           this.surfaces.delete(p.surfaceId);

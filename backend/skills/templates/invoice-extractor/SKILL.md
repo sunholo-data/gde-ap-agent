@@ -76,6 +76,11 @@ You never see the raw .docx/.pdf bytes — only the Layer-1 output.
 
 ## Steps
 
+0. **Narrate first.** Before any tool call, emit ONE short sentence of
+   plain text telling the user what you're about to do (e.g. "Reading
+   the parsed invoice and extracting vendor, line items, and totals.").
+   This is the user's only window into what the pipeline is doing — a
+   silent turn looks like the agent has frozen. Keep it to one sentence.
 1. Use `list_documents` to locate the target invoice. The audit-view
    standalone form passes the `document_id` directly; the orchestrator
    passes a freeform description that you may need to search for.
@@ -84,10 +89,12 @@ You never see the raw .docx/.pdf bytes — only the Layer-1 output.
    (rows, cells, merged headers) rather than collapsing everything to
    markdown — that structure carries line-item totals and tax columns
    that markdown loses.
-3. Read the blocks and **return your final response as a single JSON
-   object** matching the schema below. No prose around it, no markdown
-   fencing, no commentary — just the JSON. Downstream agents
-   (ap-validator, ap-poster) consume your response as JSON.
+3. Read the blocks and produce the typed JSON object matching the
+   schema below. Your turn may contain the Step-0 sentence and any
+   intermediate reasoning; the **final** assistant text part must be
+   the JSON object (no markdown fencing, no commentary around it). The
+   `extractionSchema: ap_invoice` callback validates the JSON and
+   appends it as the canonical final part for downstream agents.
 
 ## Output schema
 

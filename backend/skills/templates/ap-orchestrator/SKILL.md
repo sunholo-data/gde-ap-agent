@@ -12,6 +12,16 @@ metadata:
   model: gemini-3.5-flash
   tools:
     - list_documents
+  # The orchestrator is a chat-or-transfer front door — it has no need
+  # for the default artifact/memory tools every LlmAgent gets in
+  # adk/agent.py. Opting out removes 4 tool entries (load_artifacts,
+  # retrieve_artifact, load_memory, preload_memory) so the chat header
+  # only shows `transfer_to_agent` and `list_documents`, plus whatever
+  # the downstream pipeline specialists call.
+  toolConfigs:
+    defaults:
+      artifacts: false
+      memory: false
   # WORKFLOW-PIPELINE: orchestrator stays an LlmAgent (the conversational
   # front door). It has a single sub-skill — `ap-pipeline`, which is a
   # SequentialAgent — and transfers once when the user wants to process

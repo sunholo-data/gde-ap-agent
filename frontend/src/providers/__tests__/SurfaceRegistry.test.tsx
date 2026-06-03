@@ -30,6 +30,13 @@ vi.mock("@a2ui/web_core/v0_9", () => {
         root: unknown;
         get: (path: string) => unknown;
       };
+      // Minimal componentsModel: tracks ids the registry's placeholder
+      // logic queries via `componentsModel.get("root")`. Only stores
+      // component type for assertion purposes.
+      componentsModel: {
+        components: Map<string, { type: string }>;
+        get: (id: string) => { type: string } | undefined;
+      };
       onAction: { subscribe: (h: unknown) => { unsubscribe: () => void } };
       dispose: () => void;
     }>();
@@ -50,10 +57,15 @@ vi.mock("@a2ui/web_core/v0_9", () => {
               return path === "/" ? this.root : undefined;
             },
           };
+          const components = new Map<string, { type: string }>();
           this.surfaces.set(p.surfaceId, {
             id: p.surfaceId,
             catalog: { id: p.catalogId },
             dataModel,
+            componentsModel: {
+              components,
+              get: (id: string) => components.get(id),
+            },
             onAction: { subscribe: () => ({ unsubscribe: () => {} }) },
             dispose: () => {},
           });
@@ -62,11 +74,20 @@ vi.mock("@a2ui/web_core/v0_9", () => {
           const s = this.surfaces.get(p.surfaceId);
           if (!s) throw new Error(`Surface not found: ${p.surfaceId}`);
           s.dataModel.root = p.value;
+        } else if (msg.updateComponents) {
+          const p = msg.updateComponents as {
+            surfaceId: string;
+            components: Array<{ id: string; component: string }>;
+          };
+          const s = this.surfaces.get(p.surfaceId);
+          if (!s) throw new Error(`Surface not found: ${p.surfaceId}`);
+          for (const comp of p.components) {
+            s.componentsModel.components.set(comp.id, { type: comp.component });
+          }
         } else if (msg.deleteSurface) {
           const p = msg.deleteSurface as { surfaceId: string };
           this.surfaces.delete(p.surfaceId);
         }
-        // updateComponents: ignored in the fake — registry doesn't introspect it.
       }
     }
   }
@@ -267,6 +288,60 @@ describe("SurfaceRegistry", () => {
       expect(warn).toHaveBeenCalled();
       const state = result.current.getState("workspace");
       expect(state?.surface?.id).toBe("workspace");
+      warn.mockRestore();
+    });
+
+    it("injects a placeholder 'root' Text component on auto-create so the surface never shows '[Loading root...]'", () => {
+      // Regression guard for the broken-demo screenshot (2026-06-03):
+      // SurfaceRegistry's auto-create used to push only createSurface,
+      // leaving the @a2ui/react DeferredChild rendering the literal
+      // "[Loading root...]". Now it also pushes a placeholder root
+      // Text bound to /placeholderStatus, so the user sees a useful
+      // status instead.
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { result } = renderHook(() => useSurfaceRegistry(), {
+        wrapper: withProvider,
+      });
+      act(() => {
+        result.current.appendMessages(
+          "workspace",
+          [updateData("workspace", { foo: "bar" })],
+          "tc-placeholder-1",
+        );
+      });
+      const state = result.current.getState("workspace");
+      const surface = state?.surface as unknown as {
+        componentsModel?: { get: (id: string) => { type: string } | undefined };
+      };
+      const root = surface?.componentsModel?.get("root");
+      expect(root).toBeDefined();
+      expect(root?.type).toBe("Text");
+      warn.mockRestore();
+    });
+
+    it("injects a placeholder 'root' after createSurface + updateDataModel-only (skipped updateComponents)", () => {
+      // Belt-and-braces path: skill emits createSurface and
+      // updateDataModel but NEVER updateComponents (observed when the
+      // LLM truncates a multi-message tool call). The
+      // after-processing check should still inject a placeholder root.
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { result } = renderHook(() => useSurfaceRegistry(), {
+        wrapper: withProvider,
+      });
+      act(() => {
+        result.current.appendMessages(
+          "workspace",
+          [createMsg("workspace"), updateData("workspace", { foo: "bar" })],
+          "tc-belt-braces-1",
+        );
+      });
+      const state = result.current.getState("workspace");
+      const surface = state?.surface as unknown as {
+        componentsModel?: { get: (id: string) => { type: string } | undefined };
+      };
+      const root = surface?.componentsModel?.get("root");
+      expect(root).toBeDefined();
+      expect(root?.type).toBe("Text");
       warn.mockRestore();
     });
 

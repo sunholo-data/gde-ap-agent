@@ -31,6 +31,13 @@ vi.mock("@a2ui/web_core/v0_9", () => {
       id: string;
       catalog: { id: string };
       dataModel: { lastValue: unknown };
+      // Minimal componentsModel — registry's placeholder injection
+      // logic queries componentsModel.get("root") and pushes a
+      // placeholder updateComponents when missing.
+      componentsModel: {
+        components: Map<string, { type: string }>;
+        get: (id: string) => { type: string } | undefined;
+      };
       dispose: () => void;
     }>();
     readonly model = {
@@ -44,10 +51,15 @@ vi.mock("@a2ui/web_core/v0_9", () => {
           const p = msg.createSurface as { surfaceId: string; catalogId: string };
           if (this.surfaces.has(p.surfaceId))
             throw new Error(`Surface ${p.surfaceId} already exists.`);
+          const components = new Map<string, { type: string }>();
           this.surfaces.set(p.surfaceId, {
             id: p.surfaceId,
             catalog: { id: p.catalogId },
             dataModel: { lastValue: undefined },
+            componentsModel: {
+              components,
+              get: (id: string) => components.get(id),
+            },
             dispose: () => {},
           });
         } else if (msg.updateDataModel) {
@@ -55,6 +67,16 @@ vi.mock("@a2ui/web_core/v0_9", () => {
           const s = this.surfaces.get(p.surfaceId);
           if (!s) throw new Error(`Surface not found: ${p.surfaceId}`);
           s.dataModel.lastValue = p.value;
+        } else if (msg.updateComponents) {
+          const p = msg.updateComponents as {
+            surfaceId: string;
+            components: Array<{ id: string; component: string }>;
+          };
+          const s = this.surfaces.get(p.surfaceId);
+          if (!s) throw new Error(`Surface not found: ${p.surfaceId}`);
+          for (const comp of p.components) {
+            s.componentsModel.components.set(comp.id, { type: comp.component });
+          }
         } else if (msg.deleteSurface) {
           const p = msg.deleteSurface as { surfaceId: string };
           this.surfaces.delete(p.surfaceId);

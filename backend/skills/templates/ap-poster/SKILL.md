@@ -70,6 +70,14 @@ session state. Read them:
 These are the structured-output JSON objects you received via the
 SequentialAgent — not anything you should re-extract or re-validate.
 
+## Narrate first
+
+Before the MCP call, emit ONE short sentence of plain text describing
+the action you're about to take, e.g. "Verdict is pass — posting the
+invoice to the AP ledger." or "Verdict is needs_review — routing to a
+finance reviewer." The user watches this stream to know which branch
+you took. Keep it to one sentence, then make the call below.
+
 ## Decision
 
 Run **exactly one** of:

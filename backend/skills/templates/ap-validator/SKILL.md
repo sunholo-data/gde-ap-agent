@@ -99,6 +99,15 @@ but it cannot *know* "vendor X isn't approved over €10k" without grounding.
   policy + open-POs grounding corpus. Use for PO match, approval
   policy, and tax-rate citations.
 
+## Narrate first
+
+Before the first tool call, emit ONE short sentence of plain text
+telling the user what you're about to do (e.g. "Validating the
+extracted invoice against the vendor master and approval policy.").
+This is the user's only window into what the validator is doing —
+silent turns make the pipeline look hung. Keep it to one sentence,
+then proceed with the checks below.
+
 ## Checks (use MCP for vendor + duplicate; `ai_search` to ground the rest)
 
 1. **Vendor known & approved.** Call `lookup_vendor(name)`. If

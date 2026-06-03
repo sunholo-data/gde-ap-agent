@@ -156,6 +156,40 @@ def test_create_agent_orchestrator_pipeline_specialists_chain(_seeded_ap_skills)
 # ---------------------------------------------------------------------------
 
 
+def test_ap_orchestrator_opts_out_of_default_artifact_and_memory_tools(_seeded_ap_skills):
+    """ap-orchestrator is a chat-or-transfer front door; it has no business
+    calling load_artifacts / load_memory / preload_memory / retrieve_artifact.
+
+    Regression guard for the broken-demo screenshot (2026-06-03) where the
+    orchestrator emitted load_artifacts x4 + load_memory x1 instead of just
+    transferring to ap-pipeline. Fix was to add
+    ``toolConfigs.defaults: {artifacts: false, memory: false}`` to the
+    orchestrator's SKILL.md frontmatter. agent.py:502-507 honours this.
+    """
+    from adk.agent import create_agent
+    from skills.skill_config import find_by_name
+
+    config = find_by_name("ap-orchestrator")
+    assert config is not None, "ap-orchestrator not seeded"
+
+    agent = create_agent(config, _test_user())
+    tool_names = {getattr(t, "name", type(t).__name__) for t in agent.tools}
+
+    # The four default tools must be gone.
+    forbidden = {"load_artifacts", "retrieve_artifact", "load_memory", "preload_memory"}
+    leaked = tool_names & forbidden
+    assert not leaked, (
+        f"ap-orchestrator should not have default artifact/memory tools, "
+        f"but found: {sorted(leaked)!r}. Check SKILL.md frontmatter has "
+        f"`toolConfigs.defaults: {{artifacts: false, memory: false}}`."
+    )
+
+    # The one declared tool must still be there.
+    assert "list_documents" in tool_names, (
+        f"ap-orchestrator lost `list_documents` along with the default opt-out; saw tools: {sorted(tool_names)!r}"
+    )
+
+
 def test_create_agent_ap_validator_has_enterprise_search_agent(_seeded_ap_skills):
     from adk.agent import create_agent
     from skills.skill_config import find_by_name
