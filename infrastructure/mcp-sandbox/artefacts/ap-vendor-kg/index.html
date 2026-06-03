@@ -251,16 +251,52 @@
   window.addEventListener("resize", draw);
 
   // --- MCP Apps protocol ---
+  // Artefact is the CLIENT — it initiates ui/initialize, waits for the
+  // host's reply, then sends ui/notifications/initialized so the host's
+  // onInitialized callback fires (and the host stops spinning).
   function reply(id, result) {
     window.parent.postMessage(
       { jsonrpc: "2.0", id, result, __platformTransport: true },
       "*"
     );
   }
+  function notify(method, params) {
+    window.parent.postMessage(
+      { jsonrpc: "2.0", method, params, __platformTransport: true },
+      "*"
+    );
+  }
+  let __kg_initRequestId = 1;
+  const __kg_pending = new Map();
+  function request(method, params) {
+    const id = `kg-${__kg_initRequestId++}`;
+    window.parent.postMessage(
+      { jsonrpc: "2.0", id, method, params, __platformTransport: true },
+      "*"
+    );
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        __kg_pending.delete(id);
+        reject(new Error(`${method} timed out`));
+      }, 5000);
+      __kg_pending.set(id, (result) => {
+        clearTimeout(timeout);
+        resolve(result);
+      });
+    });
+  }
 
   window.addEventListener("message", (event) => {
     const msg = event.data;
     if (!msg || !msg.jsonrpc) return;
+
+    // Response to a request we sent (eg. ui/initialize)
+    if (msg.id !== undefined && msg.id !== null && __kg_pending.has(msg.id)) {
+      const resolver = __kg_pending.get(msg.id);
+      __kg_pending.delete(msg.id);
+      resolver?.(msg.result);
+      return;
+    }
 
     if (msg.method === "ui/initialize") {
       reply(msg.id, {
@@ -276,6 +312,22 @@
       return;
     }
   });
+
+  // Kick off the handshake (we are the CLIENT).
+  (async () => {
+    try {
+      await request("ui/initialize", {
+        protocolVersion: "2026-01-26",
+        capabilities: {},
+        clientInfo: { name: "ap-vendor-kg", version: "1.0" },
+      });
+    } catch (err) {
+      console.warn("[ap-vendor-kg] ui/initialize failed:", err);
+    }
+    notify("ui/notifications/initialized", {
+      clientInfo: { name: "ap-vendor-kg", version: "1.0" },
+    });
+  })();
 </script>
 </body>
 </html>

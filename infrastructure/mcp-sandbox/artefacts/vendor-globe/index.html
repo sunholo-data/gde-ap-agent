@@ -205,11 +205,52 @@
       vendors.push({ name, lat: coords[0], lng: coords[1], amount: amount || 0 });
     }
 
+    // MCP Apps protocol roles:
+    //   - This artefact is the CLIENT. The host (StaticArtefactFrame) is the
+    //     SERVER for the ``ui/initialize`` handshake — it replies with the
+    //     hostContext (theme, displayMode, locale).
+    //   - We INITIATE the handshake on load by sending ``ui/initialize``,
+    //     wait for the response, then send the ``ui/notifications/initialized``
+    //     notification to confirm. The host's ``onInitialized`` callback fires
+    //     on that notification — without it the host spinner never resolves.
+    //   - We also still handle the legacy "host sends ui/initialize" path so
+    //     older host implementations keep working.
+
+    let initRequestId = 1;
+    const pendingResponses = new Map(); // id -> resolver
+
+    function request(method, params) {
+      const id = `vg-${initRequestId++}`;
+      window.parent.postMessage(
+        { jsonrpc: "2.0", id, method, params, [TRANSPORT_KEY]: true },
+        "*"
+      );
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          pendingResponses.delete(id);
+          reject(new Error(`${method} timed out`));
+        }, 5000);
+        pendingResponses.set(id, (result) => {
+          clearTimeout(timeout);
+          resolve(result);
+        });
+      });
+    }
+
     // MCP Apps message handler
     window.addEventListener("message", (event) => {
       const msg = event.data;
       if (!msg || !msg.jsonrpc) return;
 
+      // Response to a request we sent (eg. ui/initialize)
+      if (msg.id !== undefined && msg.id !== null && pendingResponses.has(msg.id)) {
+        const resolver = pendingResponses.get(msg.id);
+        pendingResponses.delete(msg.id);
+        resolver?.(msg.result);
+        return;
+      }
+
+      // Legacy path: host sent ui/initialize as a request — reply as before.
       if (msg.method === "ui/initialize") {
         reply(msg.id, {
           protocolVersion: "2026-01-26",
@@ -241,6 +282,24 @@
         if (sc.originLabel) document.getElementById("origin-label").textContent = sc.originLabel;
       }
     });
+
+    // Kick off the handshake. We are the CLIENT — send ui/initialize, then
+    // notify initialized so the host stops spinning and starts pushing
+    // ui/update-data.
+    (async () => {
+      try {
+        await request("ui/initialize", {
+          protocolVersion: "2026-01-26",
+          capabilities: {},
+          clientInfo: { name: "vendor-globe", version: "1.0" },
+        });
+      } catch (err) {
+        console.warn("[vendor-globe] ui/initialize failed:", err);
+      }
+      notify("ui/notifications/initialized", {
+        clientInfo: { name: "vendor-globe", version: "1.0" },
+      });
+    })();
   </script>
 </body>
 </html>

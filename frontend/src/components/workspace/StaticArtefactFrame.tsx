@@ -148,6 +148,14 @@ export const StaticArtefactFrame = forwardRef<
   onInitializedRef.current = onInitialized;
   const hostContextRef = useRef(hostContext);
   hostContextRef.current = hostContext;
+  // Belt-and-braces: some artefact builds reply to ui/initialize but
+  // forget to send the ui/notifications/initialized notification — the
+  // host would otherwise wait forever (observed in the vendor-globe +
+  // ap-dashboard artefacts pre-2026-06-03). Track whether we've fired
+  // onInitialized so we can do it ourselves on the initialize-reply
+  // edge and still keep the original notification-driven path
+  // idempotent for well-behaved artefacts.
+  const initializedFiredRef = useRef(false);
 
   // Helper to push a JSON-RPC message to the proxy iframe.
   const sendToProxy = useCallback((msg: JsonRpcMessage) => {
@@ -217,6 +225,19 @@ export const StaticArtefactFrame = forwardRef<
           },
         };
         sendToProxy({ jsonrpc: "2.0", id: data.id, result });
+        // Belt-and-braces: receiving ui/initialize proves the artefact
+        // is alive. Fire onInitialized now in case the artefact skips
+        // the ui/notifications/initialized notification (the well-known
+        // bug pre-fix in vendor-globe + ap-dashboard). The ref guards
+        // against double-fire when the notification DOES arrive
+        // afterward for properly-implemented artefacts.
+        if (!initializedFiredRef.current) {
+          initializedFiredRef.current = true;
+          onInitializedRef.current?.({
+            name: "client-from-initialize",
+            version: "unknown",
+          });
+        }
         return;
       }
 
@@ -226,7 +247,10 @@ export const StaticArtefactFrame = forwardRef<
           name: "unknown",
           version: "0",
         };
-        onInitializedRef.current?.(clientInfo);
+        if (!initializedFiredRef.current) {
+          initializedFiredRef.current = true;
+          onInitializedRef.current?.(clientInfo);
+        }
         return;
       }
 

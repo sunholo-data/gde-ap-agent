@@ -249,17 +249,56 @@
   window.addEventListener("resize", updateCharts);
 
   // --- MCP Apps protocol ---
+  // The artefact is the CLIENT. We INITIATE the ui/initialize handshake
+  // on load and send ui/notifications/initialized once we get the host's
+  // reply — without that notification the host's onInitialized callback
+  // never fires and the spinner spins forever.
   function reply(id, result) {
     window.parent.postMessage(
       { jsonrpc: "2.0", id, result, __platformTransport: true },
       "*"
     );
   }
+  function notify(method, params) {
+    window.parent.postMessage(
+      { jsonrpc: "2.0", method, params, __platformTransport: true },
+      "*"
+    );
+  }
+
+  let __dash_initRequestId = 1;
+  const __dash_pending = new Map();
+  function request(method, params) {
+    const id = `dash-${__dash_initRequestId++}`;
+    window.parent.postMessage(
+      { jsonrpc: "2.0", id, method, params, __platformTransport: true },
+      "*"
+    );
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        __dash_pending.delete(id);
+        reject(new Error(`${method} timed out`));
+      }, 5000);
+      __dash_pending.set(id, (result) => {
+        clearTimeout(timeout);
+        resolve(result);
+      });
+    });
+  }
 
   window.addEventListener("message", (event) => {
     const msg = event.data;
     if (!msg || !msg.jsonrpc) return;
 
+    // Response to a request we sent (eg. ui/initialize)
+    if (msg.id !== undefined && msg.id !== null && __dash_pending.has(msg.id)) {
+      const resolver = __dash_pending.get(msg.id);
+      __dash_pending.delete(msg.id);
+      resolver?.(msg.result);
+      return;
+    }
+
+    // Legacy path: host sent ui/initialize as a request — reply.
     if (msg.method === "ui/initialize") {
       reply(msg.id, {
         protocolVersion: "2026-01-26",
@@ -291,6 +330,22 @@
       return;
     }
   });
+
+  // Kick off the handshake (we are the CLIENT).
+  (async () => {
+    try {
+      await request("ui/initialize", {
+        protocolVersion: "2026-01-26",
+        capabilities: {},
+        clientInfo: { name: "ap-dashboard", version: "1.0" },
+      });
+    } catch (err) {
+      console.warn("[ap-dashboard] ui/initialize failed:", err);
+    }
+    notify("ui/notifications/initialized", {
+      clientInfo: { name: "ap-dashboard", version: "1.0" },
+    });
+  })();
 </script>
 </body>
 </html>
