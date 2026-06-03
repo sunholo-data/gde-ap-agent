@@ -136,7 +136,23 @@ export function A2UIRenderer({ messages, fallbackSurfaceId, onAction }: A2UIRend
       // The SDK validator already accepted these messages on the backend;
       // cast at the boundary since the typed union is wider than what
       // arrives at runtime.
-      processor.processMessages(messages as unknown as A2uiMessage[]);
+      //
+      // Belt-and-braces: when the surface already exists (eg. React
+      // re-ran this effect because the parent's messages array
+      // identity changed but the surfaceId stayed the same — observed
+      // live 2026-06-03 in session fa6db682 where Gemini's re-render
+      // cycle re-fed JsonAsA2UICard's freshly-built messages), drop
+      // the leading createSurface from the array so the SDK doesn't
+      // throw ``Surface already exists``. The remaining
+      // updateComponents/updateDataModel messages are idempotent on
+      // the existing surface.
+      const messagesToFeed =
+        exists && firstHasCreate
+          ? (messages.slice(1) as unknown as A2uiMessage[])
+          : (messages as unknown as A2uiMessage[]);
+      if (messagesToFeed.length > 0) {
+        processor.processMessages(messagesToFeed);
+      }
       const model = processor.model.getSurface(surfaceId) ?? null;
       setSurface(model);
       setError(null);

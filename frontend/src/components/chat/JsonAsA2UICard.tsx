@@ -19,6 +19,7 @@
 // a plain confirmation string, or empty input) we render a small muted
 // preview of the raw value so the user still sees something useful.
 
+import { useMemo, useRef } from "react";
 import { A2UIRenderer } from "@/components/protocols/A2UIRenderer";
 import { buildA2UICardFromJson } from "@/components/chat/JsonCardBuilder";
 import { cn } from "@/lib/utils";
@@ -76,16 +77,32 @@ export function JsonAsA2UICard({
   className,
   fallbackMessage,
 }: JsonAsA2UICardProps) {
-  const parsed = unwrapAdkToolResult(parseInput(value));
+  // Generate a stable surfaceId once per mount so A2UIRenderer doesn't
+  // see a different one on each render (would force createSurface and
+  // throw "Surface already exists" — observed live 2026-06-03 in
+  // session fa6db682-f276-415a-a636-057489949600 the moment Gemini's
+  // re-render cycle re-built JsonAsA2UICard's input).
+  const generatedSurfaceIdRef = useRef<string | null>(null);
+  if (generatedSurfaceIdRef.current === null && !surfaceId) {
+    generatedSurfaceIdRef.current = `json-card-${Math.random().toString(36).slice(2, 10)}`;
+  }
+  const safeSurfaceId = surfaceId ?? generatedSurfaceIdRef.current!;
 
-  const safeSurfaceId =
-    surfaceId ??
-    `json-card-${Math.random().toString(36).slice(2, 10)}`;
+  // Memoise the parsed value AND the built messages so A2UIRenderer's
+  // ``useEffect([messages])`` doesn't re-fire with a fresh array on
+  // every render — that would call processMessages a second time on
+  // the SAME surfaceId and the SDK throws ``Surface already exists``.
+  // The dependency is the *input* shape, not React identity, so an
+  // unrelated parent re-render is a no-op.
+  const messages = useMemo(() => {
+    const parsed = unwrapAdkToolResult(parseInput(value));
+    if (parsed === null || typeof parsed !== "object") return null;
+    return buildA2UICardFromJson(parsed, { fallbackTitle, surfaceId: safeSurfaceId });
+  }, [value, fallbackTitle, safeSurfaceId]);
 
-  const messages =
-    parsed !== null && typeof parsed === "object"
-      ? buildA2UICardFromJson(parsed, { fallbackTitle, surfaceId: safeSurfaceId })
-      : null;
+  // Plain-string fallback also needs to be derived for the muted
+  // preview path.
+  const parsedForFallback = unwrapAdkToolResult(parseInput(value));
 
   if (messages && messages.length > 0) {
     return (
@@ -105,7 +122,10 @@ export function JsonAsA2UICard({
 
   // Fallback — plain string or empty value. Show a small muted
   // preview so the user always sees something, never a raw blob.
-  const text = typeof parsed === "string" ? parsed : JSON.stringify(parsed ?? "");
+  const text =
+    typeof parsedForFallback === "string"
+      ? parsedForFallback
+      : JSON.stringify(parsedForFallback ?? "");
   return (
     <div
       className={cn(
