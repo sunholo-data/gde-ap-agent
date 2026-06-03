@@ -149,6 +149,9 @@ def test_skill_metadata_defaults():
     assert meta.tools == []
     assert meta.tool_configs == {}
     assert meta.sub_skills == []
+    # WORKFLOW-PIPELINE: agent_type defaults to "llm" so existing skills
+    # without the field continue to build as LlmAgent (backwards compat).
+    assert meta.agent_type == "llm"
 
 
 def test_skill_metadata_alias_round_trip():
@@ -158,6 +161,29 @@ def test_skill_metadata_alias_round_trip():
     assert data["toolConfigs"] == {"a": {"b": 1}}
     restored = SkillMetadata.model_validate(data)
     assert restored.thinking_model == "gemini-2.5-pro"
+
+
+def test_skill_metadata_agent_type_sequential_round_trips():
+    """agent_type accepts camelCase alias and serialises with it.
+
+    SKILL.md frontmatter uses camelCase (agentType), Python uses snake_case
+    (agent_type). The Firestore round-trip must preserve both.
+    """
+    meta = SkillMetadata(agentType="sequential", subSkills=["extractor", "validator"])
+    assert meta.agent_type == "sequential"
+    data = meta.model_dump(by_alias=True)
+    assert data["agentType"] == "sequential"
+    restored = SkillMetadata.model_validate(data)
+    assert restored.agent_type == "sequential"
+    assert restored.sub_skills == ["extractor", "validator"]
+
+
+def test_skill_metadata_agent_type_rejects_unknown_value():
+    """Literal["llm","sequential"] rejects typos — fail loud at config time."""
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        SkillMetadata(agentType="parallel")  # not yet supported
 
 
 # === Round-trip ===

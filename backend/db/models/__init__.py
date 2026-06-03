@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import time
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -52,6 +53,13 @@ class SkillMetadata(BaseModel):
     # Gemini's constrained-decoding + Draft 2020-12 validation in
     # structured_extraction_callback. None = no enforcement.
     extraction_schema: str | dict | None = Field(default=None, alias="extractionSchema")
+    # WORKFLOW-PIPELINE: chooses between ADK LlmAgent and SequentialAgent
+    # at agent-factory time. "llm" (default) keeps the existing model-driven
+    # behaviour. "sequential" builds a google.adk.agents.SequentialAgent
+    # that walks subSkills deterministically — no model at the workflow
+    # level. Used by ap-pipeline; default preserves backwards-compat for
+    # every other skill.
+    agent_type: Literal["llm", "sequential"] = Field(default="llm", alias="agentType")
 
     model_config = {"populate_by_name": True}
 

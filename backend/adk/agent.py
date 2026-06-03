@@ -29,7 +29,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from google.adk.agents import LlmAgent
+from google.adk.agents import LlmAgent, SequentialAgent
 from google.adk.code_executors import BuiltInCodeExecutor
 from google.adk.models import Claude, Gemini
 from google.adk.models.lite_llm import LiteLlm
@@ -38,6 +38,7 @@ from google.adk.tools import AgentTool
 from google.adk.tools.load_artifacts_tool import load_artifacts_tool
 from google.adk.tools.load_memory_tool import load_memory_tool
 from google.adk.tools.preload_memory_tool import preload_memory_tool
+from google.genai import types as genai_types
 from google.genai.types import ThinkingConfig
 
 from adk.a2ui import A2uiToolConfig, make_a2ui_toolset
@@ -294,6 +295,111 @@ def _set_extraction_schema_in_state(callback_context: object, schema: dict | Non
     state["app:extraction_schema"] = schema
 
 
+# --- WORKFLOW-PIPELINE M1: SequentialAgent wiring ---
+
+
+_INTAKE_GATE_MESSAGE = (
+    "Please upload or select an invoice document, then ask me to process it. "
+    "I run a deterministic Extract → Validate → Post pipeline and need a "
+    "document to work from."
+)
+
+
+def _make_intake_gate(skill_id: str) -> Callable:
+    """Build a before_agent_callback that blocks the pipeline when no doc is in state.
+
+    SequentialAgent inherits BaseAgent's contract: a before_agent_callback
+    returning ``types.Content`` short-circuits the agent run and the Content
+    becomes the final reply (see google.adk.agents.base_agent.BaseAgent._handle_before_agent_callback).
+    Returning None lets the workflow continue normally.
+
+    The state key matches `adk.callbacks._STATE_DOCS_LOADED` ("app:docs_loaded")
+    — set by the document loader at the orchestrator level, inherited by
+    sub-agent invocations within the same session.
+    """
+
+    def intake_gate(callback_context: object) -> genai_types.Content | None:
+        state = getattr(callback_context, "state", None)
+        if state is None:
+            # Without state we can't tell — let the pipeline try. Same fail-open
+            # posture as the rest of the callback chain.
+            return None
+        loaded = state.get("app:docs_loaded") or []
+        if loaded:
+            return None
+        logger.info(
+            "workflow_pipeline.intake_gate: skill=%s no document loaded, short-circuiting",
+            skill_id,
+        )
+        return genai_types.Content(
+            role="model",
+            parts=[genai_types.Part(text=_INTAKE_GATE_MESSAGE)],
+        )
+
+    return intake_gate
+
+
+def _make_final_progress(skill_id: str) -> Callable:
+    """Build an after_agent_callback that emits one closing STAGE_PROGRESS event.
+
+    The user-facing typing indicator clears as soon as the final A2UI surface
+    lands, but the closing label is useful in Cloud Trace + telemetry for
+    drawing a clean per-pipeline span. Fail-open: tracking failures must
+    never break the chat path.
+    """
+
+    def final_progress(callback_context: object) -> None:
+        try:
+            from observability.timing import get_current_tracker
+
+            get_current_tracker().mark("pipeline_done", user_label="Done — invoice processed")
+        except Exception as exc:
+            logger.warning(
+                "workflow_pipeline.final_progress: skill=%s tracker mark failed (suppressed): %s",
+                skill_id,
+                exc,
+            )
+        return None
+
+    return final_progress
+
+
+def _build_sequential_agent(
+    skill_config: SkillConfig,
+    user: User,
+    *,
+    access_context: AccessContext | None,
+    _seen: set[str],
+) -> SequentialAgent:
+    """Build a deterministic SequentialAgent that walks sub_skills in order.
+
+    Mirrors create_agent's sub-skill resolution loop (skill_id-or-name lookup
+    via get_skill / find_by_name) so a SequentialAgent and a sub-skill-using
+    LlmAgent both resolve their children the same way. Cycle detection is
+    inherited from the caller via _seen.
+    """
+    md = skill_config.skill_metadata
+    sub_agents: list = []
+    for sub_id in md.sub_skills:
+        sub = get_skill(sub_id) or find_by_name(sub_id)
+        if sub is None:
+            logger.warning(
+                "sub-skill %r referenced by sequential agent %r not found; skipping",
+                sub_id,
+                skill_config.skill_id,
+            )
+            continue
+        sub_agents.append(create_agent(sub, user, access_context=access_context, _seen=_seen))
+
+    return SequentialAgent(
+        name=_safe_agent_name(skill_config.skill_id),
+        description=skill_config.description or "",
+        sub_agents=sub_agents,
+        before_agent_callback=_make_intake_gate(skill_config.skill_id),
+        after_agent_callback=_make_final_progress(skill_config.skill_id),
+    )
+
+
 def create_agent(
     skill_config: SkillConfig,
     user: User,
@@ -333,6 +439,15 @@ def create_agent(
     seen.add(skill_config.skill_id)
 
     md = skill_config.skill_metadata
+
+    # WORKFLOW-PIPELINE M1: deterministic workflow agents short-circuit here.
+    # `agent_type == "sequential"` builds an ADK SequentialAgent that walks
+    # sub_skills in order — no model, no tools, no LLM at the workflow level.
+    # Used by ap-pipeline; defaults preserve LlmAgent behaviour for every
+    # other skill.
+    if md.agent_type == "sequential":
+        return _build_sequential_agent(skill_config, user, access_context=access_context, _seen=seen)
+
     effective_model = _model_override or md.model
     model = resolve_model(effective_model)
     # Default tools every skill gets (opt-out via toolConfigs.defaults in SKILL.md):

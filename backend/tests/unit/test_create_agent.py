@@ -34,6 +34,7 @@ def _skill(
     thinking_model: str | None = None,
     instructions: str = "Do the thing.",
     tool_configs: dict | None = None,
+    agent_type: str = "llm",
 ) -> SkillConfig:
     return SkillConfig(
         name=name,
@@ -46,6 +47,7 @@ def _skill(
             tools=tools or [],
             subSkills=sub_skills or [],
             toolConfigs=tool_configs or {},
+            agentType=agent_type,
         ),
     )
 
@@ -363,3 +365,140 @@ def test_create_agent_no_tool_configs_includes_all_defaults():
     assert "retrieve_artifact" in ids
     assert "load_memory" in ids
     assert "preload_memory" in ids
+
+
+# --- WORKFLOW-PIPELINE M1: SequentialAgent build path ---
+
+
+def test_create_agent_sequential_returns_sequential_agent():
+    """agent_type=sequential builds a SequentialAgent, not an LlmAgent.
+
+    The pipeline skill has no model/tools/instruction — its only job is to
+    walk sub_skills deterministically. ADK's SequentialAgent does that for us.
+    """
+    from google.adk.agents import SequentialAgent
+
+    extractor = _skill(name="extractor", skill_id="extractor-id", instructions="extract")
+    validator = _skill(name="validator", skill_id="validator-id", instructions="validate")
+    pipeline = _skill(
+        name="pipeline",
+        skill_id="pipeline-id",
+        sub_skills=["extractor-id", "validator-id"],
+        agent_type="sequential",
+        instructions="",  # SequentialAgent has no instruction
+    )
+    lookup = {"extractor-id": extractor, "validator-id": validator}
+    with patch("adk.agent.get_skill", side_effect=lambda sid: lookup.get(sid)):
+        agent = create_agent(pipeline, _user())
+    assert isinstance(agent, SequentialAgent)
+    assert not isinstance(agent, LlmAgent)
+    assert len(agent.sub_agents) == 2
+    assert agent.sub_agents[0].name == _safe_agent_name("extractor-id")
+    assert agent.sub_agents[1].name == _safe_agent_name("validator-id")
+
+
+def test_create_agent_sequential_preserves_subskill_order():
+    """SequentialAgent walks sub_agents in declaration order — order matters."""
+    from google.adk.agents import SequentialAgent
+
+    a = _skill(name="a", skill_id="a-id")
+    b = _skill(name="b", skill_id="b-id")
+    c = _skill(name="c", skill_id="c-id")
+    # Declare in reverse alphabetical to confirm we preserve subSkills order,
+    # not e.g. dict iteration order.
+    pipeline = _skill(
+        name="p",
+        skill_id="p-id",
+        sub_skills=["c-id", "a-id", "b-id"],
+        agent_type="sequential",
+    )
+    lookup = {"a-id": a, "b-id": b, "c-id": c}
+    with patch("adk.agent.get_skill", side_effect=lambda sid: lookup.get(sid)):
+        agent = create_agent(pipeline, _user())
+    assert isinstance(agent, SequentialAgent)
+    names = [sa.name for sa in agent.sub_agents]
+    assert names == [_safe_agent_name("c-id"), _safe_agent_name("a-id"), _safe_agent_name("b-id")]
+
+
+def test_create_agent_llm_unaffected_by_sequential_branch():
+    """The default agent_type='llm' path still returns LlmAgent — no regression."""
+    agent = create_agent(_skill(), _user())
+    assert isinstance(agent, LlmAgent)
+
+
+def _ctx(state):
+    """Minimal CallbackContext stand-in for callback unit tests.
+
+    ADK passes a CallbackContext with a `state` attribute; the callbacks
+    here only read `.state` via `getattr`, so a SimpleNamespace suffices
+    without importing ADK's full context object.
+    """
+    import types as _types
+
+    return _types.SimpleNamespace(state=state)
+
+
+def test_intake_gate_returns_friendly_content_when_no_document():
+    """before_agent_callback returns types.Content when session lacks docs.
+
+    Mirrors ADK BaseAgent._handle_before_agent_callback contract: returning
+    Content short-circuits the agent run and that Content becomes the reply.
+    """
+    from adk.agent import _make_intake_gate
+
+    gate = _make_intake_gate("pipeline-id")
+    result = gate(_ctx({"app:docs_loaded": []}))
+    assert result is not None
+    # ADK contract: must be types.Content with at least one Part containing text
+    assert result.role == "model"
+    assert any("upload" in (p.text or "").lower() for p in result.parts)
+
+
+def test_intake_gate_returns_friendly_content_when_state_missing_key():
+    """Missing `app:docs_loaded` key is the same as empty — short-circuit."""
+    from adk.agent import _make_intake_gate
+
+    gate = _make_intake_gate("pipeline-id")
+    assert gate(_ctx({})) is not None
+
+
+def test_intake_gate_no_op_when_documents_loaded():
+    """Documents present → return None → let the pipeline run normally."""
+    from adk.agent import _make_intake_gate
+
+    gate = _make_intake_gate("pipeline-id")
+    assert gate(_ctx({"app:docs_loaded": ["doc-1"]})) is None
+
+
+def test_intake_gate_no_op_when_state_is_none():
+    """No state → fail open (return None). The rest of the chain handles missing state."""
+    from adk.agent import _make_intake_gate
+
+    gate = _make_intake_gate("pipeline-id")
+    assert gate(_ctx(None)) is None
+
+
+def test_final_progress_callback_returns_none_and_does_not_raise():
+    """after_agent_callback is fire-and-forget — must never raise.
+
+    The callback marks a STAGE_PROGRESS event on the LatencyTracker. When no
+    tracker is active (e.g. unit-test context), get_current_tracker returns
+    a NullLatencyTracker whose mark() is a no-op. Either way the callback
+    returns None and propagates no exceptions to the runtime.
+    """
+    from adk.agent import _make_final_progress
+
+    cb = _make_final_progress("pipeline-id")
+    assert cb(_ctx({})) is None  # the public contract
+
+
+def test_create_agent_sequential_wires_intake_gate_and_final_progress():
+    """SequentialAgent wraps the two callbacks built by the M1 helpers."""
+    from google.adk.agents import SequentialAgent
+
+    pipeline = _skill(name="pipeline", skill_id="pipeline-id", agent_type="sequential")
+    agent = create_agent(pipeline, _user())
+    assert isinstance(agent, SequentialAgent)
+    # Both callbacks attached; ADK stores them as Optional[Callable | list[Callable]]
+    assert agent.before_agent_callback is not None
+    assert agent.after_agent_callback is not None
