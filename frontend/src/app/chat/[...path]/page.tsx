@@ -277,6 +277,7 @@ function ChatShell({
     thinkingContent,
     isThinking,
     stageLabel,
+    firedStages,
     sendMessage,
     isLoading,
     stalledMs,
@@ -878,6 +879,7 @@ function ChatShell({
             userInitial={userInitial}
             userDisplayName={userDisplayName}
             stageLabel={stageLabel}
+            firedStages={firedStages}
             stalledMs={stalledMs}
             onAction={handleAction}
             mcpServerIds={mcpServerIds}

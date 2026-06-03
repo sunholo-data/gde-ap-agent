@@ -12,30 +12,64 @@ import type { ToolCallState } from "@/hooks/useSkillAgent";
 
 interface Step {
   label: string;
-  /** Substring(s) to match against ToolCallState.name */
+  /** Substring(s) to match against ToolCallState.name. Used as fallback
+   * when no STAGE_PROGRESS events have arrived (e.g. older skills that
+   * still exposed sub-agents as transfer_to_agent calls). */
   triggers: string[];
+  /** STAGE_PROGRESS stage name emitted by the backend
+   * (observability/timing.py + adk/agent.py::_AP_SPECIALIST_STAGE_LABELS).
+   * Preferred over tool-name detection since the M1 SequentialAgent
+   * refactor — the orchestrator only calls transfer_to_agent(ap-pipeline)
+   * once, so sub-agent tool-name substring matching never advances past
+   * Intake. */
+  stage?: string;
 }
 
 const STEPS: Step[] = [
-  { label: "Intake",   triggers: [] },          // Step 1: always starts active
+  { label: "Intake", triggers: [] }, // Step 1: always starts active
   // Extract: accept both the new "invoice-extractor" name and the
   // legacy "docparse" name so in-flight sessions or older event streams
   // still light up the right step.
-  { label: "Extract",  triggers: ["invoice_extractor", "invoice-extractor", "docparse"] },
-  { label: "Validate", triggers: ["ap_validator", "ap-validator", "validator"] },
-  { label: "Post",     triggers: ["ap_poster", "ap-poster", "poster", "route_to_human"] },
+  {
+    label: "Extract",
+    triggers: ["invoice_extractor", "invoice-extractor", "docparse"],
+    stage: "ap_stage_extract",
+  },
+  {
+    label: "Validate",
+    triggers: ["ap_validator", "ap-validator", "validator"],
+    stage: "ap_stage_validate",
+  },
+  {
+    label: "Post",
+    triggers: ["ap_poster", "ap-poster", "poster", "route_to_human"],
+    stage: "ap_stage_post",
+  },
 ];
+
+const PIPELINE_DONE_STAGE = "pipeline_done";
 
 type StepStatus = "pending" | "active" | "done";
 
-function resolveStepStatuses(toolCalls: ToolCallState[], isStreaming?: boolean): StepStatus[] {
-  // Find the furthest sub-agent step that has fired (steps 1–3; step 0 = Intake has no triggers).
+function resolveStepStatuses(
+  toolCalls: ToolCallState[],
+  firedStages: ReadonlySet<string> | undefined,
+  isStreaming?: boolean,
+): StepStatus[] {
+  // Find the furthest pipeline step that has fired. STAGE_PROGRESS events
+  // are the primary signal (post-M1 SequentialAgent path); tool-name
+  // matching is the fallback for older skills and in-flight sessions
+  // started before this refactor.
   let furthestTriggered = -1; // -1 = no sub-agent fired yet
+  const stagesFired = firedStages ?? new Set<string>();
+  const pipelineDone = stagesFired.has(PIPELINE_DONE_STAGE);
   for (let i = 1; i < STEPS.length; i++) {
-    const fired = toolCalls.some((tc) =>
+    const stage = STEPS[i].stage;
+    const stageFired = stage !== undefined && stagesFired.has(stage);
+    const toolFired = toolCalls.some((tc) =>
       STEPS[i].triggers.some((t) => tc.name.toLowerCase().includes(t)),
     );
-    if (fired) furthestTriggered = i;
+    if (stageFired || toolFired) furthestTriggered = i;
   }
 
   return STEPS.map((_, i): StepStatus => {
@@ -46,12 +80,24 @@ function resolveStepStatuses(toolCalls: ToolCallState[], isStreaming?: boolean):
     }
     if (i < furthestTriggered) return "done";
     if (i === furthestTriggered) {
-      const running = toolCalls.some(
+      // Pipeline emits ``pipeline_done`` after the final stage's
+      // after_agent_callback. Once seen, every fired stage is done —
+      // STAGE_PROGRESS has no "stage_finished" counterpart so we infer
+      // completion from the closing event.
+      if (pipelineDone) return "done";
+      const stage = STEPS[i].stage;
+      const stageActive = stage !== undefined && stagesFired.has(stage);
+      const toolRunning = toolCalls.some(
         (tc) =>
           tc.status === "running" &&
           STEPS[i].triggers.some((t) => tc.name.toLowerCase().includes(t)),
       );
-      return running ? "active" : "done";
+      // When stage fired and we're still streaming, the stage is in
+      // progress. When the run has finished, treat the last fired stage
+      // as done (no further STAGE_PROGRESS events will arrive).
+      if (toolRunning) return "active";
+      if (stageActive && isStreaming) return "active";
+      return "done";
     }
     return "pending";
   });
@@ -59,12 +105,17 @@ function resolveStepStatuses(toolCalls: ToolCallState[], isStreaming?: boolean):
 
 interface APPipelineStepsProps {
   toolCalls: ToolCallState[];
+  /** Set of STAGE_PROGRESS stage names that have fired during the current
+   * run (e.g. ``"ap_stage_extract"``). Preferred over tool-name matching
+   * since the M1 SequentialAgent refactor — sub-agent invocations no
+   * longer surface as transfer_to_agent tool calls. */
+  firedStages?: ReadonlySet<string>;
   /** Whether the agent turn is still streaming. Step 1 shows as active while true. */
   isStreaming?: boolean;
 }
 
-export function APPipelineSteps({ toolCalls, isStreaming }: APPipelineStepsProps) {
-  const finalStatuses = resolveStepStatuses(toolCalls, isStreaming);
+export function APPipelineSteps({ toolCalls, firedStages, isStreaming }: APPipelineStepsProps) {
+  const finalStatuses = resolveStepStatuses(toolCalls, firedStages, isStreaming);
 
   return (
     <div className="mb-2 flex items-center gap-0" role="list" aria-label="AP pipeline progress">

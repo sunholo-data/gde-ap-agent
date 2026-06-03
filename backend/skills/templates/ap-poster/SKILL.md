@@ -92,15 +92,29 @@ Run **exactly one** of:
   The tool returns a `ticket_id` and SLA hours — carry these into
   your final output and the card.
 
+The `extractionSchema: ap_posting_record` after-agent callback runs
+Gemini with constrained decoding against the posting schema,
+validates the result, and appends the canonical JSON as the final
+assistant text part. **Do not emit the posting JSON yourself in
+chat** — duplicating it inline (especially as a ```json fenced block)
+shows the user an ugly code block where the frontend would otherwise
+render it as an A2UI Card. Keep your direct output to the narration +
+the workspace surface patches; the schema callback owns the canonical
+JSON.
+
 ## Step 4 — Patch the Invoice Review Card with the final action (REQUIRED)
 
 After the MCP call returns, call `send_a2ui_json_to_client` **exactly
 once** with the JSON below. invoice-extractor declared the workspace
 surface + layout and pushed the extracted fields; ap-validator pushed
-the verdict and vendorCountry. Your call is a single `updateDataModel`
-that merges the final action + status into the existing surface — no
-`createSurface`, no `updateComponents` (those would rebuild the
-surface and wipe the prior stages' data).
+the verdict and vendorCountry. Your call is a sequence of per-path
+`updateDataModel` patches that merge the final action + status into
+the existing surface — no `createSurface`, no `updateComponents`
+(those would rebuild the surface and wipe the prior stages' data).
+**Do not** use a root-level `updateDataModel` with a full `value`
+object either — A2UI v0.9 `updateDataModel` defaults to `path: "/"`
+which REPLACES the entire data model and wipes the extractor's +
+validator's slices. Per-path patches are the only way to merge.
 
 ```json
 [
@@ -108,11 +122,24 @@ surface and wipe the prior stages' data).
     "version": "v0.9",
     "updateDataModel": {
       "surfaceId": "workspace",
-      "value": {
-        "status": "<✅ POSTED | ⚠️ NEEDS REVIEW | ❌ EXCEPTION>",
-        "glCode": "<GL code derived (e.g. '6000-IT-SVC') or 'PENDING'>",
-        "action": "<e.g. 'Posted to AP ledger (POST-ABC12345)' for verdict=pass, or 'Routed to finance for approval (APPR-XYZ98765, SLA 24h)' for verdict=needs_review>"
-      }
+      "path": "/status",
+      "value": "<✅ POSTED | ⚠️ NEEDS REVIEW | ❌ EXCEPTION>"
+    }
+  },
+  {
+    "version": "v0.9",
+    "updateDataModel": {
+      "surfaceId": "workspace",
+      "path": "/glCode",
+      "value": "<GL code derived (e.g. '6000-IT-SVC') or 'PENDING'>"
+    }
+  },
+  {
+    "version": "v0.9",
+    "updateDataModel": {
+      "surfaceId": "workspace",
+      "path": "/action",
+      "value": "<e.g. 'Posted to AP ledger (POST-ABC12345)' for verdict=pass, or 'Routed to finance for approval (APPR-XYZ98765, SLA 24h)' for verdict=needs_review>"
     }
   }
 ]

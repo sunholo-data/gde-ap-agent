@@ -89,12 +89,16 @@ You never see the raw .docx/.pdf bytes — only the Layer-1 output.
    (rows, cells, merged headers) rather than collapsing everything to
    markdown — that structure carries line-item totals and tax columns
    that markdown loses.
-3. Read the blocks and produce the typed JSON object matching the
-   schema below. Your turn may contain the Step-0 sentence and any
-   intermediate reasoning; the **final** assistant text part must be
-   the JSON object (no markdown fencing, no commentary around it). The
-   `extractionSchema: ap_invoice` callback validates the JSON and
-   appends it as the canonical final part for downstream agents.
+3. **Do not emit the JSON yourself.** The `extractionSchema: ap_invoice`
+   after-agent callback runs Gemini with constrained decoding against
+   the schema, validates the result, and appends the canonical JSON as
+   the final assistant text part. Emitting JSON inline (especially in a
+   ```json fenced block) duplicates the data into the chat where it
+   renders as an ugly code block — the frontend converts pure-JSON
+   text parts into A2UI Cards automatically, but only when the part is
+   exclusively JSON. Keep your direct output to the Step-0 narration
+   plus the workspace surface emit (Step 4 below); the schema callback
+   handles the canonical JSON.
 
 ## Output schema
 
@@ -178,8 +182,10 @@ surface — the user watches the card grow as each stage completes.
         {"id": "total_val", "component": "Text", "text": {"path": "/total"}, "variant": "h3"},
         {"id": "verdict_text", "component": "Text", "text": {"path": "/verdict"}, "variant": "body"},
         {"id": "action_text", "component": "Text", "text": {"path": "/action"}, "variant": "caption"},
-        {"id": "map_btn", "component": "Button", "label": "🌍 View Vendor on Map", "action": "show_vendor_globe", "context": {"vendor": {"path": "/vendor"}, "country": {"path": "/vendorCountry"}, "amount": {"path": "/totalAmount"}}},
-        {"id": "dashboard_btn", "component": "Button", "label": "📊 AP Analytics", "action": "show_ap_dashboard", "context": {}}
+        {"id": "map_btn", "component": "Button", "child": "map_btn_text", "action": {"event": {"name": "show_vendor_globe", "context": {"vendor": {"path": "/vendor"}, "country": {"path": "/vendorCountry"}, "amount": {"path": "/totalAmount"}}}}},
+        {"id": "map_btn_text", "component": "Text", "text": "🌍 View Vendor on Map"},
+        {"id": "dashboard_btn", "component": "Button", "child": "dashboard_btn_text", "action": {"event": {"name": "show_ap_dashboard", "context": {}}}},
+        {"id": "dashboard_btn_text", "component": "Text", "text": "📊 AP Analytics"}
       ]
     }
   },

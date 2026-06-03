@@ -132,6 +132,7 @@ describe("useSkillAgent — core", () => {
     expect(Object.keys(result.current).sort()).toEqual([
       "clearError",
       "error",
+      "firedStages",
       "isLoading",
       "isThinking",
       "messages",

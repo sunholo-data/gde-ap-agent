@@ -68,6 +68,17 @@ export interface UseSkillAgentReturn {
    * see docs/design/v6.1.0/ttft-instrumentation.md.
    */
   stageLabel: string | null;
+  /**
+   * Set of stage *names* (not labels) that have fired during the
+   * current/most-recent run, e.g. ``"ap_stage_extract"``,
+   * ``"ap_stage_validate"``, ``"ap_stage_post"``. Unlike ``stageLabel``
+   * (which only holds the most recent label and clears on first
+   * model token) this accumulates the full history for the run so
+   * progress rails like ``APPipelineSteps`` can mark completed stages
+   * as "done" instead of losing the signal. Resets to empty on each
+   * new run (``onRunStartedEvent``).
+   */
+  firedStages: ReadonlySet<string>;
   sendMessage: (
     text: string,
     opts?: { documentIds?: string[]; resumedSession?: boolean },
@@ -186,6 +197,9 @@ export function useSkillAgent(options?: {
   const [runStarted, setRunStarted] = useState(false);
   const [error, setError] = useState<StreamError | null>(null);
   const [stageLabel, setStageLabel] = useState<string | null>(null);
+  const [firedStages, setFiredStages] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
 
   // Inactivity watchdog: bumps on every AG-UI event so the UI can flip into
   // a "still working… (Xs)" indicator past `stallSoftMs` and auto-abort
@@ -277,6 +291,10 @@ export function useSkillAgent(options?: {
         setToolCalls((prev) => prev.filter((tc) => tc.status !== "running"));
         setThinkingContent("");
         setIsThinking(false);
+        // Per-run fired-stages set must start empty so a fresh turn's
+        // progress rail doesn't inherit the previous turn's completed
+        // stages.
+        setFiredStages(new Set<string>());
         runStartMessageCountRef.current = agent.messages.length;
         recordFirstEvent(performance.now());
         // Don't reset stageLabel here — STAGE_PROGRESS for
@@ -291,10 +309,27 @@ export function useSkillAgent(options?: {
         //   LATENCY_REPORT  — final per-stage timings (only when ?probe=1)
         // Backend definitions in observability/timing.py.
         if (event.name === "STAGE_PROGRESS") {
-          const value = event.value as { label?: unknown } | null | undefined;
+          const value = event.value as
+            | { label?: unknown; stage?: unknown }
+            | null
+            | undefined;
           if (!value || typeof value.label !== "string") return;
           setStageLabel(value.label);
           recordFirstStageLabel(performance.now());
+          // Track the stage NAME (independent of the label) so progress
+          // rails like APPipelineSteps can mark completed pipeline stages
+          // as "done" — the SequentialAgent path doesn't surface
+          // sub-agent invocations as tool calls, so substring-on-tool-name
+          // detection misses Extract/Validate/Post entirely.
+          if (typeof value.stage === "string") {
+            const stageName = value.stage;
+            setFiredStages((prev) => {
+              if (prev.has(stageName)) return prev;
+              const next = new Set(prev);
+              next.add(stageName);
+              return next;
+            });
+          }
           return;
         }
         if (event.name === "LATENCY_REPORT" && event.value && typeof event.value === "object") {
@@ -540,6 +575,7 @@ export function useSkillAgent(options?: {
     thinkingContent,
     isThinking,
     stageLabel,
+    firedStages,
     sendMessage,
     isLoading,
     stalledMs,

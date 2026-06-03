@@ -129,7 +129,16 @@ then proceed with the checks below.
 
 ## Output
 
-Return a verdict object:
+The `extractionSchema: ap_verdict` after-agent callback runs Gemini
+with constrained decoding against the verdict schema, validates the
+result, and appends the canonical JSON as the final assistant text
+part. **Do not emit the verdict JSON yourself in chat** — duplicating
+it inline (especially as a ```json fenced block) shows the user an
+ugly code block where the frontend would otherwise render it as an
+A2UI Card. Keep your direct output to the narration + the workspace
+surface patches; the schema callback owns the canonical JSON.
+
+The verdict object the callback produces has:
 
 - `verdict`: `"pass"` (clean, post-ready) or `"needs_review"` (any failed check).
 - `reasons[]`: one entry per finding — `{check, severity, detail, citation}`.
@@ -140,9 +149,13 @@ Return a verdict object:
 After producing the verdict object, call `send_a2ui_json_to_client`
 **exactly once** with the JSON below. invoice-extractor already declared
 the workspace surface and the component layout, so your call is a
-single `updateDataModel` that merges your slice into the existing
-surface. **Do not** emit `createSurface` or `updateComponents` — that
-would rebuild the surface and wipe the extractor's data.
+sequence of per-path `updateDataModel` patches that merge your slice
+into the existing surface. **Do not** emit `createSurface` or
+`updateComponents` — that would rebuild the surface and wipe the
+extractor's data. **Do not** use a root-level `updateDataModel` with a
+full `value` object either — A2UI v0.9 `updateDataModel` defaults to
+`path: "/"` which REPLACES the entire data model. Per-path patches are
+the only way to merge without clobbering the extractor's fields.
 
 ```json
 [
@@ -150,11 +163,24 @@ would rebuild the surface and wipe the extractor's data.
     "version": "v0.9",
     "updateDataModel": {
       "surfaceId": "workspace",
-      "value": {
-        "status": "🔍 Validating against vendor master + policy…",
-        "vendorCountry": "<country code from lookup_vendor (e.g. 'DE', 'US') or 'Unknown'>",
-        "verdict": "<one-sentence verdict with primary reason, e.g. 'Pass — vendor verified, PO matches' or 'Needs review — vendor KYC pending'>"
-      }
+      "path": "/status",
+      "value": "🔍 Validating against vendor master + policy…"
+    }
+  },
+  {
+    "version": "v0.9",
+    "updateDataModel": {
+      "surfaceId": "workspace",
+      "path": "/vendorCountry",
+      "value": "<country code from lookup_vendor (e.g. 'DE', 'US') or 'Unknown'>"
+    }
+  },
+  {
+    "version": "v0.9",
+    "updateDataModel": {
+      "surfaceId": "workspace",
+      "path": "/verdict",
+      "value": "<one-sentence verdict with primary reason, e.g. 'Pass — vendor verified, PO matches' or 'Needs review — vendor KYC pending'>"
     }
   }
 ]

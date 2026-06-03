@@ -40,6 +40,15 @@ interface ChatMessageListProps {
    * real model TTFT — see docs/design/v6.1.0/ttft-instrumentation.md.
    */
   stageLabel?: string | null;
+  /**
+   * Set of stage *names* (e.g. ``"ap_stage_extract"``,
+   * ``"ap_stage_validate"``, ``"ap_stage_post"``) that have fired during
+   * the current run. Threaded down to MessageBubble → APPipelineSteps so
+   * the orchestrator's progress rail can light up Extract/Validate/Post
+   * — the SequentialAgent path doesn't surface sub-agent invocations as
+   * tool calls, so tool-name detection alone never advances the rail.
+   */
+  firedStages?: ReadonlySet<string>;
   /** Inactivity stall counter from useSkillAgent. Forwarded to the
    * TypingIndicator so a stalled stream surfaces "Still working… (Xs)"
    * to the user instead of a silent spinner. Null when not stalled. */
@@ -79,6 +88,7 @@ export function ChatMessageList({
   onAction,
   errorBanner,
   stageLabel,
+  firedStages,
   stalledMs,
   mcpServerIds,
   onChatMessage,
@@ -213,6 +223,7 @@ export function ChatMessageList({
               mcpServerIds={mcpServerIds}
               onChatMessage={onChatMessage}
               sessionId={sessionId}
+              firedStages={firedStages}
             />
           ))}
 

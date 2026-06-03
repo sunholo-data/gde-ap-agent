@@ -46,6 +46,11 @@ interface MessageBubbleProps {
    * iframe `ui/update-model-context` pushes can POST to
    * /api/proxy/api/sessions/{id}/iframe-context (sprint 1.25). */
   sessionId?: string | null;
+  /** Pipeline stage names that fired during the current run (e.g.
+   * ``"ap_stage_extract"``, ``"ap_stage_validate"``, ``"ap_stage_post"``).
+   * Only used by the orchestrator's APPipelineSteps rail; ignored for
+   * other skills. */
+  firedStages?: ReadonlySet<string>;
 }
 
 /**
@@ -145,6 +150,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   mcpServerIds,
   onChatMessage,
   sessionId,
+  firedStages,
 }: MessageBubbleProps) {
   const isBot = message.role === "assistant";
   const time = formatTime();
@@ -232,7 +238,11 @@ export const MessageBubble = React.memo(function MessageBubble({
             <span className="text-xs text-muted-foreground">{time}</span>
           </div>
           {isAPOrchestrator && (
-            <APPipelineSteps toolCalls={toolCalls} isStreaming={!!message.content && nonA2uiCalls.some((tc) => tc.status === "running")} />
+            <APPipelineSteps
+              toolCalls={toolCalls}
+              firedStages={firedStages}
+              isStreaming={!!message.content && nonA2uiCalls.some((tc) => tc.status === "running")}
+            />
           )}
           <div className="space-y-2 rounded-[2px_8px_8px_8px] border-l-[3px] border-primary/50 bg-muted/30 px-3 py-2 text-sm">
             {showTextBody && (
