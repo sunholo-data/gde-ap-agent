@@ -56,8 +56,16 @@ export function buildA2UICardFromJson(
   opts: BuildOpts = {},
 ): Record<string, unknown>[] | null {
   if (!isPlainObject(data)) return null;
-  const keys = Object.keys(data);
-  if (keys.length === 0) return null;
+  const rawKeys = Object.keys(data);
+  if (rawKeys.length === 0) return null;
+
+  // Unwrap any ``*_json`` string fields that carry JSON-encoded arrays
+  // of objects (eg. ``line_items_json`` on emit_invoice_extraction args).
+  // These get rendered as proper Table rows instead of a single long
+  // JSON-blob scalar field — addresses the user's "still see JSON" gap
+  // when nested-object args travel as strings through Gemini's
+  // function-calling subset.
+  const normalised = unwrapStringEncodedArrays(data);
 
   const surfaceId = opts.surfaceId ?? "chat";
   const fallbackTitle = opts.fallbackTitle ?? "Result";
@@ -65,20 +73,60 @@ export function buildA2UICardFromJson(
   const b = new CardBuilder();
   const bodyChildren: string[] = [];
 
-  const title = inferTitle(data, fallbackTitle);
+  const title = inferTitle(normalised, fallbackTitle);
   bodyChildren.push(b.text(title, "h2"));
   bodyChildren.push(b.divider());
 
-  const [scalarKeys, arrayKeys] = partitionKeys(data);
+  const { scalars: scalarKeys, arrays: arrayKeys, nested: nestedKeys } =
+    partitionKeys(normalised);
 
   for (const key of scalarKeys) {
     const labelId = b.text(humanise(key), "caption");
-    const valueId = b.text(formatScalar((data as Record<string, unknown>)[key], key));
+    const valueId = b.text(formatScalar(normalised[key], key));
     bodyChildren.push(b.row([labelId, valueId]));
   }
 
+  // Nested objects render as their own labelled section — recurse into
+  // the same partitioning so deeply-nested shapes (eg. validator's
+  // reasons[].citation inside the verdict, or the poster's invoice
+  // object) become proper label/value rows + sub-tables instead of
+  // stringified JSON blobs.
+  for (const key of nestedKeys) {
+    const nestedValue = normalised[key];
+    if (!isPlainObject(nestedValue)) continue;
+    const nestedNorm = unwrapStringEncodedArrays(nestedValue);
+    const {
+      scalars: nScalars,
+      arrays: nArrays,
+      nested: nNested,
+    } = partitionKeys(nestedNorm);
+    if (nScalars.length + nArrays.length + nNested.length === 0) continue;
+    bodyChildren.push(b.divider());
+    bodyChildren.push(b.text(humanise(key), "h3"));
+    for (const sk of nScalars) {
+      const lbl = b.text(humanise(sk), "caption");
+      const val = b.text(formatScalar(nestedNorm[sk], sk));
+      bodyChildren.push(b.row([lbl, val]));
+    }
+    // Render arrays under the nested object as their own mini-table.
+    for (const ak of nArrays) {
+      const items = nestedNorm[ak];
+      if (!Array.isArray(items) || items.length === 0) continue;
+      bodyChildren.push(b.text(humanise(ak), "caption"));
+      bodyChildren.push(...b.tableRows(items));
+    }
+    // Don't go deeper than 2 levels — runaway recursion makes Cards
+    // unreadable. Any third-level nested object is shown as a scalar
+    // fallback (stringified). Two levels covers all current AP shapes.
+    for (const dk of nNested) {
+      const lbl = b.text(humanise(dk), "caption");
+      const val = b.text(formatScalar(nestedNorm[dk], dk));
+      bodyChildren.push(b.row([lbl, val]));
+    }
+  }
+
   for (const key of arrayKeys) {
-    const items = (data as Record<string, unknown>)[key];
+    const items = normalised[key];
     if (!Array.isArray(items) || items.length === 0) continue;
     bodyChildren.push(b.divider());
     bodyChildren.push(b.text(humanise(key), "h3"));
@@ -109,11 +157,62 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/** Detect a string that's actually a JSON-encoded array (of objects) OR
+ * a JSON-encoded plain object and return the parsed value. Returns null
+ * for any other shape. We do this because the function-as-schema pattern
+ * passes nested objects/arrays via a stringified JSON arg (eg.
+ * ``line_items_json`` and ``invoice_json`` on the emit_* tools) since
+ * Gemini's function-calling doesn't reliably enforce nested-object arg
+ * shapes. Without this, the field renders as a raw JSON blob — exactly
+ * the "no raw JSON anywhere" thing the user wants to avoid. */
+function parseJsonNestedString(value: unknown): unknown | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      if (parsed.length === 0) return null;
+      if (!isPlainObject(parsed[0])) return null;
+      return parsed as Record<string, unknown>[];
+    }
+    if (isPlainObject(parsed) && Object.keys(parsed).length > 0) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Unwrap any ``*_json`` string fields whose content is a JSON-encoded
+ * array or object, replacing the string with the parsed value and
+ * stripping the ``_json`` suffix from the key so the rendered table /
+ * subsection heading reads "Line Items" / "Invoice" instead of
+ * "Line Items Json" / "Invoice Json". Idempotent — keys that don't
+ * match are passed through untouched. */
+function unwrapStringEncodedArrays(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    const parsed = parseJsonNestedString(value);
+    if (parsed !== null) {
+      const cleanKey = key.endsWith("_json") ? key.slice(0, -5) : key;
+      out[cleanKey] = parsed;
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 function partitionKeys(
   data: Record<string, unknown>,
-): [scalars: string[], arrays: string[]] {
+): { scalars: string[]; arrays: string[]; nested: string[] } {
   const scalars: string[] = [];
   const arrays: string[] = [];
+  const nested: string[] = [];
   for (const key of Object.keys(data)) {
     const v = data[key];
     // Empty arrays are dropped entirely — no row, no section. There's no
@@ -121,11 +220,17 @@ function partitionKeys(
     if (Array.isArray(v) && v.length === 0) continue;
     if (Array.isArray(v) && isPlainObject(v[0])) {
       arrays.push(key);
+    } else if (isPlainObject(v) && Object.keys(v).length > 0) {
+      // Nested object → render as a sub-section of label/value rows
+      // (not as a stringified blob). Common in the function-as-schema
+      // emit payloads where invoice_json → invoice contains the
+      // upstream extractor's full record.
+      nested.push(key);
     } else {
       scalars.push(key);
     }
   }
-  return [scalars, arrays];
+  return { scalars, arrays, nested };
 }
 
 /** snake_case / kebab-case → Title Case. */

@@ -160,9 +160,17 @@ describe("buildA2UICardFromJson — scalar formatting", () => {
     expect(texts(msgs)).toContain("—");
   });
 
-  it("renders nested objects as JSON.stringify (no Card recursion in v1)", () => {
+  it("renders nested objects as a sub-section with their own label/value rows (v2)", () => {
+    // v1 stringified nested objects; v2 unpacks them into a labelled
+    // sub-section. The flat text list should include the section
+    // heading (humanised) and each nested value, with no stringified
+    // blob remaining.
     const msgs = buildA2UICardFromJson({ meta: { a: 1, b: 2 } });
-    expect(texts(msgs)).toContain('{"a":1,"b":2}');
+    const all = texts(msgs);
+    expect(all).toContain("Meta");
+    expect(all).toContain("1");
+    expect(all).toContain("2");
+    expect(all).not.toContain('{"a":1,"b":2}');
   });
 });
 

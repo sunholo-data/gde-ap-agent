@@ -293,10 +293,28 @@ class SurfaceStore {
       ]);
     }
 
+    // Defensive: if the agent's batch leads with a createSurface but
+    // the surface already exists in the processor (eg. a prior
+    // appendMessages call auto-created it from an out-of-order
+    // updateDataModel patch, or the same effect re-fired in React
+    // strict-mode), drop the leading createSurface so the SDK doesn't
+    // throw "Surface already exists" and discard the rest of the batch.
+    // The remaining updateComponents/updateDataModel messages are
+    // idempotent against an existing SurfaceModel. Observed live
+    // 2026-06-03: workspace surface stuck on "Waiting for the agent…"
+    // placeholder because the extractor's createSurface threw and the
+    // updateComponents+updateDataModel were lost with it.
+    const messagesToFeed =
+      firstHasCreate && processor.model.getSurface(surfaceId) !== undefined
+        ? (messages.slice(1) as unknown as A2uiMessage[])
+        : (messages as unknown as A2uiMessage[]);
+
     try {
       // SDK already validated structurally on the backend; cast at the
       // boundary since our wire-format type is wider than the SDK's union.
-      processor.processMessages(messages as unknown as A2uiMessage[]);
+      if (messagesToFeed.length > 0) {
+        processor.processMessages(messagesToFeed);
+      }
     } catch (err) {
       if (process.env.NODE_ENV !== "production") {
         console.error(
