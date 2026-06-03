@@ -55,6 +55,13 @@ STATE_EMITTED_VERDICT = "app:emitted:verdict"
 STATE_EMITTED_POSTING = "app:emitted:posting"
 
 
+_STOP_AFTER_EMIT_MESSAGE = (
+    "Your structured output has been recorded. STOP. Do NOT call this tool "
+    "again. End your turn now — the SequentialAgent pipeline will advance "
+    "to the next specialist."
+)
+
+
 async def emit_invoice_extraction(
     vendor_name: str,
     invoice_number: str,
@@ -105,6 +112,20 @@ async def emit_invoice_extraction(
         The structured payload lives in session state under
         ``app:emitted:invoice`` for downstream specialists.
     """
+    # Idempotency guard — Gemini's tool-use loop will keep calling the
+    # emit tool until it hears a stop signal. Without this, a single
+    # extractor turn racked up 12+ calls before timing out (observed
+    # live 2026-06-03). Once the payload is in session state we
+    # short-circuit with an explicit instruction string the LLM reads
+    # and uses to end its turn.
+    if (
+        tool_context is not None
+        and getattr(tool_context, "state", None) is not None
+        and tool_context.state.get(STATE_EMITTED_INVOICE)
+    ):
+        logger.info("emit_invoice_extraction: re-call after emit — returning STOP signal")
+        return _STOP_AFTER_EMIT_MESSAGE
+
     try:
         line_items = json.loads(line_items_json) if line_items_json else []
         if not isinstance(line_items, list):
@@ -175,6 +196,16 @@ async def emit_ap_verdict(
         Confirmation string. The structured payload lives at
         ``app:emitted:verdict`` for the poster + audit view.
     """
+    # Same idempotency guard as emit_invoice_extraction — see that
+    # function for the rationale.
+    if (
+        tool_context is not None
+        and getattr(tool_context, "state", None) is not None
+        and tool_context.state.get(STATE_EMITTED_VERDICT)
+    ):
+        logger.info("emit_ap_verdict: re-call after emit — returning STOP signal")
+        return _STOP_AFTER_EMIT_MESSAGE
+
     if verdict not in {"pass", "needs_review"}:
         # Soft-clamp to needs_review on bad input so downstream agents
         # never see an unknown verdict value.
@@ -238,6 +269,16 @@ async def emit_posting_record(
         Confirmation string. The structured payload lives at
         ``app:emitted:posting`` for the audit view.
     """
+    # Same idempotency guard as the other emit_* tools — see
+    # emit_invoice_extraction for the rationale.
+    if (
+        tool_context is not None
+        and getattr(tool_context, "state", None) is not None
+        and tool_context.state.get(STATE_EMITTED_POSTING)
+    ):
+        logger.info("emit_posting_record: re-call after emit — returning STOP signal")
+        return _STOP_AFTER_EMIT_MESSAGE
+
     if action not in {"post", "escalate"}:
         logger.warning("emit_posting_record: unexpected action %r — coercing to 'escalate'", action)
         action = "escalate"
