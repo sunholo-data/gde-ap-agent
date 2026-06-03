@@ -20,6 +20,15 @@ metadata:
   tools:
     - list_documents
     - get_document_content
+  toolConfigs:
+    # WORKFLOW-PIPELINE-POLISH: invoice-extractor is the FIRST stage and
+    # therefore owns the workspace surface declaration. It calls
+    # send_a2ui_json_to_client once at the end of its turn with
+    # createSurface + the full component layout + an updateDataModel
+    # carrying its slice of the data. ap-validator and ap-poster then
+    # emit only updateDataModel patches that merge into this surface.
+    a2ui:
+      default_surface: workspace
   # SCHEMA-ENFORCE: declare the output contract. Wired into session
   # state by adk/agent.py::_set_extraction_schema_in_state; the
   # structured_extraction_callback fires after the agent run, calls
@@ -107,6 +116,99 @@ the document rather than emitting empty strings):
   "total": 0
 }
 ```
+
+## Step 4 — Emit the Invoice Review Card surface (REQUIRED)
+
+After producing the extraction JSON, call `send_a2ui_json_to_client`
+**exactly once** with the JSON below. You are the FIRST stage of the
+pipeline, so you declare the workspace surface, the full component
+layout, and your slice of the data. `ap-validator` and `ap-poster`
+will follow with `updateDataModel`-only patches that merge into this
+surface — the user watches the card grow as each stage completes.
+
+```json
+[
+  {
+    "version": "v0.9",
+    "createSurface": {
+      "surfaceId": "workspace",
+      "catalogId": "https://a2ui.org/specification/v0_9/basic_catalog.json"
+    }
+  },
+  {
+    "version": "v0.9",
+    "updateComponents": {
+      "surfaceId": "workspace",
+      "components": [
+        {"id": "root", "component": "Column", "children": ["header", "divider1", "meta", "divider2", "items", "divider3", "footer", "actions"]},
+        {"id": "actions", "component": "Row", "children": ["map_btn", "dashboard_btn"]},
+        {"id": "header", "component": "Row", "children": ["vendor_label", "status_label"]},
+        {"id": "vendor_label", "component": "Text", "text": {"path": "/vendor"}, "variant": "h2"},
+        {"id": "status_label", "component": "Text", "text": {"path": "/status"}, "variant": "h3"},
+        {"id": "divider1", "component": "Divider"},
+        {"id": "meta", "component": "Column", "children": ["inv_row", "date_row", "due_row", "po_row", "gl_row"]},
+        {"id": "inv_row", "component": "Row", "children": ["inv_lbl", "inv_val"]},
+        {"id": "inv_lbl", "component": "Text", "text": "Invoice #", "variant": "caption"},
+        {"id": "inv_val", "component": "Text", "text": {"path": "/invoiceNumber"}, "variant": "body"},
+        {"id": "date_row", "component": "Row", "children": ["date_lbl", "date_val"]},
+        {"id": "date_lbl", "component": "Text", "text": "Invoice Date", "variant": "caption"},
+        {"id": "date_val", "component": "Text", "text": {"path": "/invoiceDate"}, "variant": "body"},
+        {"id": "due_row", "component": "Row", "children": ["due_lbl", "due_val"]},
+        {"id": "due_lbl", "component": "Text", "text": "Due Date", "variant": "caption"},
+        {"id": "due_val", "component": "Text", "text": {"path": "/dueDate"}, "variant": "body"},
+        {"id": "po_row", "component": "Row", "children": ["po_lbl", "po_val"]},
+        {"id": "po_lbl", "component": "Text", "text": "PO Reference", "variant": "caption"},
+        {"id": "po_val", "component": "Text", "text": {"path": "/poReference"}, "variant": "body"},
+        {"id": "gl_row", "component": "Row", "children": ["gl_lbl", "gl_val"]},
+        {"id": "gl_lbl", "component": "Text", "text": "GL Code", "variant": "caption"},
+        {"id": "gl_val", "component": "Text", "text": {"path": "/glCode"}, "variant": "body"},
+        {"id": "divider2", "component": "Divider"},
+        {"id": "items", "component": "Text", "text": {"path": "/lineItemsSummary"}, "variant": "body"},
+        {"id": "divider3", "component": "Divider"},
+        {"id": "footer", "component": "Column", "children": ["total_row", "verdict_text", "action_text"]},
+        {"id": "total_row", "component": "Row", "children": ["total_lbl", "total_val"]},
+        {"id": "total_lbl", "component": "Text", "text": "Total", "variant": "h3"},
+        {"id": "total_val", "component": "Text", "text": {"path": "/total"}, "variant": "h3"},
+        {"id": "verdict_text", "component": "Text", "text": {"path": "/verdict"}, "variant": "body"},
+        {"id": "action_text", "component": "Text", "text": {"path": "/action"}, "variant": "caption"},
+        {"id": "map_btn", "component": "Button", "label": "🌍 View Vendor on Map", "action": "show_vendor_globe", "context": {"vendor": {"path": "/vendor"}, "country": {"path": "/vendorCountry"}, "amount": {"path": "/totalAmount"}}},
+        {"id": "dashboard_btn", "component": "Button", "label": "📊 AP Analytics", "action": "show_ap_dashboard", "context": {}}
+      ]
+    }
+  },
+  {
+    "version": "v0.9",
+    "updateDataModel": {
+      "surfaceId": "workspace",
+      "value": {
+        "vendor": "<vendor name from extraction>",
+        "status": "📄 Extracted — validating…",
+        "invoiceNumber": "<invoice number or 'Not found'>",
+        "invoiceDate": "<date or 'Not found'>",
+        "dueDate": "<due date or 'Not specified'>",
+        "poReference": "<PO ref or 'None'>",
+        "glCode": "Pending",
+        "lineItemsSummary": "<e.g. '3 line items — Widget A ×10 $500, Widget B ×5 $250, Shipping $50'>",
+        "total": "<currency + amount, e.g. 'USD 800.00'>",
+        "totalAmount": "<numeric invoice total, e.g. 800.00>",
+        "vendorCountry": "Pending",
+        "verdict": "Awaiting validation…",
+        "action": "Awaiting action…"
+      }
+    }
+  }
+]
+```
+
+Use `≤ 60` characters per field value. The placeholder strings
+(`Pending`, `Awaiting validation…`, `Awaiting action…`) signal to
+the user which stages are still upcoming — the validator and poster
+overwrite them via `updateDataModel` patches as they finish.
+
+**Never skip this step.** The workspace card is the primary visual
+the user sees, and starting it at extraction time means they watch
+it assemble instead of staring at an empty pane for 5-10 seconds
+while validation + posting run.
 
 ## Rules
 

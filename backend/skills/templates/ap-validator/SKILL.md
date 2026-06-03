@@ -13,6 +13,14 @@ metadata:
   tools:
     - ai_search
   toolConfigs:
+    # WORKFLOW-PIPELINE-POLISH: ap-validator is the SECOND stage of the
+    # pipeline. invoice-extractor already declared the workspace surface
+    # and the component layout. The validator's send_a2ui_json_to_client
+    # call emits a single updateDataModel block that merges its slice
+    # (verdict, vendorCountry, status) into the existing surface — no
+    # createSurface, no updateComponents needed.
+    a2ui:
+      default_surface: workspace
     # Enterprise grounding corpus: vendor master, open POs, approval policy.
     # `datastore_id` accepts either a bare id (eg. "ds-ap-vendors") or the
     # full Vertex AI Search resource name. The backend expands bare ids
@@ -117,6 +125,38 @@ Return a verdict object:
 - `verdict`: `"pass"` (clean, post-ready) or `"needs_review"` (any failed check).
 - `reasons[]`: one entry per finding — `{check, severity, detail, citation}`.
 - `citations[]`: the source documents/passages you grounded against.
+
+## Step 6 — Patch the Invoice Review Card with your slice (REQUIRED)
+
+After producing the verdict object, call `send_a2ui_json_to_client`
+**exactly once** with the JSON below. invoice-extractor already declared
+the workspace surface and the component layout, so your call is a
+single `updateDataModel` that merges your slice into the existing
+surface. **Do not** emit `createSurface` or `updateComponents` — that
+would rebuild the surface and wipe the extractor's data.
+
+```json
+[
+  {
+    "version": "v0.9",
+    "updateDataModel": {
+      "surfaceId": "workspace",
+      "value": {
+        "status": "🔍 Validating against vendor master + policy…",
+        "vendorCountry": "<country code from lookup_vendor (e.g. 'DE', 'US') or 'Unknown'>",
+        "verdict": "<one-sentence verdict with primary reason, e.g. 'Pass — vendor verified, PO matches' or 'Needs review — vendor KYC pending'>"
+      }
+    }
+  }
+]
+```
+
+Use `≤ 60` characters per field value. The poster will overwrite
+`status` and add `action` with the MCP posting/ticket ID when it runs.
+
+**Never skip this step.** Without it, the workspace card stays stuck
+on the extractor's `"📄 Extracted — validating…"` placeholder while
+your validation work is invisible to the user.
 
 ## Rules
 
