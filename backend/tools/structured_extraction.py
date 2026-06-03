@@ -68,6 +68,23 @@ async def structured_extraction_callback(callback_context: CallbackContext) -> A
     if not schema:
         return None
 
+    # Function-as-schema short-circuit: if the agent already called an
+    # ``emit_*`` FunctionTool from ``tools/ap_pipeline_emit.py`` this
+    # turn, the structured output is already captured in session state
+    # under one of ``app:emitted:invoice|verdict|posting``. Running the
+    # response_schema callback in that case would be a redundant Gemini
+    # round-trip (~3-5s of TTFT) producing the same payload. Skip it.
+    # When the LLM forgot to call the emit tool, the keys aren't set
+    # and we fall through to the two-pass path as a safety net.
+    for emitted_key in ("app:emitted:invoice", "app:emitted:verdict", "app:emitted:posting"):
+        if callback_context.state.get(emitted_key):
+            log.debug(
+                "structured_extraction: %s already set by emit_* FunctionTool; "
+                "skipping the response_schema after-agent extraction (function-as-schema win)",
+                emitted_key,
+            )
+            return None
+
     blocks_json = callback_context.state.get(_STATE_DOCUMENT_BLOCKS)
     if not blocks_json:
         log.debug("structured_extraction: app:extraction_schema is set but no temp:document_blocks found; skipping")

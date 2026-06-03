@@ -25,6 +25,7 @@ from collections.abc import Callable
 from google.adk.tools import FunctionTool, ToolContext
 
 from db.firestore import query_documents
+from tools.ap_pipeline_emit import EMIT_TOOLS
 from tools.documents.context import build_document_context
 from tools.url_processing import url_processing
 from tools.workshop_docs import search_workshop_docs
@@ -163,6 +164,15 @@ TOOL_REGISTRY: dict[str, Callable[[dict], FunctionTool]] = {
     "get_document_content": lambda _config: FunctionTool(get_document_content),
     "url_processing": lambda _config: FunctionTool(url_processing),
     "search_workshop_docs": lambda _config: FunctionTool(search_workshop_docs),
+    # Function-as-schema emit tools for the AP pipeline specialists.
+    # Each specialist calls its emit_* tool exactly once at end of turn;
+    # the typed parameters ARE the schema (Gemini's function-calling
+    # enforces them), so we get schema-validated output in ONE LLM call
+    # instead of the two-pass response_schema callback pattern.
+    # See backend/tools/ap_pipeline_emit.py for the full rationale.
+    # Default-arg binding (``tool=tool``) captures the tool per iteration
+    # — without it ruff B023 flags the late-binding loop-variable trap.
+    **{name: lambda _config, tool=tool: tool for name, tool in EMIT_TOOLS.items()},
 }
 
 # Tools handled entirely outside this registry (no ValueError for these)

@@ -11,6 +11,8 @@ metadata:
   model: gemini-3.1-flash-lite
   tools:
     - list_documents
+    # function-as-schema emit (see backend/tools/ap_pipeline_emit.py).
+    - emit_posting_record
   toolConfigs:
     # Render the posting confirmation / approval request in the workspace pane.
     # The A2UI toolset (send_a2ui_json_to_client) is enabled by default; this
@@ -92,15 +94,30 @@ Run **exactly one** of:
   The tool returns a `ticket_id` and SLA hours — carry these into
   your final output and the card.
 
-The `extractionSchema: ap_posting_record` after-agent callback runs
-Gemini with constrained decoding against the posting schema,
-validates the result, and appends the canonical JSON as the final
-assistant text part. **Do not emit the posting JSON yourself in
-chat** — duplicating it inline (especially as a ```json fenced block)
-shows the user an ugly code block where the frontend would otherwise
-render it as an A2UI Card. Keep your direct output to the narration +
-the workspace surface patches; the schema callback owns the canonical
-JSON.
+Call **`emit_posting_record` exactly once** at the end of your turn
+with the typed fields. The tool's parameters ARE the
+`ap_posting_record` schema; Gemini's function-calling enforces their
+types, so this is schema-validated by construction. The tool stores
+the payload in session state for the audit view, and emits a
+tool-call event the frontend renders as a clean Card. **Do not** also
+emit the JSON as text in chat. The `extractionSchema:
+ap_posting_record` after-agent callback remains as a safety net if
+you forget to call the tool, but the tool is the primary path.
+
+Arguments:
+- `action`: `"post"` (verdict was `pass`) or `"escalate"` (verdict
+  was `needs_review`).
+- `invoice_json`: JSON-encoded invoice object — pass exactly the
+  validated invoice the upstream specialists produced (read from
+  session state under `app:emitted:invoice`).
+- `posting_id`: ERP id from `post_to_ledger` MCP call. Required when
+  `action="post"`.
+- `ledger_account`: GL code, eg. `"6000-IT-SVC"`.
+- `escalation_reason`: human rationale for routing. Required when
+  `action="escalate"`.
+- `escalation_assignee`: role / team to review (eg. `"Finance Manager"`).
+- `audit_citations_csv`: comma-separated datastore ids forwarded from
+  the validator.
 
 ## Step 4 — Patch the Invoice Review Card with the final action (REQUIRED)
 

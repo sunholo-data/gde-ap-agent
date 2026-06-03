@@ -12,6 +12,8 @@ metadata:
   model: gemini-3.1-flash-lite
   tools:
     - ai_search
+    # function-as-schema emit (see backend/tools/ap_pipeline_emit.py).
+    - emit_ap_verdict
   toolConfigs:
     # WORKFLOW-PIPELINE-POLISH: ap-validator is the SECOND stage of the
     # pipeline. invoice-extractor already declared the workspace surface
@@ -129,20 +131,23 @@ then proceed with the checks below.
 
 ## Output
 
-The `extractionSchema: ap_verdict` after-agent callback runs Gemini
-with constrained decoding against the verdict schema, validates the
-result, and appends the canonical JSON as the final assistant text
-part. **Do not emit the verdict JSON yourself in chat** — duplicating
-it inline (especially as a ```json fenced block) shows the user an
-ugly code block where the frontend would otherwise render it as an
-A2UI Card. Keep your direct output to the narration + the workspace
-surface patches; the schema callback owns the canonical JSON.
+Call **`emit_ap_verdict` exactly once** at the end of your turn with
+the typed fields. The tool's parameters ARE the `ap_verdict` schema;
+Gemini's function-calling enforces their types, so this is
+schema-validated by construction. The tool stores the payload in
+session state for `ap-poster` + the audit view, and emits a tool-call
+event the frontend renders as a clean Card. **Do not** also emit the
+JSON as text in chat. The `extractionSchema: ap_verdict` after-agent
+callback remains as a safety net if you forget to call the tool, but
+the tool is the primary path.
 
-The verdict object the callback produces has:
-
+Arguments:
 - `verdict`: `"pass"` (clean, post-ready) or `"needs_review"` (any failed check).
-- `reasons[]`: one entry per finding — `{check, severity, detail, citation}`.
-- `citations[]`: the source documents/passages you grounded against.
+- `reasons_json`: JSON-encoded array — one entry per finding:
+  `[{"check": "vendor"|"po"|"duplicate"|"policy"|"tax",
+      "severity": "pass"|"info"|"warning"|"fail",
+      "detail": "...", "citation": "..."}, ...]`.
+- `citations_csv`: comma-separated datastore document ids consulted.
 
 ## Step 6 — Patch the Invoice Review Card with your slice (REQUIRED)
 
