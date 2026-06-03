@@ -251,6 +251,8 @@ from protocols.iframe_context_routes import router as iframe_context_router  # n
 from protocols.mcp_proxy import router as mcp_proxy_router  # noqa: E402
 from protocols.mcp_server import get_mcp_asgi_app  # noqa: E402
 from protocols.mcp_server import mcp as mcp_server  # noqa: E402
+from protocols.mcp_servers.erp_posting import erp_posting_mcp  # noqa: E402
+from protocols.mcp_servers.vendor_master import vendor_master_mcp  # noqa: E402
 from protocols.models_route import router as models_router  # noqa: E402
 from protocols.session_bootstrap_routes import router as session_bootstrap_router  # noqa: E402
 from protocols.sessions_route import router as sessions_router  # noqa: E402
@@ -341,6 +343,13 @@ ChannelRegistry.mount_webhooks(app)
 # never starts — every request fails with "Task group is not initialized".
 # We compose FastMCP's session_manager.run() into the parent app's lifespan
 # so the task group is up for the lifetime of the service.
+#
+# WORKFLOW-PIPELINE M3: two more in-process FastMCP servers — vendor-master
+# and erp-posting — share the same lifespan + mount pattern. Each gets its
+# own /mcp/<name> mount point, its own session_manager in the lifespan
+# stack. The validator and poster specialists call them via the existing
+# tools/mcp/registry McpToolset, so Cloud Trace records them as real MCP
+# tool calls (not ad-hoc Python functions).
 _parent_lifespan = app.router.lifespan_context
 
 
@@ -349,10 +358,18 @@ async def _lifespan_with_mcp(app_: FastAPI):
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(_parent_lifespan(app_))
         await stack.enter_async_context(mcp_server.session_manager.run())
+        await stack.enter_async_context(vendor_master_mcp.session_manager.run())
+        await stack.enter_async_context(erp_posting_mcp.session_manager.run())
         yield
 
 
 app.router.lifespan_context = _lifespan_with_mcp
+# Order matters: Starlette matches mounts in registration order, so the
+# more specific /mcp/<name> paths must be registered BEFORE the generic
+# /mcp catch-all — otherwise /mcp swallows every subpath and the new
+# servers 404.
+app.mount("/mcp/vendor-master", vendor_master_mcp.streamable_http_app())
+app.mount("/mcp/erp-posting", erp_posting_mcp.streamable_http_app())
 app.mount("/mcp", get_mcp_asgi_app())
 
 

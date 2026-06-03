@@ -39,6 +39,11 @@ from db import firestore as fs  # noqa: E402
 
 COLLECTION = "mcp_servers"
 DEFAULT_LOCAL_URL = "http://localhost:3001/mcp"
+# WORKFLOW-PIPELINE M3: the simulated vendor-master + erp-posting MCP servers
+# run in-process inside the gde-ap-agent backend, mounted at /mcp/<name>. The
+# default base URL is the deployed dev service; local-dev users override with
+# --backend-base-url=http://localhost:1956.
+DEFAULT_BACKEND_BASE_URL = "https://gde-ap-agent-blqtqfexwa-ew.a.run.app"
 
 EXT_APPS_MAP_CONFIG = {
     "name": "Geo / 3D Globe (ext-apps map-server)",
@@ -51,6 +56,24 @@ EXT_APPS_MAP_CONFIG = {
     "tags": ["geo", "visualization", "mcp-app"],
 }
 
+# WORKFLOW-PIPELINE M3 configs. The validator and poster reference these
+# by id (vendor-master, erp-posting) in their SKILL.md tool_configs.mcp.
+VENDOR_MASTER_CONFIG = {
+    "name": "Vendor Master (simulated)",
+    "transport": "http",
+    "headers": {},
+    "operated_by": "aitana",
+    "tags": ["ap", "grounding", "simulated"],
+}
+
+ERP_POSTING_CONFIG = {
+    "name": "ERP Posting (simulated)",
+    "transport": "http",
+    "headers": {},
+    "operated_by": "aitana",
+    "tags": ["ap", "action", "simulated"],
+}
+
 
 def seed_ext_apps_map(url: str, *, dry_run: bool = False) -> None:
     config = {**EXT_APPS_MAP_CONFIG, "url": url}
@@ -61,12 +84,42 @@ def seed_ext_apps_map(url: str, *, dry_run: bool = False) -> None:
     print(f"Seeded mcp_servers/ext-apps-map: url={url}")
 
 
+def seed_workflow_pipeline_servers(backend_base_url: str, *, dry_run: bool = False) -> None:
+    """Seed vendor-master + erp-posting (WORKFLOW-PIPELINE M3) Firestore docs.
+
+    Both URLs follow the same shape: <backend_base_url>/mcp/<server_name>.
+    Trailing slash matters — FastMCP mounts the streamable-HTTP root at "/",
+    so the McpToolset's POST lands at /mcp/<server_name>/.
+    """
+    base = backend_base_url.rstrip("/")
+    targets = [
+        ("vendor-master", VENDOR_MASTER_CONFIG, f"{base}/mcp/vendor-master/"),
+        ("erp-posting", ERP_POSTING_CONFIG, f"{base}/mcp/erp-posting/"),
+    ]
+    for doc_id, config, url in targets:
+        full = {**config, "url": url}
+        if dry_run:
+            print(f"[dry-run] would write mcp_servers/{doc_id}: url={url}")
+            continue
+        fs.set_document(COLLECTION, doc_id, full)
+        print(f"Seeded mcp_servers/{doc_id}: url={url}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--url",
         default=DEFAULT_LOCAL_URL,
-        help=f"MCP server URL (default: {DEFAULT_LOCAL_URL})",
+        help=f"ext-apps-map MCP server URL (default: {DEFAULT_LOCAL_URL})",
+    )
+    parser.add_argument(
+        "--backend-base-url",
+        default=DEFAULT_BACKEND_BASE_URL,
+        help=(
+            "Base URL for the gde-ap-agent backend (hosts the in-process "
+            "vendor-master + erp-posting MCP servers at /mcp/<name>/). "
+            f"Default: {DEFAULT_BACKEND_BASE_URL}"
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -75,6 +128,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     seed_ext_apps_map(args.url, dry_run=args.dry_run)
+    seed_workflow_pipeline_servers(args.backend_base_url, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
