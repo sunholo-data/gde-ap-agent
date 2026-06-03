@@ -28,6 +28,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from google.adk.agents import LlmAgent, SequentialAgent
 from google.adk.code_executors import BuiltInCodeExecutor
@@ -588,9 +589,18 @@ def create_agent(
 
     _after_agent_response = make_after_agent_response()
 
-    async def _composed_after_agent(callback_context: object) -> None:
+    async def _composed_after_agent(callback_context: object) -> Any:
+        # _after_agent_response is fire-and-forget (telemetry); its return
+        # value is intentionally ignored. structured_extraction_callback
+        # returns a ``Content(role="model", parts=[Part.from_text(json)])``
+        # carrying the schema-validated JSON, which ADK emits as a
+        # follow-up model event — that's how the frontend's JsonCardBuilder
+        # gets a pure-JSON TEXT_MESSAGE to convert into an inline A2UI Card.
+        # Drop the return value here and the JSON Part silently disappears
+        # from the AG-UI stream (observed live 2026-06-03 — every pipeline
+        # run lost its canonical extraction output before this fix).
         _after_agent_response(callback_context)
-        await structured_extraction_callback(callback_context)
+        return await structured_extraction_callback(callback_context)
 
     # Sprint 2.12 (M2): pluggable budget enforcement. The before/after
     # model callback pair consults the registered enforcer pre-call,
