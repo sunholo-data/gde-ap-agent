@@ -1,12 +1,14 @@
 // StandaloneToolCallCard — audit-view tool-call rendering tests.
 //
-// The contract:
+// The contract (post-2026-06-03 refactor):
 //  - Tool result parses as the send_a2ui_json_to_client envelope → mount
 //    A2UIRenderer (mocked here) with the validated message array, plus a
 //    Raw JSON disclosure.
 //  - Tool is send_a2ui_json_to_client but the result is an SDK error
 //    envelope → render the "A2UI validation failed" panel.
-//  - Anything else → fall back to InputOutputCard (raw <pre> blocks).
+//  - Anything else → fall back to InputOutputCard which now renders
+//    the input and output as A2UI Cards via JsonAsA2UICard (the user
+//    no longer wants raw `<pre>` JSON in the audit view).
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -63,11 +65,17 @@ describe("StandaloneToolCallCard", () => {
         skillId="invoice-extractor"
       />,
     );
-    const renderer = screen.getByTestId("a2ui-renderer");
-    expect(renderer.getAttribute("data-message-count")).toBe("2");
-    expect(renderer.getAttribute("data-fallback-surface-id")).toBe(
-      "audit-invoice-extractor-1",
+    // The A2UI envelope path renders the A2UIRenderer with surface id
+    // ``audit-invoice-extractor-1``. There may be additional
+    // A2UIRenderer nodes from InputOutputCard's JsonAsA2UICard for the
+    // input args (post-refactor — see contract above) so we query for
+    // the specific surface id rather than asserting "exactly one".
+    const renderers = screen.queryAllByTestId("a2ui-renderer");
+    const envelope = renderers.find(
+      (r) => r.getAttribute("data-fallback-surface-id") === "audit-invoice-extractor-1",
     );
+    expect(envelope).toBeTruthy();
+    expect(envelope?.getAttribute("data-message-count")).toBe("2");
     // Raw JSON disclosure is present but collapsed.
     expect(screen.getByText("Raw JSON")).toBeTruthy();
   });
@@ -84,7 +92,8 @@ describe("StandaloneToolCallCard", () => {
         skillId="x"
       />,
     );
-    expect(screen.getByTestId("a2ui-renderer")).toBeTruthy();
+    // At least one A2UIRenderer should be present — the envelope render.
+    expect(screen.queryAllByTestId("a2ui-renderer").length).toBeGreaterThan(0);
   });
 
   it("renders an error panel for an A2UI error envelope", () => {
@@ -103,16 +112,16 @@ describe("StandaloneToolCallCard", () => {
       />,
     );
     expect(screen.getByText(/A2UI validation failed/i)).toBeTruthy();
-    expect(screen.queryByTestId("a2ui-renderer")).toBeNull();
-    // The error text appears both in the error panel and (when expanded) in
-    // the Raw JSON disclosure — `getAllByText` lets us assert presence
-    // without coupling to the disclosure's open/closed state.
+    // Note: with the InputOutputCard fallback now rendering its input
+    // and output via JsonAsA2UICard, A2UIRenderer test-ids may appear
+    // even when the primary envelope path failed validation. We assert
+    // the error panel is present rather than absence of a2ui-renderer.
     expect(
       screen.getAllByText(/Missing required property/).length,
     ).toBeGreaterThan(0);
   });
 
-  it("falls back to InputOutputCard for non-A2UI tools", () => {
+  it("falls back to InputOutputCard for non-A2UI tools (now rendered as Cards)", () => {
     render(
       <StandaloneToolCallCard
         index={4}
@@ -124,9 +133,12 @@ describe("StandaloneToolCallCard", () => {
         skillId="x"
       />,
     );
-    expect(screen.queryByTestId("a2ui-renderer")).toBeNull();
+    // The audit view no longer renders raw `<pre>` JSON. The tool
+    // name is still the InputOutputCard title; the input/output
+    // payloads render as Cards via the (mocked) A2UIRenderer.
     expect(screen.queryByText("Raw JSON")).toBeNull();
-    // InputOutputCard renders the tool name as a title.
     expect(screen.getByText("transfer_to_validator")).toBeTruthy();
+    // At least one Card mount should be present (input args).
+    expect(screen.queryAllByTestId("a2ui-renderer").length).toBeGreaterThan(0);
   });
 });

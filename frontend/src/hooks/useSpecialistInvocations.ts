@@ -92,7 +92,21 @@ export function useSpecialistInvocations(
     for (const key of SPECIALIST_KEYS) {
       const records = grouped.get(key)!;
       if (records.length === 0) continue;
-      const current = records[records.length - 1];
+      // When the same emit_* tool fires multiple times in one turn
+      // (Gemini's tool-use loop hit the idempotency guard), every
+      // re-call after the first returns the STOP_AFTER_EMIT_MESSAGE
+      // confirmation rather than the real structured payload. The
+      // user wants to see the CANONICAL emit — the first one with a
+      // result that ISN'T the stop message. Fall back to the latest
+      // record when none look canonical (eg. the run is still
+      // active and the first call hasn't returned yet).
+      const canonical = records.find(
+        (r) =>
+          r.status === "done" &&
+          r.resultContent &&
+          !/stop\.?\s*do not call this tool again/i.test(r.resultContent),
+      );
+      const current = canonical ?? records[records.length - 1];
       const history = records.slice(-5);
       next[key] = { current, history, status: current.status };
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { JsonAsA2UICard } from "@/components/chat/JsonAsA2UICard";
 import { cn } from "@/lib/utils";
 
 /**
@@ -124,10 +125,16 @@ export function InputOutputCard({
   outputLabel?: string;
   emptyOutputMessage?: string;
 }) {
-  const inputText = formatJsonish(input);
-  const outputText = formatJsonish(output);
+  // Both Input and Output render as A2UI Cards via JsonAsA2UICard.
+  // Replaces the prior `<pre>` raw-JSON dumps — the user-facing
+  // promise of this app is "structured agent output → nicely-rendered
+  // UI". Wherever the payload doesn't look like a renderable object
+  // (eg. a plain tool-confirmation string) JsonAsA2UICard's muted
+  // fallback shows the string so we still produce something useful.
+  const hasInput = typeof input === "string" ? input.trim().length > 0 : input !== undefined;
+  const hasOutput = output !== undefined && output !== null && (typeof output !== "string" || output.trim().length > 0);
   return (
-    <div className="overflow-hidden rounded border border-border bg-background">
+    <div className={cn("overflow-hidden rounded border border-border bg-background", tone === "neutral" && "")}>
       <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/30 px-2 py-1">
         <span className="font-mono text-[11px] font-semibold text-primary">
           {index !== undefined && (
@@ -141,27 +148,30 @@ export function InputOutputCard({
       <div className="grid grid-cols-1 gap-2 p-2 md:grid-cols-2">
         <div>
           <MicroLabel>{inputLabel}</MicroLabel>
-          {inputText ? (
-            <pre className="mt-0.5 max-h-40 overflow-auto rounded border border-border bg-muted/30 p-1.5 text-[10px] leading-relaxed text-foreground/85">
-              {inputText}
-            </pre>
+          {hasInput ? (
+            <div className="mt-0.5">
+              <JsonAsA2UICard
+                value={input}
+                fallbackTitle="Input"
+                surfaceId={`audit-input-${title || index || "noid"}`}
+                fallbackMessage="(no structured input)"
+              />
+            </div>
           ) : (
             <p className="mt-0.5 text-[10px] italic text-muted-foreground/60">(no input)</p>
           )}
         </div>
         <div>
           <MicroLabel>{outputLabel}</MicroLabel>
-          {outputText ? (
-            <pre
-              className={cn(
-                "mt-0.5 max-h-40 overflow-auto rounded border p-1.5 text-[10px] leading-relaxed",
-                tone === "primary"
-                  ? "border-primary/20 bg-primary/5 text-foreground/90"
-                  : "border-border bg-muted/30 text-foreground/85",
-              )}
-            >
-              {outputText}
-            </pre>
+          {hasOutput ? (
+            <div className="mt-0.5">
+              <JsonAsA2UICard
+                value={output}
+                fallbackTitle="Output"
+                surfaceId={`audit-output-${title || index || "noid"}`}
+                fallbackMessage={emptyOutputMessage}
+              />
+            </div>
           ) : (
             <p className="mt-0.5 text-[10px] italic text-muted-foreground/60">{emptyOutputMessage}</p>
           )}

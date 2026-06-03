@@ -21,6 +21,7 @@ import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { InlineCitation } from "@/components/chat/InlineCitation";
 import { ToolCallChip } from "@/components/chat/ToolCallChip";
 import { buildA2UICardFromJson } from "@/components/chat/JsonCardBuilder";
+import { JsonAsA2UICard } from "@/components/chat/JsonAsA2UICard";
 import { useSurfaceRegistry } from "@/providers/SurfaceRegistry";
 import type { SkillMessage, ToolCallState } from "@/hooks/useSkillAgent";
 
@@ -298,10 +299,37 @@ export const MessageBubble = React.memo(function MessageBubble({
               />
             )}
             {nonA2uiCalls.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {nonA2uiCalls.map((tc) => (
-                  <ToolCallChip key={tc.id} toolCall={tc} />
-                ))}
+              <div className="space-y-2 pt-1">
+                {/* Tool-call chips (compact pills) along the top */}
+                <div className="flex flex-wrap gap-1.5">
+                  {nonA2uiCalls.map((tc) => (
+                    <ToolCallChip key={`${tc.id}-chip`} toolCall={tc} />
+                  ))}
+                </div>
+                {/* For schema-bound emit_* tools the args ARE the canonical
+                    structured payload (function-as-schema). Render each as
+                    an inline A2UI Card so the user sees the validated
+                    extraction / verdict / posting record as nicely-styled
+                    UI elements rather than raw JSON in a chip popover. */}
+                {nonA2uiCalls
+                  .filter((tc) => tc.name.startsWith("emit_") && tc.argsJson)
+                  .map((tc) => (
+                    <JsonAsA2UICard
+                      key={`${tc.id}-card`}
+                      value={tc.argsJson}
+                      fallbackTitle={
+                        tc.name === "emit_invoice_extraction"
+                          ? "Extracted Invoice"
+                          : tc.name === "emit_ap_verdict"
+                            ? "Validator Verdict"
+                            : tc.name === "emit_posting_record"
+                              ? "Posting Record"
+                              : tc.name
+                      }
+                      surfaceId={`emit-${tc.id}`}
+                      className="rounded-md border border-primary/15 bg-background/60 p-2"
+                    />
+                  ))}
               </div>
             )}
           </div>
