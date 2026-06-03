@@ -1,0 +1,178 @@
+{
+  "sprint_id": "WORKFLOW-PIPELINE",
+  "created": "2026-06-03T10:23:35Z",
+  "estimated_duration_days": 2.5,
+  "design_doc": "docs/design/forks/gde-ap-agent/multi-agent-workflow-pipeline.md",
+  "sprint_plan": "docs/design/forks/gde-ap-agent/multi-agent-workflow-pipeline-sprint.md",
+  "deadline": "2026-06-05T17:00:00-07:00",
+  "features": [
+    {
+      "id": "M1",
+      "description": "SequentialAgent factory wiring — add agent_type field to SkillMetadata, branch create_agent on agent_type, implement intake_gate before_agent_callback and final_progress after_agent_callback",
+      "scope": "backend",
+      "estimated_loc": 250,
+      "actual_loc": null,
+      "dependencies": [],
+      "acceptance_criteria": [
+        "SkillMetadata.agent_type defaults to 'llm' and round-trips through Firestore via agentType camelCase alias",
+        "create_agent returns SequentialAgent instance when md.agent_type=='sequential' with correct sub_agents list",
+        "Existing LlmAgent skills (no agent_type field) still build as LlmAgent — zero regression",
+        "intake_gate before_agent_callback returns types.Content with 'please upload an invoice' message when session state lacks documents",
+        "intake_gate returns None when session state has documents loaded (no-op path)",
+        "final_progress after_agent_callback emits a STAGE_PROGRESS event via the existing LatencyTracker",
+        "Unit tests pass: test_skill_metadata.py::test_agent_type_defaults_to_llm, ::test_agent_type_sequential_round_trips",
+        "Unit tests pass: test_agent_factory.py::test_sequential_agent_built_for_pipeline, ::test_intake_gate_returns_friendly_content_when_no_document, ::test_intake_gate_no_op_when_document_present"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "backend/db/models/__init__.py",
+        "backend/adk/agent.py",
+        "backend/tests/unit/test_skill_metadata.py",
+        "backend/tests/unit/test_agent_factory.py"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    },
+    {
+      "id": "M2",
+      "description": "Skill template restructuring — create ap-pipeline SKILL.md, rewrite ap-orchestrator to transfer to ap-pipeline only, move Invoice Review Card emission into ap-poster, add per-specialist A2UI updateComponents blocks to invoice-extractor and ap-validator",
+      "scope": "backend",
+      "estimated_loc": 300,
+      "actual_loc": null,
+      "dependencies": ["M1"],
+      "acceptance_criteria": [
+        "New file backend/skills/templates/ap-pipeline/SKILL.md exists with agent_type: sequential and subSkills: [invoice-extractor, ap-validator, ap-poster]",
+        "ap-orchestrator/SKILL.md subSkills changed to [ap-pipeline]; Invoice Review Card JSON block removed; instruction rewritten to 'transfer once or chat'",
+        "ap-poster/SKILL.md instruction directs the model to read session state (verdict + extracted_invoice), invoke post_to_ledger or route_to_approval, then emit the Invoice Review Card via send_a2ui_json_to_client",
+        "invoice-extractor/SKILL.md gains a per-specialist updateComponents block appending an 'extracted_section' Column to the workspace surface",
+        "ap-validator/SKILL.md gains a per-specialist updateComponents block appending a 'validation_section' Column with check ticks, plus vendor-master in tool_configs.mcp_servers",
+        "platform_seed.py iterates the new ap-pipeline template directory and creates a Firestore skill record with agent_type=sequential",
+        "Unit tests pass: test_platform_seed.py::test_ap_pipeline_seed_creates_sequential_skill, ::test_ap_orchestrator_subskills_now_points_to_ap_pipeline"
+      ],
+      "files_to_create": [
+        "backend/skills/templates/ap-pipeline/SKILL.md"
+      ],
+      "files_to_modify": [
+        "backend/skills/templates/ap-orchestrator/SKILL.md",
+        "backend/skills/templates/ap-poster/SKILL.md",
+        "backend/skills/templates/invoice-extractor/SKILL.md",
+        "backend/skills/templates/ap-validator/SKILL.md",
+        "backend/tests/unit/test_platform_seed.py"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    },
+    {
+      "id": "M3",
+      "description": "Simulated FastMCP servers for vendor-master + erp-posting, mounted into FastAPI alongside the existing /mcp server, with Firestore seed entries and per-tool tests",
+      "scope": "backend",
+      "estimated_loc": 450,
+      "actual_loc": null,
+      "dependencies": ["M2"],
+      "acceptance_criteria": [
+        "vendor_master_mcp FastMCP server exposes lookup_vendor(name) and check_duplicate(invoice_number, vendor_id) tools",
+        "lookup_vendor returns {found: True, vendor_id, country, payment_terms, kyc_status} for 5-8 synthetic vendors covering the demo invoices; {found: False} for unknowns",
+        "check_duplicate returns {duplicate: bool, posted_at, posting_id} based on a synthetic posting history",
+        "erp_posting_mcp FastMCP server exposes post_to_ledger(invoice, gl_code, posting_period) and route_to_approval(invoice, reasons) tools",
+        "post_to_ledger returns {posting_id, posted_at (ISO8601), gl_account, status: 'POSTED'}",
+        "route_to_approval returns {ticket_id, queue: 'finance', sla_hours: 24}",
+        "Both servers mounted into fast_api_app.py at /mcp/vendor-master and /mcp/erp-posting",
+        "seed_mcp_servers.py creates Firestore entries mcp_servers/vendor-master and mcp_servers/erp-posting pointing at the live URLs",
+        "ap-validator/SKILL.md references vendor-master in tool_configs.mcp_servers",
+        "ap-poster/SKILL.md references erp-posting in tool_configs.mcp_servers",
+        "Tool tests pass: test_vendor_master_mcp.py (3 tests), test_erp_posting_mcp.py (2 tests) — all using FastMCP in-process test client"
+      ],
+      "files_to_create": [
+        "backend/protocols/mcp_servers/__init__.py",
+        "backend/protocols/mcp_servers/vendor_master.py",
+        "backend/protocols/mcp_servers/erp_posting.py",
+        "backend/tests/tool_tests/test_vendor_master_mcp.py",
+        "backend/tests/tool_tests/test_erp_posting_mcp.py"
+      ],
+      "files_to_modify": [
+        "backend/fast_api_app.py",
+        "backend/scripts/seed_mcp_servers.py",
+        "backend/skills/templates/ap-validator/SKILL.md",
+        "backend/skills/templates/ap-poster/SKILL.md"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    },
+    {
+      "id": "M4",
+      "description": "A2A agent card extension (adk-workflow-v1) + per-specialist STAGE_PROGRESS labels emitted from sub-agent before_agent_callbacks",
+      "scope": "backend",
+      "estimated_loc": 100,
+      "actual_loc": null,
+      "dependencies": ["M1", "M2"],
+      "acceptance_criteria": [
+        "backend/protocols/a2a.py SUPPORTED_EXTENSIONS tuple includes 'adk-workflow-v1' with an explanatory comment",
+        "GET /.well-known/agent.json returns capabilities.extensions containing 'adk-workflow-v1'",
+        "API test passes: test_a2a_agent_card.py::test_advertises_workflow_extension",
+        "Each specialist (invoice-extractor, ap-validator, ap-poster) has a before_agent_callback that pushes one STAGE_PROGRESS label to the existing LatencyTracker before its LLM call",
+        "Labels: 'Extracting invoice fields…', 'Validating against vendor master + policy…', 'Posting to AP ledger…'",
+        "Unit test passes: test_adk_callbacks.py::test_specialist_emits_stage_progress_label"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "backend/protocols/a2a.py",
+        "backend/adk/agent.py",
+        "backend/tests/api_tests/test_a2a_agent_card.py",
+        "backend/tests/unit/test_adk_callbacks.py"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    },
+    {
+      "id": "M5",
+      "description": "Deploy to dev, write judge-path verification script, manual UI verification, move design doc to implemented",
+      "scope": "fullstack",
+      "estimated_loc": 200,
+      "actual_loc": null,
+      "dependencies": ["M1", "M2", "M3", "M4"],
+      "acceptance_criteria": [
+        "Cloud Build deploys dev successfully; gcloud run services describe gde-ap-agent shows the new revision serving",
+        "Re-seed runs cleanly: platform_seed creates ap-pipeline skill in Firestore; seed_mcp_servers adds vendor-master + erp-posting entries",
+        "scripts/verify-judge-path.sh exits 0 when run against deployed dev — asserts SSE stream contains all 3 transfer_to_<specialist> events, at least 1 MCP call to vendor-master and 1 to erp-posting, and final A2UI updateDataModel with full Invoice Review Card payload",
+        "Manual UI verification: pipeline rail advances Intake → Extract → Validate → Post for 'please process invoice INV-2026-042' against a demo session",
+        "Manual UI verification: workspace surface assembles three sections (Extracted, Validated, Posting result) plus the final card with action buttons",
+        "Manual UI verification: audit view shows per-agent streaming reasoning + schema-enforced JSON for each specialist",
+        "Manual UI verification: typing indicator surfaces the three STAGE_PROGRESS labels in order",
+        "Manual UI verification: negative path (no document loaded) — orchestrator chats normally; if user asks to process, intake gate emits friendly message without firing specialists",
+        "Cloud Trace shows 4 spans per pipeline run: 1 for ap_pipeline SequentialAgent + 3 for the specialist LlmAgents",
+        "Design doc moved to docs/design/forks/gde-ap-agent/implemented/multi-agent-workflow-pipeline.md via move_to_implemented.sh",
+        "SEQUENCE.md updated: status flipped to ✅ Implemented"
+      ],
+      "files_to_create": [
+        "scripts/verify-judge-path.sh"
+      ],
+      "files_to_modify": [
+        "docs/design/forks/gde-ap-agent/SEQUENCE.md"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    }
+  ],
+  "velocity": {
+    "target_loc_per_day": 500,
+    "actual_loc_per_day": null,
+    "estimated_total_loc": 1300,
+    "actual_total_loc": null,
+    "estimated_days": 2.5,
+    "actual_days": null
+  },
+  "github_issues": [],
+  "last_session": null,
+  "last_checkpoint": null,
+  "status": "not_started"
+}
