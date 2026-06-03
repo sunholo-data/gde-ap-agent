@@ -502,3 +502,69 @@ def test_create_agent_sequential_wires_intake_gate_and_final_progress():
     # Both callbacks attached; ADK stores them as Optional[Callable | list[Callable]]
     assert agent.before_agent_callback is not None
     assert agent.after_agent_callback is not None
+
+
+# --- WORKFLOW-PIPELINE M4: per-specialist STAGE_PROGRESS labels ---
+
+
+def test_emit_specialist_stage_label_recognises_three_ap_specialists():
+    """Each AP specialist has a STAGE_PROGRESS label keyed by SKILL.md name.
+
+    Lookup is by `name` (stable across re-seeds), not skill_id (which is
+    a fresh UUID per Firestore environment).
+    """
+    from adk.agent import _AP_SPECIALIST_STAGE_LABELS
+
+    for name in ("invoice-extractor", "ap-validator", "ap-poster"):
+        assert name in _AP_SPECIALIST_STAGE_LABELS, f"missing label for {name!r}"
+        stage, label = _AP_SPECIALIST_STAGE_LABELS[name]
+        assert stage.startswith("ap_stage_"), f"stage name {stage!r} should be namespaced"
+        assert label and label[-1] in "…", f"label {label!r} should end with ellipsis"
+
+
+def test_emit_specialist_stage_label_calls_tracker_for_known_specialist():
+    """Known AP specialist → tracker.mark fires with the correct label.
+
+    Other skills (e.g. the orchestrator, generic chat skills) must NOT
+    emit one of these labels — they belong to the pipeline narrative only.
+    """
+    from unittest.mock import MagicMock
+
+    from adk.agent import _emit_specialist_stage_label
+
+    mock_tracker = MagicMock()
+    with patch("observability.timing.get_current_tracker", return_value=mock_tracker):
+        _emit_specialist_stage_label("invoice-extractor")
+    mock_tracker.mark.assert_called_once_with("ap_stage_extract", user_label="Extracting invoice fields…")
+
+
+def test_emit_specialist_stage_label_no_op_for_unknown_skill():
+    """Unknown skill names (orchestrator, generic skills) → no mark call.
+
+    The labels are AP-specialist-only — emitting them for the orchestrator
+    or a generic chat skill would pollute the typing indicator with
+    misleading 'Extracting…' text.
+    """
+    from unittest.mock import MagicMock
+
+    from adk.agent import _emit_specialist_stage_label
+
+    mock_tracker = MagicMock()
+    with patch("observability.timing.get_current_tracker", return_value=mock_tracker):
+        _emit_specialist_stage_label("ap-orchestrator")
+        _emit_specialist_stage_label("general-assistant")
+        _emit_specialist_stage_label("ap-pipeline")  # the SequentialAgent itself, not a specialist
+    mock_tracker.mark.assert_not_called()
+
+
+def test_emit_specialist_stage_label_swallows_tracker_failure():
+    """Instrumentation must never break the chat path — a tracker exception
+    is logged and swallowed."""
+    from adk.agent import _emit_specialist_stage_label
+
+    def _boom(*_a, **_kw):
+        raise RuntimeError("tracker exploded")
+
+    with patch("observability.timing.get_current_tracker", side_effect=_boom):
+        # Must not raise
+        _emit_specialist_stage_label("invoice-extractor")

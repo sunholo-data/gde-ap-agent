@@ -198,6 +198,21 @@ def test_agent_card_echoes_full_extensions_when_client_sends_none(client: TestCl
     assert resp.headers["Vary"] == "X-A2A-Extensions"
 
 
+def test_agent_card_advertises_adk_workflow_extension(client: TestClient) -> None:
+    """WORKFLOW-PIPELINE M4: the card must advertise adk-workflow-v1 so
+    discovering clients know this platform exposes deterministic ADK
+    workflow agents (SequentialAgent/ParallelAgent/LoopAgent), not just
+    LLM-driven skills. Without this, a peer agent can't tell ap-pipeline
+    runs Extract → Validate → Post in code rather than asking a model
+    whether to continue.
+    """
+    with patch("protocols.a2a.list_marketplace", return_value=[]):
+        resp = client.get("/.well-known/agent.json")
+    assert resp.status_code == 200
+    extensions = resp.json()["capabilities"]["extensions"]
+    assert "adk-workflow-v1" in extensions, f"adk-workflow-v1 must be advertised, got {extensions!r}"
+
+
 def test_agent_card_negotiates_extension_intersection(client: TestClient) -> None:
     """Client advertises a subset → server replies with the intersection
     only, preserving canonical order. The body still advertises the full

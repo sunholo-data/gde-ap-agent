@@ -295,6 +295,44 @@ def _set_extraction_schema_in_state(callback_context: object, schema: dict | Non
     state["app:extraction_schema"] = schema
 
 
+# --- WORKFLOW-PIPELINE M4: STAGE_PROGRESS labels per AP specialist ---
+#
+# Each AP specialist emits a user-facing typing-indicator label when its
+# turn starts inside the ap-pipeline SequentialAgent. The labels match
+# the protocol-stack narrative from the design doc: judges see the
+# pipeline visibly progress through three named stages.
+_AP_SPECIALIST_STAGE_LABELS: dict[str, tuple[str, str]] = {
+    # skill_name -> (stage_name, user_facing_label)
+    "invoice-extractor": ("ap_stage_extract", "Extracting invoice fields…"),
+    "ap-validator": ("ap_stage_validate", "Validating against vendor master + policy…"),
+    "ap-poster": ("ap_stage_post", "Posting to AP ledger…"),
+}
+
+
+def _emit_specialist_stage_label(skill_name: str) -> None:
+    """Push a STAGE_PROGRESS label for the named AP specialist, if applicable.
+
+    Lookup is by skill *name* (the SKILL.md `name` field), not skill_id,
+    so it survives Firestore re-seeds where ids are new UUIDs but names
+    stay stable. Fails open: any tracker error is swallowed at WARNING
+    level — instrumentation must never break the chat path.
+    """
+    label_pair = _AP_SPECIALIST_STAGE_LABELS.get(skill_name)
+    if label_pair is None:
+        return
+    stage_name, label = label_pair
+    try:
+        from observability.timing import get_current_tracker
+
+        get_current_tracker().mark(stage_name, user_label=label)
+    except Exception as exc:
+        logger.warning(
+            "workflow_pipeline.specialist_stage_label: skill=%s mark failed (suppressed): %s",
+            skill_name,
+            exc,
+        )
+
+
 # --- WORKFLOW-PIPELINE M1: SequentialAgent wiring ---
 
 
@@ -522,6 +560,12 @@ def create_agent(
         _before_agent(callback_context)
         _session_tracker(callback_context)
         _set_extraction_schema_in_state(callback_context, _resolved_extraction_schema)
+        # WORKFLOW-PIPELINE M4: per-specialist STAGE_PROGRESS labels so the
+        # typing indicator names the live stage (Extracting / Validating /
+        # Posting). Fires only for the three AP specialists; no-op for every
+        # other skill. Pre-document-load so the label appears immediately,
+        # not after the doc loader's "Reading…" label.
+        _emit_specialist_stage_label(skill_config.name)
         await _document_loader(callback_context)
 
         # TTFT: mark the end of the synchronous before-agent chain. Show

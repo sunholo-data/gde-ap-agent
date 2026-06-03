@@ -56,6 +56,10 @@ _CACHE_TTL = 60.0
 #   messages, enabling token-efficient mid-stream data refreshes
 # - a2a-v0.2 — A2A discovery card schema version
 # - mcp-apps-v1 — sandboxed iframe surface for third-party UI artefacts
+# - adk-workflow-v1 — this agent exposes deterministic ADK workflow agents
+#   (SequentialAgent/ParallelAgent/LoopAgent) where the control flow is
+#   code, not a model. Discovery clients can rely on the named pipeline
+#   skills (ap-pipeline) running their sub_skills in declared order.
 SUPPORTED_EXTENSIONS: tuple[str, ...] = (
     "a2ui-v0.9",
     "a2ui-basic-catalog-v0.9",
@@ -63,6 +67,7 @@ SUPPORTED_EXTENSIONS: tuple[str, ...] = (
     "a2ui-decoupled-pattern",
     "a2a-v0.2",
     "mcp-apps-v1",
+    "adk-workflow-v1",
 )
 
 
