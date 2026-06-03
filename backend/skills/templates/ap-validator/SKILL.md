@@ -24,6 +24,13 @@ metadata:
     # only lights up in cloud mode.
     ai_search:
       datastore_id: ds-ap-vendors
+    # WORKFLOW-PIPELINE M3: simulated vendor-master MCP server
+    # (mounted at /mcp/vendor-master) exposes lookup_vendor and
+    # check_duplicate. The validator combines this with the ai_search
+    # RAG (policy + open POs) to ground every check. Wired by M3.
+    mcp:
+      servers:
+        - vendor-master
   # SCHEMA-ENFORCE: output contract for the validator's verdict object.
   # See docs/design/forks/gde-ap-agent/schema-enforced-extraction.md.
   extractionSchema: ap_verdict
@@ -72,19 +79,36 @@ post — grounded in the enterprise knowledge base, not in your own assumptions.
 This is where the system earns its reliability: a lone model can read an invoice,
 but it cannot *know* "vendor X isn't approved over €10k" without grounding.
 
-## Checks (use `ai_search` to ground every one)
+## Tools at your disposal
 
-1. **Vendor known & approved.** Look up `vendor_name`/`vendor_id` in the vendor
-   master. Is the vendor active and approved? Are the bank details on file?
-2. **PO match.** If a `po_reference` is present, retrieve the PO. Do the line
-   items, quantities, prices, and total match within tolerance? Flag overbilling
-   or quantities beyond the PO.
-3. **Duplicate.** Search for a prior invoice with the same vendor +
-   `invoice_number` (or same amount + date). Flag a likely duplicate payment.
-4. **Policy.** Check line items and total against the approval policy: spend
-   limits per vendor/category, required approver tier, disallowed categories.
-5. **Tax.** Verify the tax rate/amount is correct for the vendor's jurisdiction
-   and the line categories.
+- **`lookup_vendor(name)`** (MCP, `vendor-master` server) — checks the
+  vendor master. Returns `{found, vendor_id, country, payment_terms,
+  kyc_status}`. Authoritative for "is this vendor in our master?".
+- **`check_duplicate(invoice_number, vendor_id)`** (MCP, same server)
+  — checks the posting history for a prior invoice with this number
+  for this vendor. Returns `{duplicate, posted_at, posting_id}`.
+- **`ai_search`** (Vertex AI Search RAG over `ds-ap-vendors`) — the
+  policy + open-POs grounding corpus. Use for PO match, approval
+  policy, and tax-rate citations.
+
+## Checks (use MCP for vendor + duplicate; `ai_search` to ground the rest)
+
+1. **Vendor known & approved.** Call `lookup_vendor(name)`. If
+   `found=false`, this is `needs_review` with citation "vendor not in
+   master". If `kyc_status != "verified"`, also `needs_review`.
+2. **Duplicate.** Call `check_duplicate(invoice_number, vendor_id)`.
+   If `duplicate=true`, this is `needs_review` with the prior
+   `posting_id` as citation.
+3. **PO match.** If a `po_reference` is present, use `ai_search` to
+   retrieve the PO. Do the line items, quantities, prices, and total
+   match within tolerance? Flag overbilling or quantities beyond the
+   PO.
+4. **Policy.** Check line items and total against the approval policy
+   via `ai_search`: spend limits per vendor/category, required
+   approver tier, disallowed categories.
+5. **Tax.** Verify the tax rate/amount is correct for the vendor's
+   jurisdiction (from `lookup_vendor` → `country`) and the line
+   categories.
 
 ## Output
 

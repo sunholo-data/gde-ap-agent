@@ -118,8 +118,16 @@ def seed_local_fixture() -> None:
 
 # Accounts-Payable multi-agent bundle — seeded from the on-disk templates so
 # the orchestrator + specialists show up in the LOCAL_MODE picker. Order is
-# cosmetic; the orchestrator wires the rest via subSkills.
-_AP_SKILL_NAMES = ("ap-orchestrator", "invoice-extractor", "ap-validator", "ap-poster")
+# cosmetic; the orchestrator wires the rest via subSkills. WORKFLOW-PIPELINE
+# inserted ap-pipeline (SequentialAgent) between the orchestrator and the
+# three specialists; the orchestrator now points at ap-pipeline only.
+_AP_SKILL_NAMES = (
+    "ap-orchestrator",
+    "ap-pipeline",
+    "invoice-extractor",
+    "ap-validator",
+    "ap-poster",
+)
 
 
 def _seed_ap_skills(now: float) -> None:

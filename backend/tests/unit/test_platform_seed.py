@@ -299,3 +299,61 @@ def test_seed_sets_slug_at_creation(tmp_path):
     assert summary.created == 2
     slugs = {call.kwargs["slug"] for call in mock_create.call_args_list}
     assert slugs == {"general-assistant", "code-assistant"}
+
+
+# === WORKFLOW-PIPELINE M2: ap-pipeline template ===
+
+
+def test_ap_pipeline_template_parses_with_sequential_agent_type():
+    """The real ap-pipeline/SKILL.md must parse with agentType=sequential
+    and list the three specialist sub-skills. If this breaks, the
+    SequentialAgent build path in create_agent gets bypassed silently
+    and the pipeline reverts to LlmAgent behaviour (the bug we're fixing).
+    """
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[3]
+    template = repo_root / "backend" / "skills" / "templates" / "ap-pipeline" / "SKILL.md"
+    assert template.exists(), f"missing template at {template}"
+
+    parsed = _parse_template(template)
+    assert parsed["name"] == "ap-pipeline"
+    metadata = parsed["metadata"]
+    assert metadata.get("agentType") == "sequential"
+    sub_skills = metadata.get("subSkills") or []
+    assert sub_skills == ["invoice-extractor", "ap-validator", "ap-poster"], (
+        f"ap-pipeline must walk Extract → Validate → Post in order, got {sub_skills!r}"
+    )
+
+
+def test_ap_orchestrator_template_now_points_to_ap_pipeline():
+    """ap-orchestrator must transfer to ap-pipeline (the SequentialAgent)
+    rather than the three specialists directly — otherwise the model can
+    stop after one transfer like it did before the WORKFLOW-PIPELINE
+    refactor.
+    """
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[3]
+    template = repo_root / "backend" / "skills" / "templates" / "ap-orchestrator" / "SKILL.md"
+    parsed = _parse_template(template)
+    sub_skills = parsed["metadata"].get("subSkills") or []
+    assert sub_skills == ["ap-pipeline"], f"orchestrator should delegate to ap-pipeline only, got {sub_skills!r}"
+
+
+def test_ap_pipeline_metadata_round_trips_through_skill_metadata_model():
+    """The metadata dict parsed from ap-pipeline/SKILL.md must validate
+    cleanly through SkillMetadata (Pydantic with populate_by_name=True)
+    so platform_seed's create_skill call doesn't reject the new
+    agentType field.
+    """
+    from pathlib import Path
+
+    from db.models import SkillMetadata
+
+    repo_root = Path(__file__).resolve().parents[3]
+    template = repo_root / "backend" / "skills" / "templates" / "ap-pipeline" / "SKILL.md"
+    parsed = _parse_template(template)
+    md = SkillMetadata.model_validate(parsed["metadata"])
+    assert md.agent_type == "sequential"
+    assert md.sub_skills == ["invoice-extractor", "ap-validator", "ap-poster"]

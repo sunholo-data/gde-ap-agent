@@ -35,8 +35,10 @@ def test_seed_populates_collections_in_local_mode(monkeypatch):
     seed_local_fixture()
     client = get_client()
     assert len(list(client.collection("users").stream())) == 1
-    # 6 demo skills + 4 AP bundle (ap-orchestrator, invoice-extractor, ap-validator, ap-poster)
-    assert len(list(client.collection("skills").stream())) == 10
+    # 6 demo skills + 5 AP bundle (ap-orchestrator, ap-pipeline, invoice-extractor,
+    # ap-validator, ap-poster). ap-pipeline added by WORKFLOW-PIPELINE M2 as the
+    # SequentialAgent layer between the orchestrator and the specialists.
+    assert len(list(client.collection("skills").stream())) == 11
     assert len(list(client.collection("documents").stream())) == 1
 
 
@@ -50,9 +52,9 @@ def test_seed_is_idempotent(monkeypatch):
     seed_local_fixture()
     seed_local_fixture()
     client = get_client()
-    # Counts unchanged after multiple seeds (6 demo + 4 AP bundle).
+    # Counts unchanged after multiple seeds (6 demo + 5 AP bundle incl. ap-pipeline).
     assert len(list(client.collection("users").stream())) == 1
-    assert len(list(client.collection("skills").stream())) == 10
+    assert len(list(client.collection("skills").stream())) == 11
 
 
 def test_seeded_skills_have_required_fields(monkeypatch):
