@@ -10,7 +10,7 @@ import { StaticArtefactFrame, type StaticArtefactFrameHandle } from "./StaticArt
 const SANDBOX_URL =
   process.env.NEXT_PUBLIC_MCP_SANDBOX_URL?.replace(/\/$/, "") ?? "";
 
-interface InvoiceData {
+export interface InvoiceData {
   vendor: string;
   country?: string;
   amount: number;
@@ -23,10 +23,21 @@ interface InvoiceData {
 interface APDashboardPanelProps {
   /** Invoice data to push into the dashboard. */
   invoices?: InvoiceData[];
+  /**
+   * When ``true`` (default), the supplied invoices REPLACE the
+   * dashboard artefact's DEMO seed data. When ``false`` the
+   * invoices are MERGED into the seed data (one
+   * ``ui/update-data`` per invoice, no reset) — useful when the
+   * caller has the current session's invoice but wants the seed
+   * data to remain as workshop context (so charts don't look
+   * sparse with a single real entry). Default ``true`` matches
+   * the pre-2026-06-03 behaviour.
+   */
+  replaceSeed?: boolean;
   onClose?: () => void;
 }
 
-export function APDashboardPanel({ invoices, onClose }: APDashboardPanelProps) {
+export function APDashboardPanel({ invoices, replaceSeed = true, onClose }: APDashboardPanelProps) {
   const frameRef = useRef<StaticArtefactFrameHandle>(null);
   const [ready, setReady] = useState(false);
 
@@ -40,13 +51,21 @@ export function APDashboardPanel({ invoices, onClose }: APDashboardPanelProps) {
 
   useEffect(() => {
     if (!ready || !frameRef.current) return;
-    if (invoices && invoices.length > 0) {
+    if (!invoices || invoices.length === 0) return;
+    if (replaceSeed) {
       frameRef.current.sendNotification("ui/update-data", {
         reset: true,
         invoices,
       });
+    } else {
+      // Merge mode: push each invoice as a single-row update so the
+      // artefact's handler (which dedupes by vendor+invoiceNumber)
+      // adds them on top of its DEMO seed data instead of wiping it.
+      for (const inv of invoices) {
+        frameRef.current.sendNotification("ui/update-data", { invoice: inv });
+      }
     }
-  }, [ready, invoices]);
+  }, [ready, invoices, replaceSeed]);
 
   if (!SANDBOX_URL) return null;
 

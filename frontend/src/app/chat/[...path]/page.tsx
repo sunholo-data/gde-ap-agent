@@ -46,7 +46,7 @@ import { A2UISurfaceMount } from "@/components/protocols/A2UISurfaceMount";
 import { DocumentPanel } from "@/components/document/DocumentPanel";
 import { LatencyHUD } from "@/components/dev/LatencyHUD";
 import { VendorGlobePanel } from "@/components/workspace/VendorGlobePanel";
-import { APDashboardPanel } from "@/components/workspace/APDashboardPanel";
+import { APDashboardPanel, type InvoiceData as DashboardInvoice } from "@/components/workspace/APDashboardPanel";
 
 /**
  * MULTI-SURFACE-A2UI M3 — chat page surface mounts.
@@ -302,6 +302,12 @@ function ChatShell({
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [globeContext, setGlobeContext] = useState<{ vendor: string; country: string; amount?: number } | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  // Invoices pushed into APDashboardPanel — derived from session state's
+  // ``app:emitted:invoice`` / ``app:emitted:verdict`` / ``app:emitted:posting``
+  // keys (populated by the pipeline's emit_* FunctionTools). Without
+  // this the dashboard renders only its hard-coded DEMO seed data
+  // (the "is that real or placeholder?" question the user asked).
+  const [dashboardInvoices, setDashboardInvoices] = useState<DashboardInvoice[]>([]);
 
   // Per-tab view mode lives on DocTabData ("minimized" | "side" | "focus").
   // Default: every newly opened tab starts minimised — chat keeps the full
@@ -526,6 +532,75 @@ function ChatShell({
       }
       if (event.actionName === "show_ap_dashboard") {
         setDashboardOpen(true);
+        const sid = sessionId ?? agentSessionId;
+        if (sid) {
+          // Read the current pipeline's emitted payloads from session
+          // state and convert them to the dashboard's InvoiceData
+          // shape. The dashboard's MCP artefact appends our entry on
+          // top of its DEMO seed data so the user sees the invoice
+          // they just processed *plus* the workshop context. Fail
+          // silently — if the fetch errors the dashboard still
+          // renders, just without the current invoice highlighted.
+          void (async () => {
+            try {
+              const res = await fetchWithAuth(
+                `/api/proxy/api/sessions/${encodeURIComponent(sid)}/state`,
+              );
+              if (!res.ok) return;
+              const state = (await res.json()) as Record<string, unknown>;
+              const invoice = state["app:emitted:invoice"] as
+                | Record<string, unknown>
+                | undefined;
+              const verdict = state["app:emitted:verdict"] as
+                | Record<string, unknown>
+                | undefined;
+              const posting = state["app:emitted:posting"] as
+                | Record<string, unknown>
+                | undefined;
+              if (!invoice) {
+                setDashboardInvoices([]);
+                return;
+              }
+              const v = String(verdict?.verdict ?? "");
+              const statusBucket: DashboardInvoice["status"] =
+                v === "pass"
+                  ? "approved"
+                  : v === "needs_review"
+                    ? "needs_review"
+                    : "pending";
+              const totalRaw = invoice.total;
+              const amount =
+                typeof totalRaw === "number"
+                  ? totalRaw
+                  : Number.parseFloat(String(totalRaw ?? "0")) || 0;
+              const invDateRaw = invoice.invoice_date;
+              const invDate =
+                typeof invDateRaw === "string" ? new Date(invDateRaw) : null;
+              const daysOld =
+                invDate && !Number.isNaN(invDate.getTime())
+                  ? Math.max(
+                      0,
+                      Math.round((Date.now() - invDate.getTime()) / 86_400_000),
+                    )
+                  : undefined;
+              const current: DashboardInvoice = {
+                vendor: String(invoice.vendor_name ?? "Unknown"),
+                amount,
+                glCode:
+                  (posting?.ledger_account as string | undefined) ?? "Pending",
+                status: statusBucket,
+                invoiceNumber: String(invoice.invoice_number ?? ""),
+                daysOld,
+              };
+              setDashboardInvoices([current]);
+            } catch {
+              // Network / parse errors are non-fatal — leave the
+              // dashboard with its DEMO seed data so the user still
+              // sees something useful.
+              setDashboardInvoices([]);
+            }
+          })();
+        }
         return;
       }
       void sendMessage(
@@ -533,7 +608,7 @@ function ChatShell({
         { documentIds: includedDocIds, resumedSession: enteredViaResume },
       );
     },
-    [sendMessage, includedDocIds, enteredViaResume],
+    [sendMessage, includedDocIds, enteredViaResume, sessionId, agentSessionId],
   );
 
   // Wraps navigateToSession with the resume signal so we differentiate
@@ -859,7 +934,11 @@ function ChatShell({
         {/* M5: AP analytics dashboard — shown when show_ap_dashboard fires */}
         {!expandedTab && dashboardOpen && (
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-r md:max-w-xl">
-            <APDashboardPanel onClose={() => setDashboardOpen(false)} />
+            <APDashboardPanel
+              onClose={() => setDashboardOpen(false)}
+              invoices={dashboardInvoices.length > 0 ? dashboardInvoices : undefined}
+              replaceSeed={false}
+            />
           </div>
         )}
 
