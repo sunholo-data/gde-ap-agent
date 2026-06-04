@@ -31,6 +31,9 @@ interface MessageBubbleProps {
   skillId: string;
   userInitial: string;
   userDisplayName: string;
+  /** Optional Google/profile photo URL pulled from Firebase Auth's User
+   * object. When present, render in place of the initial-chip avatar. */
+  userPhotoURL?: string | null;
   toolCalls: ToolCallState[];
   navigateToBlock: (docId: string, blockId: string) => void;
   onAction: (event: { actionName: string; context: Record<string, unknown> }) => void;
@@ -146,6 +149,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   skillId,
   userInitial,
   userDisplayName,
+  userPhotoURL,
   toolCalls,
   navigateToBlock,
   onAction,
@@ -344,15 +348,25 @@ export const MessageBubble = React.memo(function MessageBubble({
       <div className="flex max-w-[80%] flex-col items-end gap-1">
         <div className="flex items-baseline gap-2">
           <span className="text-xs text-muted-foreground">{time}</span>
-          <span className="text-xs font-medium text-teal-700">{userDisplayName}</span>
+          <span className="text-xs font-medium text-foreground">{userDisplayName}</span>
         </div>
-        <div className="rounded-[2px_8px_8px_8px] border-l-[3px] border-teal-500 bg-[hsl(200,20%,97%)] px-3 py-2 text-sm">
+        <div className="rounded-[2px_8px_8px_8px] border-l-[3px] border-primary/60 bg-primary/[0.06] px-3 py-2 text-sm text-foreground">
           <p className="whitespace-pre-wrap">{message.content}</p>
         </div>
       </div>
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-400 to-teal-600 text-xs font-semibold text-white">
-        {userInitial}
-      </div>
+      {userPhotoURL ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={userPhotoURL}
+          alt={userDisplayName}
+          referrerPolicy="no-referrer"
+          className="h-7 w-7 shrink-0 rounded-full border border-border object-cover"
+        />
+      ) : (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-xs font-semibold text-primary">
+          {userInitial}
+        </div>
+      )}
     </div>
   );
 });

@@ -30,6 +30,10 @@ interface ChatMessageListProps {
   skillId: string;
   userInitial: string;
   userDisplayName: string;
+  /** Google/profile photo URL from Firebase Auth, when present. Threaded
+   * to MessageBubble so the user avatar renders the actual profile pic
+   * instead of an initial-chip. */
+  userPhotoURL?: string | null;
   activeDocumentContext?: ActiveDocumentContext | null;
   navigateToBlock?: (docId: string, blockId: string) => void;
   onAction: (event: { actionName: string; context: Record<string, unknown> }) => void;
@@ -83,6 +87,7 @@ export function ChatMessageList({
   skillId,
   userInitial,
   userDisplayName,
+  userPhotoURL,
   activeDocumentContext,
   navigateToBlock,
   onAction,
@@ -190,6 +195,7 @@ export function ChatMessageList({
                   skillId={skillId}
                   userInitial={userInitial}
                   userDisplayName={userDisplayName}
+                  userPhotoURL={userPhotoURL}
                   toolCalls={[]}
                   navigateToBlock={navigate}
                   onAction={onAction}
@@ -217,6 +223,7 @@ export function ChatMessageList({
               skillId={skillId}
               userInitial={userInitial}
               userDisplayName={userDisplayName}
+              userPhotoURL={userPhotoURL}
               toolCalls={toolCallsByParent[m.id] ?? []}
               navigateToBlock={navigate}
               onAction={onAction}

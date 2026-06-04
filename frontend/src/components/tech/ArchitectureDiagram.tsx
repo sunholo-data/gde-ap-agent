@@ -103,6 +103,10 @@ const EDGES: EdgeSpec[] = [
     label: "ADK Runner",
     delay: 400,
     tone: "muted",
+    // Pin on the vertical segment going UP to the orchestrator. Default
+    // labelT placement would collide with the A2A edge below since both
+    // edges share an elbow at x=595.
+    labelXY: [595, 150],
   },
   {
     id: "e-orch-pipeline",
@@ -166,9 +170,12 @@ const EDGES: EdgeSpec[] = [
     id: "e-fastapi-a2a",
     from: "fastapi",
     to: "a2a",
-    label: "A2A",
+    label: "A2A discovery",
     delay: 1800,
     tone: "muted",
+    // Pin on the vertical segment going DOWN to A2A so it doesn't
+    // collide with the ADK Runner label at the same elbow x=595.
+    labelXY: [595, 330],
   },
 ];
 

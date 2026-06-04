@@ -727,6 +727,10 @@ function ChatShell({
 
   const userInitial = (user.displayName ?? user.email ?? "U").charAt(0).toUpperCase();
   const userDisplayName = user.displayName ?? user.email ?? "You";
+  // Google sign-in populates user.photoURL with the profile photo URL.
+  // Local-mode / anonymous-group sessions leave it null and MessageBubble
+  // falls back to the initial-chip avatar.
+  const userPhotoURL = user.photoURL ?? null;
 
   // Documents currently included in agent context. Every open tab defaults to
   // included; users uncheck the box on a tab to exclude it without closing it.
@@ -1289,6 +1293,7 @@ function ChatShell({
             skillId={displayName}
             userInitial={userInitial}
             userDisplayName={userDisplayName}
+            userPhotoURL={userPhotoURL}
             stageLabel={stageLabel}
             firedStages={firedStages}
             stalledMs={stalledMs}
