@@ -2,15 +2,15 @@ import Link from "next/link";
 import { BRANDING } from "@/lib/branding";
 
 /**
- * Bottom-of-landing "how does the demo actually work" block. Three steps
- * pointed at the things a judge will do in the next 90 seconds. Closes
- * with a second CTA so they don't have to scroll back to the hero.
+ * Bottom-of-landing "how does this actually work" block. Three steps that
+ * walk a new visitor through the pipeline from first click to inspectable
+ * audit. Closes with a second CTA so they don't have to scroll back up.
  */
 const STEPS: { num: string; title: string; body: string }[] = [
   {
     num: "01",
     title: "Pick a sample invoice",
-    body: "Three fixtures pre-loaded — DOCX, ODT, EML — so you can demo the pipeline without finding your own file. Or drop your own invoice in.",
+    body: "Three fixtures pre-loaded — DOCX, ODT, EML — so you can run the pipeline without finding your own file. Or drop your own invoice in.",
   },
   {
     num: "02",
@@ -29,10 +29,10 @@ export function DemoSteps() {
     <section className="mx-auto w-full max-w-7xl px-6 py-20 md:px-10 md:py-28">
       <div className="mx-auto max-w-2xl text-center">
         <h2 className="font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
-          The 90-second tour
+          How it works
         </h2>
         <p className="mt-3 font-display text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
-          A demo that explains itself.
+          Every decision, inspectable.
         </p>
         <p className="mt-3 text-base text-muted-foreground">
           No video, no slide deck. Every claim the agent makes shows up in a Card you can click into.
@@ -60,7 +60,7 @@ export function DemoSteps() {
           <span aria-hidden className="transition-transform group-hover:translate-x-0.5">→</span>
         </Link>
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          No signup required for the demo
+          No signup required
         </span>
       </div>
     </section>

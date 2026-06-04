@@ -70,19 +70,20 @@ export const BRANDING = {
 
   /** Routes + copy for the AP showcase landing experience.
    * The landing page funnels visitors to a single demo flow; the tech page
-   * exists for judges who want the protocol-stack story. */
+   * exists for anyone who wants the protocol-stack story (evaluators,
+   * integrators, developers). */
   demo: {
     /** Friendly slug-route into the AP orchestrator chat. */
     chatHref: "/chat/@gde-ap-agent/ap-orchestrator",
     /** Judges-facing technical breakdown route. */
     techHref: "/tech",
     /** Hero copy. Two-line headline split for typographic control. */
-    heroEyebrow: "Live demo · Google for Startups AI Agents Challenge",
+    heroEyebrow: "Accounts Payable · Live demo",
     heroLineA: "Invoices in.",
     heroLineB: "Audit-grade postings out.",
     heroBody:
       "Drop an invoice. Watch a four-agent ADK pipeline extract it deterministically with AILANG Parse, validate against the vendor master, decide a posting, and surface every step as an inspectable artifact.",
-    ctaPrimary: "Try the AP demo",
+    ctaPrimary: "Open the demo",
     ctaSecondary: "How it works",
     /** Six tech pillars used on landing + /tech. AILANG leads — it's the
      * differentiator (everything else is industry protocols; AILANG is ours).

@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * /tech — judges-facing technical breakdown.
+ * /tech — technical breakdown for evaluators, integrators, and developers.
  *
  * The pitch is: every claim in the live demo is backed by a specific
  * protocol or piece of infrastructure. This page enumerates them, says
@@ -44,7 +44,7 @@ const PILLARS: PillarSection[] = [
     doesInDemo:
       "Reads invoices (DOCX, ODT, XLSX, EML, PDF) into structured JSON without burning a single LLM token on extraction. AILANG's effect system guarantees the parser can't perform any side-effect outside the parse — what comes out is auditable by construction.",
     whereToSee:
-      "Run the demo and watch the Extract step in the pipeline rail finish in under a second on a clean DOCX. That's pure AILANG — Gemini is never asked to read the file.",
+      "Process a sample invoice and watch the Extract step in the pipeline rail finish in under a second on a clean DOCX. That's pure AILANG — Gemini is never asked to read the file.",
     source: { label: "ailang.sunholo.com", href: BRANDING.links.ailang },
     isFamily: true,
   },
@@ -140,7 +140,7 @@ export default function TechPage() {
         {/* Hero / framing */}
         <section className="mb-20">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-muted/40 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-            For the judges
+            Technical overview
           </div>
           <h1 className="font-display text-4xl font-bold tracking-tight text-foreground md:text-6xl">
             One protocol per problem.
@@ -148,10 +148,10 @@ export default function TechPage() {
             <span className="gradient-text-brand">Everything inspectable.</span>
           </h1>
           <p className="mt-6 max-w-3xl text-lg leading-relaxed text-muted-foreground">
-            The AP showcase isn't a monolithic app with an &ldquo;AI feature.&rdquo; It&apos;s a
-            stack of six narrow protocols, each doing one thing well, composed into a
-            multi-agent pipeline where every step you see on the screen maps to a specific
-            file, function, or wire event.
+            This isn&apos;t a monolithic app with an &ldquo;AI feature.&rdquo; It&apos;s a stack of six
+            narrow protocols, each doing one thing well, composed into a multi-agent
+            pipeline where every step on screen maps to a specific file, function, or wire
+            event.
           </p>
         </section>
 
@@ -162,7 +162,7 @@ export default function TechPage() {
             One invoice, end-to-end.
           </h2>
           <p className="mt-3 max-w-2xl text-base text-muted-foreground">
-            What actually happens between &ldquo;Try the demo&rdquo; and a posting record in
+            What actually happens between &ldquo;open the demo&rdquo; and a posting record in
             the audit pane. Each edge is a real protocol carrying real traffic — animated
             so you can see the direction of flow.
           </p>
@@ -175,7 +175,7 @@ export default function TechPage() {
         <section className="mb-20">
           <SectionLabel>The layered view</SectionLabel>
           <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
-            Four layers, six protocols, one demo.
+            Four layers, six protocols, one stack.
           </h2>
           <p className="mt-3 max-w-2xl text-base text-muted-foreground">
             The same stack, flattened. Each layer is replaceable in isolation — that&apos;s
@@ -194,7 +194,7 @@ export default function TechPage() {
               Six pillars, in order.
             </h2>
             <p className="mt-3 max-w-2xl text-base text-muted-foreground">
-              AILANG leads — it&apos;s ours, and it&apos;s the reason the demo can promise
+              AILANG leads — it&apos;s ours, and it&apos;s the reason this stack can promise
               zero-LLM-token extraction. Everything else is industry protocol, picked for fit.
             </p>
           </div>
@@ -208,7 +208,7 @@ export default function TechPage() {
         <section className="mb-20">
           <SectionLabel>The walkthrough</SectionLabel>
           <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
-            What you will see in 90 seconds.
+            The end-to-end flow.
           </h2>
           <ol className="mt-8 divide-y divide-border overflow-hidden rounded-lg border border-border">
             {DEMO_FLOW.map((row) => (

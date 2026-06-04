@@ -1,11 +1,15 @@
 /**
  * Inline SVG glyphs for each tech pillar.
  *
- * Logos can't be redistributed safely (different licenses, drift over
- * time, brand-guidelines violations); these are semantic abstractions
- * that survive a rebrand and stay clean at 16/24/48px. One stroke
- * style, currentColor — they take on the surrounding text color.
+ * For AILANG we render the actual brand mark (loaded from /public/images/logo)
+ * since it's our project and we control the asset. The other protocols
+ * (ADK / A2UI / MCP / AG-UI / A2A) use semantic abstractions — official
+ * logos can't be safely redistributed (license, guideline drift) and a
+ * neutral glyph stays clean at 16/24/48px. One stroke style, currentColor.
  */
+import Image from "next/image";
+import { BRANDING } from "@/lib/branding";
+
 type IconKey = "ailang" | "adk" | "a2ui" | "mcp-apps" | "ag-ui" | "a2a";
 
 interface ProtocolIconProps {
@@ -16,13 +20,16 @@ interface ProtocolIconProps {
 export function ProtocolIcon({ pillar, className = "h-5 w-5" }: ProtocolIconProps) {
   switch (pillar) {
     case "ailang":
-      // Code-bracket + a tight inner line — "parse" as structural reading.
+      // Real AILANG brand mark — owned asset, safe to embed.
       return (
-        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M8 5L3 12l5 7" />
-          <path d="M16 5l5 7-5 7" />
-          <path d="M10 9h4M10 15h4" />
-        </svg>
+        <Image
+          src={BRANDING.logo.familyMark}
+          alt=""
+          width={40}
+          height={40}
+          aria-hidden="true"
+          className={className}
+        />
       );
     case "adk":
       // Four nodes connected — multi-agent orchestration.

@@ -10,7 +10,7 @@ import { BRANDING } from "@/lib/branding";
  * Right column: a static "live pipeline" diagram showing the four-agent
  * sequence with a sample invoice trickling through it. The right column
  * is intentionally not interactive — it's a teaser. The interactive thing
- * is the CTA, which drops the judge straight into the orchestrator chat.
+ * is the CTA, which drops the visitor straight into the orchestrator chat.
  *
  * Typography: Montserrat (display) headline, JetBrains Mono (numbers)
  * for the invoice amount, Inter for body. Parse-blue is the conviction
