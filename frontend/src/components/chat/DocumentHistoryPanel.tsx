@@ -70,8 +70,8 @@ function SessionRow({ session, isActive, isOwner, onClick, onRename, onDelete }:
     return (
       <div
         className={[
-          "w-full px-3 py-2 rounded text-sm",
-          isActive ? "bg-blue-50 border border-blue-200" : "bg-gray-50",
+          "w-full rounded border px-3 py-2 text-sm",
+          isActive ? "border-primary/40 bg-primary/5" : "border-border bg-muted/30",
         ].join(" ")}
       >
         <input
@@ -89,10 +89,10 @@ function SessionRow({ session, isActive, isOwner, onClick, onRename, onDelete }:
             }
           }}
           disabled={saving}
-          className="w-full bg-transparent font-medium text-gray-900 outline-none"
+          className="w-full bg-transparent font-medium text-foreground outline-none"
           aria-label="Rename conversation"
         />
-        <div className="text-xs text-gray-400 mt-0.5">
+        <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
           {time} · {session.turn_count} turn{session.turn_count !== 1 ? "s" : ""}
         </div>
       </div>
@@ -102,15 +102,15 @@ function SessionRow({ session, isActive, isOwner, onClick, onRename, onDelete }:
   return (
     <div
       className={[
-        "group flex w-full items-center gap-1 px-3 py-2 rounded text-sm transition-colors",
+        "group flex w-full items-center gap-1 rounded border px-3 py-1.5 text-sm transition-colors",
         isActive
-          ? "bg-blue-50 border border-blue-200 text-blue-900"
-          : "hover:bg-gray-50 text-gray-700",
+          ? "border-primary/40 bg-primary/5 text-foreground"
+          : "border-transparent text-muted-foreground hover:bg-muted/30 hover:text-foreground",
       ].join(" ")}
     >
       <button onClick={onClick} className="min-w-0 flex-1 text-left">
-        <div className="font-medium truncate">{initialTitle}</div>
-        <div className="text-xs text-gray-400 mt-0.5">
+        <div className="truncate text-xs font-medium">{initialTitle}</div>
+        <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">
           {time} · {session.turn_count} turn{session.turn_count !== 1 ? "s" : ""}
         </div>
       </button>
@@ -124,7 +124,7 @@ function SessionRow({ session, isActive, isOwner, onClick, onRename, onDelete }:
           }}
           aria-label={`Rename ${initialTitle}`}
           title="Rename"
-          className="shrink-0 rounded p-1 text-gray-400 opacity-0 hover:bg-gray-200 hover:text-gray-700 group-hover:opacity-100"
+          className="shrink-0 rounded p-1 text-muted-foreground/60 opacity-0 transition-colors hover:bg-muted hover:text-foreground group-hover:opacity-100"
         >
           <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
             <path d="M11 2l3 3-7 7H4v-3l7-7z" strokeLinecap="round" strokeLinejoin="round" />
@@ -140,7 +140,7 @@ function SessionRow({ session, isActive, isOwner, onClick, onRename, onDelete }:
           }}
           aria-label={`Delete ${initialTitle}`}
           title="Delete"
-          className="shrink-0 rounded p-1 text-gray-400 opacity-0 hover:bg-red-100 hover:text-red-600 group-hover:opacity-100"
+          className="shrink-0 rounded p-1 text-muted-foreground/60 opacity-0 transition-colors hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
         >
           <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
             <path d="M3 4h10M5 4v9a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V4M7 4V3a1 1 0 0 1 1-1h0a1 1 0 0 1 1 1v1" strokeLinecap="round" strokeLinejoin="round" />
@@ -179,11 +179,16 @@ export default function DocumentHistoryPanel({
   onNewSession,
   onDeleteActive,
 }: DocumentHistoryPanelProps) {
-  const [isOpen, setIsOpen] = useState(true);
+  // Default COLLAPSED so the document is the primary thing on screen.
+  // The earlier default (open) made the history list dominate the
+  // pane on docs used across many sessions — see "template-level
+  // issue" note for upstream feedback to sunholo-data/ai-protocol-platform.
+  const [isOpen, setIsOpen] = useState(false);
   // refetch is exposed by the hook but unused here — cross-panel sync is
   // handled via the sessions-changed event bus, which the hook subscribes
   // to itself.
   const { sessions, isLoading, error } = useDocumentSessions(documentId);
+  const totalCount = sessions.length;
 
   const mine = sessions.filter((s) => s.owner_uid === currentUserUid);
   const team = sessions.filter((s) => s.owner_uid !== currentUserUid);
@@ -221,35 +226,44 @@ export default function DocumentHistoryPanel({
   }
 
   return (
-    <div className="border-b border-gray-200">
-      {/* Header */}
+    <div className="shrink-0 border-t border-border bg-background">
+      {/* Header — always visible, collapsible. Counter badge so the user
+          sees the history exists without having to expand it. */}
       <button
         onClick={() => setIsOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+        className="flex w-full items-center justify-between px-4 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
         aria-expanded={isOpen}
       >
-        <span>Conversations</span>
-        <span className="text-gray-400">{isOpen ? "▲" : "▼"}</span>
+        <span className="flex items-center gap-2 font-mono uppercase tracking-wider">
+          Conversations
+          {totalCount > 0 && (
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+              {totalCount}
+            </span>
+          )}
+        </span>
+        <span className="text-muted-foreground/50">{isOpen ? "▲" : "▼"}</span>
       </button>
 
       {isOpen && (
-        <div className="px-3 pb-3 space-y-3">
+        // Cap the open list at ~25vh so the parent DocumentPanel stays
+        // the primary thing on screen even when a doc has hundreds of
+        // sessions tied to it. Internal scroll handles the overflow.
+        <div className="max-h-[25vh] space-y-3 overflow-y-auto border-t border-border px-3 pb-3 pt-2">
           {isLoading && (
-            <p className="text-xs text-gray-400 px-1">Loading…</p>
+            <p className="px-1 text-xs text-muted-foreground">Loading…</p>
           )}
           {error && (
-            <p className="text-xs text-red-500 px-1">{error}</p>
+            <p className="px-1 text-xs text-destructive">{error}</p>
           )}
 
-          {/* Mine section — hidden entirely when load failed; the error
-              banner above is the only message. */}
           {!error && (
             <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1 mb-1">
+              <p className="mb-1 px-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                 Mine
               </p>
               {mine.length === 0 && !isLoading && (
-                <p className="text-xs text-gray-400 px-1">No conversations yet</p>
+                <p className="px-1 text-xs text-muted-foreground/60">No conversations yet</p>
               )}
               <div className="space-y-1">
                 {mine.map((s) => (
@@ -267,10 +281,9 @@ export default function DocumentHistoryPanel({
             </div>
           )}
 
-          {/* Team section — only shown when there are team sessions */}
           {!error && team.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1 mb-1">
+              <p className="mb-1 px-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                 Team
               </p>
               <div className="space-y-1">
@@ -288,10 +301,9 @@ export default function DocumentHistoryPanel({
             </div>
           )}
 
-          {/* New conversation */}
           <button
             onClick={onNewSession}
-            className="w-full text-left px-3 py-2 rounded text-sm text-blue-600 hover:bg-blue-50 transition-colors"
+            className="w-full rounded px-3 py-1.5 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/5"
           >
             + New conversation
           </button>
