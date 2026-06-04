@@ -3,6 +3,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { BrandFooter } from "@/components/BrandFooter";
 import { ProtocolDiagram } from "@/components/tech/ProtocolDiagram";
+import { ArchitectureDiagram } from "@/components/tech/ArchitectureDiagram";
+import { ProtocolIcon } from "@/components/tech/ProtocolIcon";
 import { BRANDING } from "@/lib/branding";
 
 export const metadata: Metadata = {
@@ -22,8 +24,10 @@ export const metadata: Metadata = {
  * and identifiers. Lift-source: SUBMISSION.md.
  */
 
+type PillarKey = "ailang" | "adk" | "a2ui" | "mcp-apps" | "ag-ui" | "a2a";
+
 interface PillarSection {
-  key: string;
+  key: PillarKey;
   label: string;
   role: string;
   doesInDemo: string;
@@ -151,14 +155,30 @@ export default function TechPage() {
           </p>
         </section>
 
-        {/* Protocol diagram */}
+        {/* Architecture diagram (animated) */}
         <section className="mb-20">
-          <SectionLabel>The stack</SectionLabel>
+          <SectionLabel>The architecture</SectionLabel>
+          <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+            One invoice, end-to-end.
+          </h2>
+          <p className="mt-3 max-w-2xl text-base text-muted-foreground">
+            What actually happens between &ldquo;Try the demo&rdquo; and a posting record in
+            the audit pane. Each edge is a real protocol carrying real traffic — animated
+            so you can see the direction of flow.
+          </p>
+          <div className="mt-8">
+            <ArchitectureDiagram />
+          </div>
+        </section>
+
+        {/* Protocol diagram — layered view */}
+        <section className="mb-20">
+          <SectionLabel>The layered view</SectionLabel>
           <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
             Four layers, six protocols, one demo.
           </h2>
           <p className="mt-3 max-w-2xl text-base text-muted-foreground">
-            The architectural picture. Each layer is replaceable in isolation — that&apos;s
+            The same stack, flattened. Each layer is replaceable in isolation — that&apos;s
             why we&apos;re betting on protocols rather than a vertically-integrated framework.
           </p>
           <div className="mt-8">
@@ -275,6 +295,13 @@ function PillarBlock({ pillar, index }: { pillar: PillarSection; index: number }
           <span className="font-mono text-xs font-bold tabular-nums text-primary">
             {String(index).padStart(2, "0")}
           </span>
+          <ProtocolIcon
+            pillar={pillar.key}
+            className={[
+              "h-10 w-10",
+              pillar.isFamily ? "text-ailang" : "text-foreground/80",
+            ].join(" ")}
+          />
           <h3
             className={[
               "font-display text-3xl font-bold tracking-tight md:text-4xl",

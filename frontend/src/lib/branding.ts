@@ -85,14 +85,46 @@ export const BRANDING = {
     ctaPrimary: "Try the AP demo",
     ctaSecondary: "How it works",
     /** Six tech pillars used on landing + /tech. AILANG leads — it's the
-     * differentiator (everything else is industry protocols; AILANG is ours). */
+     * differentiator (everything else is industry protocols; AILANG is ours).
+     * Each pillar carries a canonical spec/docs link surfaced on the landing
+     * stripe and the /tech deep-dive. */
     pillars: [
-      { key: "ailang", label: "AILANG", tagline: "Deterministic parse + effect-typed code" },
-      { key: "adk", label: "Google ADK", tagline: "Multi-agent orchestration" },
-      { key: "a2ui", label: "A2UI", tagline: "Declarative agent UI" },
-      { key: "mcp-apps", label: "MCP Apps", tagline: "Sandboxed iframe artifacts" },
-      { key: "ag-ui", label: "AG-UI", tagline: "Streaming events to the client" },
-      { key: "a2a", label: "A2A", tagline: "Cross-agent discovery" },
+      {
+        key: "ailang",
+        label: "AILANG",
+        tagline: "Deterministic parse + effect-typed code",
+        spec: "https://ailang.sunholo.com",
+      },
+      {
+        key: "adk",
+        label: "Google ADK",
+        tagline: "Multi-agent orchestration",
+        spec: "https://google.github.io/adk-docs/",
+      },
+      {
+        key: "a2ui",
+        label: "A2UI",
+        tagline: "Declarative agent UI",
+        spec: "https://github.com/agentic-protocols/a2ui",
+      },
+      {
+        key: "mcp-apps",
+        label: "MCP Apps",
+        tagline: "Sandboxed iframe artifacts",
+        spec: "https://modelcontextprotocol.io",
+      },
+      {
+        key: "ag-ui",
+        label: "AG-UI",
+        tagline: "Streaming events to the client",
+        spec: "https://ag-ui.com",
+      },
+      {
+        key: "a2a",
+        label: "A2A",
+        tagline: "Cross-agent discovery",
+        spec: "https://a2aproject.dev",
+      },
     ],
   },
 } as const;

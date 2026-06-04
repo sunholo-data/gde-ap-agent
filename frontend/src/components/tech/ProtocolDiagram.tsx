@@ -15,8 +15,11 @@ const LAYERS: { num: string; name: string; protocols: string[]; role: string }[]
   {
     num: "L3",
     name: "Transport",
-    protocols: ["AG-UI", "CopilotKit"],
-    role: "SSE streaming — every tool call, stage progress event, and emit_* payload reaches the client live",
+    protocols: ["AG-UI"],
+    // We integrate AG-UI via @ag-ui/client directly (not via CopilotKit) —
+    // CopilotKit's runtimeUrl wants a GraphQL CopilotKit-Runtime endpoint,
+    // not a bare AG-UI SSE stream. See AGUIProvider.tsx for the why.
+    role: "SSE streaming — every tool call, stage progress event, and emit_* payload reaches the client live via @ag-ui/client",
   },
   {
     num: "L2",

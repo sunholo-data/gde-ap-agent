@@ -40,7 +40,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${inter.variable} ${montserrat.variable} ${jetbrains.variable}`}
+      className={`${inter.variable} ${montserrat.variable} ${jetbrains.variable}`}
     >
       <body className="font-sans bg-background text-foreground min-h-screen antialiased">
         <LocalModeBanner />
