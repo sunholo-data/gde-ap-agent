@@ -141,8 +141,7 @@ with `updateDataModel` per-path patches that merge into this surface.
     "updateComponents": {
       "surfaceId": "workspace",
       "components": [
-        {"id": "root", "component": "Column", "children": ["header", "divider1", "meta", "divider2", "items", "divider3", "footer", "actions"]},
-        {"id": "actions", "component": "Row", "children": ["map_btn", "dashboard_btn"]},
+        {"id": "root", "component": "Column", "children": ["header", "divider1", "meta", "divider2", "items", "divider3", "footer"]},
         {"id": "header", "component": "Row", "children": ["vendor_label", "status_label"]},
         {"id": "vendor_label", "component": "Text", "text": {"path": "/vendor"}, "variant": "h2"},
         {"id": "status_label", "component": "Text", "text": {"path": "/status"}, "variant": "h3"},
@@ -171,11 +170,7 @@ with `updateDataModel` per-path patches that merge into this surface.
         {"id": "total_lbl", "component": "Text", "text": "Total", "variant": "h3"},
         {"id": "total_val", "component": "Text", "text": {"path": "/total"}, "variant": "h3"},
         {"id": "verdict_text", "component": "Text", "text": {"path": "/verdict"}, "variant": "body"},
-        {"id": "action_text", "component": "Text", "text": {"path": "/action"}, "variant": "caption"},
-        {"id": "map_btn", "component": "Button", "child": "map_btn_text", "action": {"event": {"name": "show_vendor_globe", "context": {"vendor": {"path": "/vendor"}, "country": {"path": "/vendorCountry"}, "amount": {"path": "/totalAmount"}}}}},
-        {"id": "map_btn_text", "component": "Text", "text": "🌍 View Vendor on Map"},
-        {"id": "dashboard_btn", "component": "Button", "child": "dashboard_btn_text", "action": {"event": {"name": "show_ap_dashboard", "context": {}}}},
-        {"id": "dashboard_btn_text", "component": "Text", "text": "📊 AP Analytics"}
+        {"id": "action_text", "component": "Text", "text": {"path": "/action"}, "variant": "caption"}
       ]
     }
   },
