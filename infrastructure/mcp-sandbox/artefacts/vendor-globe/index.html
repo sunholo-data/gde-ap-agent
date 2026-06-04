@@ -1,16 +1,67 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Vendor Globe</title>
   <style>
+    /* Theme tokens — switch by setting [data-theme="dark"] on <html>.
+       Defaults to LIGHT so the artefact matches the host's light shell. */
+    :root, :root[data-theme="light"] {
+      --bg: #ffffff;
+      --bg-elev: #f7f9fc;
+      --fg: hsl(216, 65%, 14%);
+      --fg-muted: hsl(215, 20%, 40%);
+      --border: hsl(215, 28%, 88%);
+      --primary: #2563eb;
+      --primary-soft: rgba(37, 99, 235, 0.12);
+      --ocean-1: #e8f0ff;
+      --ocean-2: #c7d8f5;
+      --ocean-3: #9bb5dc;
+      --grid: rgba(37, 99, 235, 0.18);
+      --rim: rgba(37, 99, 235, 0.35);
+      --arc: rgba(37, 99, 235, 0.55);
+      --vendor-dot: #2563eb;
+      --vendor-label: hsl(216, 65%, 14%);
+      --origin: #1d4ed8;
+    }
+    :root[data-theme="dark"] {
+      --bg: #0a0f1e;
+      --bg-elev: #0d1420;
+      --fg: #e8e8e8;
+      --fg-muted: #888;
+      --border: rgba(255, 255, 255, 0.08);
+      --primary: #60a5fa;
+      --primary-soft: rgba(96, 165, 250, 0.18);
+      --ocean-1: #1a2a6c;
+      --ocean-2: #0d1b3e;
+      --ocean-3: #060d1f;
+      --grid: rgba(100, 140, 200, 0.12);
+      --rim: rgba(100, 140, 200, 0.4);
+      --arc: rgba(96, 165, 250, 0.45);
+      --vendor-dot: #60a5fa;
+      --vendor-label: #fff;
+      --origin: #93c5fd;
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; background: #0a0f1e; color: #e8e8e8; font-family: system-ui, sans-serif; overflow: hidden; }
+    html, body {
+      width: 100%; height: 100%; background: var(--bg); color: var(--fg);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
     #globe-container { width: 100%; height: 100%; position: relative; }
-    #label { position: absolute; top: 12px; left: 0; right: 0; text-align: center; font-size: 13px; color: #e8a800; font-weight: 600; letter-spacing: 0.5px; pointer-events: none; }
-    #legend { position: absolute; bottom: 12px; left: 12px; font-size: 11px; color: #888; pointer-events: none; }
-    #legend span { color: #e8a800; }
+    #label {
+      position: absolute; top: 12px; left: 0; right: 0; text-align: center;
+      font-size: 11px; color: var(--fg-muted); font-weight: 600;
+      letter-spacing: 0.16em; text-transform: uppercase; pointer-events: none;
+    }
+    #legend {
+      position: absolute; bottom: 12px; left: 12px; font-size: 11px;
+      color: var(--fg-muted); pointer-events: none;
+      font-family: ui-monospace, "JetBrains Mono", monospace;
+    }
+    #legend span { color: var(--primary); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -20,7 +71,6 @@
   </div>
 
   <script type="module">
-    // Country name → [lat, lng] lookup (top AP vendor countries)
     const COUNTRY_COORDS = {
       "united states": [37.09, -95.71], "us": [37.09, -95.71], "usa": [37.09, -95.71],
       "united kingdom": [55.38, -3.44], "uk": [55.38, -3.44], "gb": [55.38, -3.44],
@@ -47,53 +97,51 @@
       "finland": [61.92, 25.75], "fi": [61.92, 25.75],
     };
 
-    // HQ origin (London default — AP agent is UK-headquartered)
     const ORIGIN = { lat: 51.51, lng: -0.13, label: "London HQ" };
-
     let vendors = [];
 
-    // MCP Apps protocol
     const TRANSPORT_KEY = "__platformTransport";
 
     function reply(id, result) {
       window.parent.postMessage(
-        { jsonrpc: "2.0", id, result, [TRANSPORT_KEY]: true },
-        "*"
+        { jsonrpc: "2.0", id, result, [TRANSPORT_KEY]: true }, "*"
       );
     }
     function notify(method, params) {
       window.parent.postMessage(
-        { jsonrpc: "2.0", method, params, [TRANSPORT_KEY]: true },
-        "*"
+        { jsonrpc: "2.0", method, params, [TRANSPORT_KEY]: true }, "*"
       );
     }
 
-    // Simple canvas-based globe using equirectangular projection + sphere
+    // Read a CSS var off :root — recomputed on each draw so theme flips
+    // applied via dataset.theme are picked up without a redraw bookkeeping
+    // pass. Canvas can't use var() directly, so we resolve here.
+    function tok(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
     const container = document.getElementById("globe-container");
     const canvas = document.createElement("canvas");
     canvas.style.cssText = "width:100%;height:100%;display:block;";
     container.appendChild(canvas);
-
     const ctx = canvas.getContext("2d");
     let rotation = 0;
-    let animFrame;
 
     function resize() {
       canvas.width = container.clientWidth * window.devicePixelRatio;
       canvas.height = container.clientHeight * window.devicePixelRatio;
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
     }
     window.addEventListener("resize", () => { resize(); });
     resize();
 
     function project(lat, lng, cx, cy, r, rotDeg) {
-      const rotRad = (rotDeg * Math.PI) / 180;
       const latRad = (lat * Math.PI) / 180;
       const lngRad = ((lng + rotDeg) * Math.PI) / 180;
       const x = cx + r * Math.cos(latRad) * Math.sin(lngRad);
       const y = cy - r * Math.sin(latRad);
       const z = Math.cos(latRad) * Math.cos(lngRad);
-      return { x, y, z }; // z > 0 = visible face
+      return { x, y, z };
     }
 
     function drawGlobe() {
@@ -104,19 +152,19 @@
       const cx = W / 2, cy = H / 2;
       const r = Math.min(W, H) * 0.38;
 
-      // Ocean sphere
+      // Ocean sphere — radial gradient using theme tokens
       const grad = ctx.createRadialGradient(cx - r * 0.25, cy - r * 0.25, r * 0.05, cx, cy, r);
-      grad.addColorStop(0, "#1a2a6c");
-      grad.addColorStop(0.5, "#0d1b3e");
-      grad.addColorStop(1, "#060d1f");
+      grad.addColorStop(0, tok("--ocean-1"));
+      grad.addColorStop(0.6, tok("--ocean-2"));
+      grad.addColorStop(1, tok("--ocean-3"));
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fillStyle = grad;
       ctx.fill();
 
-      // Grid lines (latitude + longitude)
-      ctx.strokeStyle = "rgba(100,140,200,0.12)";
-      ctx.lineWidth = 0.5;
+      // Grid lines
+      ctx.strokeStyle = tok("--grid");
+      ctx.lineWidth = 0.6;
       for (let lat = -80; lat <= 80; lat += 20) {
         ctx.beginPath();
         let first = true;
@@ -142,32 +190,41 @@
 
       // Origin marker (HQ)
       const orig = project(ORIGIN.lat, ORIGIN.lng, cx, cy, r, rotation);
+      const originColor = tok("--origin");
       if (orig.z > 0) {
         ctx.beginPath();
         ctx.arc(orig.x, orig.y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = "#e8a800";
+        ctx.fillStyle = originColor;
         ctx.fill();
-        ctx.font = "bold 10px system-ui";
-        ctx.fillStyle = "#e8a800";
+        ctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
+        ctx.fillStyle = originColor;
         ctx.fillText(ORIGIN.label, orig.x + 8, orig.y + 4);
       }
 
-      // Vendor arcs + dots
+      // Vendor dots + arcs
+      const vendorColor = tok("--vendor-dot");
+      const vendorLabelColor = tok("--vendor-label");
+      const arcColor = tok("--arc");
       vendors.forEach((v) => {
         const vp = project(v.lat, v.lng, cx, cy, r, rotation);
         if (vp.z > 0) {
-          // Vendor dot
           const dotR = Math.max(4, Math.min(12, 4 + Math.sqrt(v.amount / 1000)));
+          // Soft halo
+          ctx.beginPath();
+          ctx.arc(vp.x, vp.y, dotR + 3, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(37, 99, 235, 0.15)";
+          ctx.fill();
+          // Dot
           ctx.beginPath();
           ctx.arc(vp.x, vp.y, dotR, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(232,168,0,0.85)";
+          ctx.fillStyle = vendorColor;
           ctx.fill();
-          ctx.font = "10px system-ui";
-          ctx.fillStyle = "#fff";
-          ctx.fillText(v.name, vp.x + dotR + 3, vp.y + 4);
+          ctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
+          ctx.fillStyle = vendorLabelColor;
+          ctx.fillText(v.name, vp.x + dotR + 4, vp.y + 4);
         }
 
-        // Arc from origin to vendor (great-circle approximation via bezier)
+        // Arc — great-circle approximation via bezier control point above midpoint
         if (orig.z > 0 && vp.z > 0) {
           const midLat = (ORIGIN.lat + v.lat) / 2;
           const midLng = (ORIGIN.lng + v.lng) / 2;
@@ -176,7 +233,7 @@
             ctx.beginPath();
             ctx.moveTo(orig.x, orig.y);
             ctx.quadraticCurveTo(mp.x, mp.y, vp.x, vp.y);
-            ctx.strokeStyle = "rgba(232,168,0,0.35)";
+            ctx.strokeStyle = arcColor;
             ctx.lineWidth = 1.5;
             ctx.stroke();
           }
@@ -186,12 +243,12 @@
       // Globe rim
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(100,140,200,0.4)";
+      ctx.strokeStyle = tok("--rim");
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      rotation += 0.12;
-      animFrame = requestAnimationFrame(drawGlobe);
+      rotation += 0.10;
+      requestAnimationFrame(drawGlobe);
     }
 
     drawGlobe();
@@ -205,25 +262,19 @@
       vendors.push({ name, lat: coords[0], lng: coords[1], amount: amount || 0 });
     }
 
-    // MCP Apps protocol roles:
-    //   - This artefact is the CLIENT. The host (StaticArtefactFrame) is the
-    //     SERVER for the ``ui/initialize`` handshake — it replies with the
-    //     hostContext (theme, displayMode, locale).
-    //   - We INITIATE the handshake on load by sending ``ui/initialize``,
-    //     wait for the response, then send the ``ui/notifications/initialized``
-    //     notification to confirm. The host's ``onInitialized`` callback fires
-    //     on that notification — without it the host spinner never resolves.
-    //   - We also still handle the legacy "host sends ui/initialize" path so
-    //     older host implementations keep working.
+    function applyTheme(theme) {
+      const t = theme === "dark" ? "dark" : "light";
+      document.documentElement.dataset.theme = t;
+    }
 
+    // ─── MCP Apps client handshake ────────────────────────────────────
     let initRequestId = 1;
-    const pendingResponses = new Map(); // id -> resolver
+    const pendingResponses = new Map();
 
     function request(method, params) {
       const id = `vg-${initRequestId++}`;
       window.parent.postMessage(
-        { jsonrpc: "2.0", id, method, params, [TRANSPORT_KEY]: true },
-        "*"
+        { jsonrpc: "2.0", id, method, params, [TRANSPORT_KEY]: true }, "*"
       );
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -237,12 +288,10 @@
       });
     }
 
-    // MCP Apps message handler
     window.addEventListener("message", (event) => {
       const msg = event.data;
       if (!msg || !msg.jsonrpc) return;
 
-      // Response to a request we sent (eg. ui/initialize)
       if (msg.id !== undefined && msg.id !== null && pendingResponses.has(msg.id)) {
         const resolver = pendingResponses.get(msg.id);
         pendingResponses.delete(msg.id);
@@ -250,24 +299,27 @@
         return;
       }
 
-      // Legacy path: host sent ui/initialize as a request — reply as before.
       if (msg.method === "ui/initialize") {
+        // Legacy host-initiated handshake path
+        const ctxTheme = msg.params?.hostContext?.theme;
+        if (ctxTheme) applyTheme(ctxTheme);
         reply(msg.id, {
           protocolVersion: "2026-01-26",
           capabilities: {},
-          serverInfo: { name: "vendor-globe", version: "1.0" },
+          serverInfo: { name: "vendor-globe", version: "1.1" },
         });
         return;
       }
 
       if (msg.method === "ui/notifications/sandbox-resource-ready") return;
+      if (msg.method === "ping") { reply(msg.id, {}); return; }
 
-      if (msg.method === "ping") {
-        reply(msg.id, {});
+      // Runtime theme push — for hosts that flip theme mid-session.
+      if (msg.method === "ui/update-theme" && msg.params?.theme) {
+        applyTheme(msg.params.theme);
         return;
       }
 
-      // Receive vendor data
       if (msg.method === "ui/update-data" && msg.params) {
         const { vendor, country, amount, originLabel } = msg.params;
         if (originLabel) document.getElementById("origin-label").textContent = originLabel;
@@ -275,7 +327,6 @@
         return;
       }
 
-      // Also accept structured content pushed via notification
       if (msg.method === "ui/notifications/data" && msg.params?.structuredContent) {
         const sc = msg.params.structuredContent;
         if (sc.vendor && sc.country) addVendor(sc.vendor, sc.country, sc.amount || 0);
@@ -283,21 +334,22 @@
       }
     });
 
-    // Kick off the handshake. We are the CLIENT — send ui/initialize, then
-    // notify initialized so the host stops spinning and starts pushing
-    // ui/update-data.
     (async () => {
       try {
-        await request("ui/initialize", {
+        const initResult = await request("ui/initialize", {
           protocolVersion: "2026-01-26",
           capabilities: {},
-          clientInfo: { name: "vendor-globe", version: "1.0" },
+          clientInfo: { name: "vendor-globe", version: "1.1" },
         });
+        // Apply theme from hostContext before signalling initialized so the
+        // host never sees the artefact paint in the wrong palette.
+        const theme = initResult?.hostContext?.theme;
+        if (theme) applyTheme(theme);
       } catch (err) {
         console.warn("[vendor-globe] ui/initialize failed:", err);
       }
       notify("ui/notifications/initialized", {
-        clientInfo: { name: "vendor-globe", version: "1.0" },
+        clientInfo: { name: "vendor-globe", version: "1.1" },
       });
     })();
   </script>

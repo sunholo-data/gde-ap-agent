@@ -70,7 +70,7 @@ export function VendorKgPanel({ resultJson }: VendorKgPanelProps) {
           artefactPath="ap-vendor-kg"
           onUpdateModelContext={handleModelContext}
           onInitialized={handleInitialized}
-          hostContext={{ theme: "dark", displayMode: "inline" }}
+          hostContext={{ theme: "light", displayMode: "inline" }}
           className="h-full w-full"
           title="Vendor Knowledge Graph"
         />

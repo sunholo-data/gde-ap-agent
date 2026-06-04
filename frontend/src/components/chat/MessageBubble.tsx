@@ -22,6 +22,7 @@ import { InlineCitation } from "@/components/chat/InlineCitation";
 import { ToolCallChip } from "@/components/chat/ToolCallChip";
 import { buildA2UICardFromJson } from "@/components/chat/JsonCardBuilder";
 import { JsonAsA2UICard } from "@/components/chat/JsonAsA2UICard";
+import { JsonAsStructuredCard } from "@/components/chat/JsonAsStructuredCard";
 import { useSurfaceRegistry } from "@/providers/SurfaceRegistry";
 import type { SkillMessage, ToolCallState } from "@/hooks/useSkillAgent";
 
@@ -314,7 +315,7 @@ export const MessageBubble = React.memo(function MessageBubble({
                 {nonA2uiCalls
                   .filter((tc) => tc.name.startsWith("emit_") && tc.argsJson)
                   .map((tc) => (
-                    <JsonAsA2UICard
+                    <JsonAsStructuredCard
                       key={`${tc.id}-card`}
                       value={tc.argsJson}
                       fallbackTitle={
@@ -326,8 +327,7 @@ export const MessageBubble = React.memo(function MessageBubble({
                               ? "Posting Record"
                               : tc.name
                       }
-                      surfaceId={`emit-${tc.id}`}
-                      className="rounded-md border border-primary/15 bg-background/60 p-2"
+                      compact
                     />
                   ))}
               </div>

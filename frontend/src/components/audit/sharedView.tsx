@@ -1,6 +1,6 @@
 "use client";
 
-import { JsonAsA2UICard } from "@/components/chat/JsonAsA2UICard";
+import { JsonAsStructuredCard } from "@/components/chat/JsonAsStructuredCard";
 import { cn } from "@/lib/utils";
 
 /**
@@ -125,56 +125,57 @@ export function InputOutputCard({
   outputLabel?: string;
   emptyOutputMessage?: string;
 }) {
-  // Both Input and Output render as A2UI Cards via JsonAsA2UICard.
-  // Replaces the prior `<pre>` raw-JSON dumps — the user-facing
-  // promise of this app is "structured agent output → nicely-rendered
-  // UI". Wherever the payload doesn't look like a renderable object
-  // (eg. a plain tool-confirmation string) JsonAsA2UICard's muted
-  // fallback shows the string so we still produce something useful.
+  // Stacked layout (was side-by-side two-column). The earlier grid-cols-2
+  // squeezed input/output into ~250px each in a 480px right panel, which
+  // forced A2UI Row's labels ("Po Reference", "Invoice Number") to wrap.
+  // Stacking restores full width to each panel and lets JsonAsStructuredCard
+  // render with a proper fixed-width-label DefinitionList layout.
   const hasInput = typeof input === "string" ? input.trim().length > 0 : input !== undefined;
   const hasOutput = output !== undefined && output !== null && (typeof output !== "string" || output.trim().length > 0);
   return (
-    <div className={cn("overflow-hidden rounded border border-border bg-background", tone === "neutral" && "")}>
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/30 px-2 py-1">
-        <span className="font-mono text-[11px] font-semibold text-primary">
+    <div
+      className={cn(
+        "overflow-hidden rounded-md border border-border bg-background",
+        tone === "neutral" && "",
+      )}
+    >
+      <header className="flex items-center justify-between gap-2 border-b border-border bg-muted/20 px-4 py-2.5">
+        <span className="flex items-center gap-2">
           {index !== undefined && (
-            <span className="mr-1.5 inline-block min-w-[1.25rem] rounded bg-muted px-1 text-center text-[9px] text-muted-foreground">
+            <span className="inline-block min-w-[1.25rem] rounded bg-primary/10 px-1.5 py-0.5 text-center font-mono text-[10px] font-semibold tabular-nums text-primary">
               {index}
             </span>
           )}
-          {title || "(unnamed)"}
+          <span className="font-display text-sm font-semibold tracking-tight text-foreground">
+            {title || "(unnamed)"}
+          </span>
         </span>
-      </div>
-      <div className="grid grid-cols-1 gap-2 p-2 md:grid-cols-2">
+      </header>
+      <div className="space-y-4 p-4">
         <div>
           <MicroLabel>{inputLabel}</MicroLabel>
-          {hasInput ? (
-            <div className="mt-0.5">
-              <JsonAsA2UICard
-                value={input}
-                fallbackTitle="Input"
-                surfaceId={`audit-input-${title || index || "noid"}`}
-                fallbackMessage="(no structured input)"
-              />
-            </div>
-          ) : (
-            <p className="mt-0.5 text-[10px] italic text-muted-foreground/60">(no input)</p>
-          )}
+          <div className="mt-2">
+            {hasInput ? (
+              <JsonAsStructuredCard value={input} fallbackTitle="Input" />
+            ) : (
+              <p className="text-xs italic text-muted-foreground">(no input)</p>
+            )}
+          </div>
         </div>
+        <div className="h-px bg-border" />
         <div>
           <MicroLabel>{outputLabel}</MicroLabel>
-          {hasOutput ? (
-            <div className="mt-0.5">
-              <JsonAsA2UICard
+          <div className="mt-2">
+            {hasOutput ? (
+              <JsonAsStructuredCard
                 value={output}
                 fallbackTitle="Output"
-                surfaceId={`audit-output-${title || index || "noid"}`}
                 fallbackMessage={emptyOutputMessage}
               />
-            </div>
-          ) : (
-            <p className="mt-0.5 text-[10px] italic text-muted-foreground/60">{emptyOutputMessage}</p>
-          )}
+            ) : (
+              <p className="text-xs italic text-muted-foreground">{emptyOutputMessage}</p>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -275,12 +275,25 @@ function InvocationBody({ record }: { record: InvocationRecord }) {
       <div>
         <SectionLabel>Structured I/O</SectionLabel>
         <div className="mt-1">
+          {/* For function-as-schema emit_* tools, the args ARE the canonical
+              emitted payload — the tool result is just a STOP signal to the
+              orchestrator. Show the args as both Input and Output so judges
+              see the actual structured data on the Output side rather than
+              the "STOP. Do NOT call this tool again." message. */}
           <InputOutputCard
             title={record.name}
             input={record.argsJson}
-            output={record.resultContent}
+            output={
+              record.name.startsWith("emit_") && record.argsJson
+                ? record.argsJson
+                : record.resultContent
+            }
             inputLabel="Input (orchestrator → specialist)"
-            outputLabel="Output (specialist → orchestrator)"
+            outputLabel={
+              record.name.startsWith("emit_")
+                ? "Emitted payload (function-as-schema)"
+                : "Output (specialist → orchestrator)"
+            }
             emptyOutputMessage={record.status === "active" ? "(awaiting result…)" : "(no result captured)"}
           />
         </div>

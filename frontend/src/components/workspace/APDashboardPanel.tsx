@@ -106,7 +106,7 @@ export function APDashboardPanel({ invoices, replaceSeed = true, onClose }: APDa
           artefactPath="ap-dashboard"
           onUpdateModelContext={handleModelContext}
           onInitialized={handleInitialized}
-          hostContext={{ theme: "dark", displayMode: "inline" }}
+          hostContext={{ theme: "light", displayMode: "inline" }}
           className="h-full w-full"
           title="AP Analytics Dashboard"
         />

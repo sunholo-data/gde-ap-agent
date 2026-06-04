@@ -37,6 +37,7 @@ import { useSpecialistInvocations } from "@/hooks/useSpecialistInvocations";
 import { isAuditViewEnabled, type SpecialistKey } from "@/lib/auditViewFlag";
 import { skillHref } from "@/components/navigation/skillHref";
 import { SampleInvoicePicker } from "@/components/chat/SampleInvoicePicker";
+import { Workbench, useTabBadges, type WorkbenchTab } from "@/components/chat/Workbench";
 import { AGUIProvider } from "@/providers/AGUIProvider";
 import {
   SurfaceRegistryProvider,
@@ -86,6 +87,211 @@ function WorkspaceSurfaceRegion({
           onAction={onAction}
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * AP-orchestrator workbench: replaces the prior single-slot conditional
+ * ladder with a persistent tabbed pane (Invoice · Document · Vendor ·
+ * Analytics). All tabs stay mounted so MCP App iframes (Globe, KG,
+ * Dashboard) don't remount on every switch — the postMessage handshake
+ * is expensive and remounting would force a re-init flash.
+ *
+ * Tab badges fire when content updates while the tab is inactive
+ * (e.g. workspace surface receives a new emit_* payload while user is
+ * on Vendor tab) and clear the moment the user switches to it.
+ *
+ * The Globe / Dashboard `surface_action` events from the agent still
+ * land via handleAction in the parent — they update globeContext /
+ * dashboardOpen, which this component watches to badge the tabs.
+ */
+function APWorkbench({
+  sessionId,
+  onAction,
+  globeContext,
+  dashboardOpen,
+  dashboardInvoices,
+  expandedTab,
+  docPanelRef,
+  docPanelWidthPx,
+  startDocPanelResize,
+  setDocPanelWidthPx,
+  sessionIdUrl,
+  userUid,
+  onSelectSession,
+  onNewSession,
+  onClearGlobe,
+  onCloseDashboard,
+}: {
+  sessionId: string | null;
+  onAction?: (event: { actionName: string; context: Record<string, unknown> }) => void;
+  globeContext: { vendor: string; country: string; amount?: number } | null;
+  dashboardOpen: boolean;
+  dashboardInvoices: DashboardInvoice[];
+  expandedTab: DocTabData | null;
+  docPanelRef: React.MutableRefObject<HTMLDivElement | null>;
+  docPanelWidthPx: number | null;
+  startDocPanelResize: (e: React.MouseEvent) => void;
+  setDocPanelWidthPx: React.Dispatch<React.SetStateAction<number | null>>;
+  sessionIdUrl: string | null;
+  userUid: string;
+  onSelectSession: (sid: string) => void;
+  onNewSession: () => void;
+  onClearGlobe: () => void;
+  onCloseDashboard: () => void;
+}) {
+  const workspaceState = useSurfaceState("workspace");
+  const [activeTab, setActiveTab] = useState<string>("invoice");
+  const badges = useTabBadges();
+
+  // Badge "Invoice" when the workspace surface receives content while
+  // user is on a different tab.
+  useEffect(() => {
+    if (workspaceState?.surface && activeTab !== "invoice") {
+      badges.mark("invoice");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceState?.surface, activeTab]);
+
+  // Badge "Vendor" when the agent fires show_vendor_globe and we're not there.
+  useEffect(() => {
+    if (globeContext && activeTab !== "vendor") badges.mark("vendor");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globeContext, activeTab]);
+
+  // Badge "Analytics" when show_ap_dashboard fires and we're not there.
+  useEffect(() => {
+    if (dashboardOpen && activeTab !== "analytics") badges.mark("analytics");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashboardOpen, activeTab]);
+
+  // Badge "Document" when a doc tab gets expanded while user is elsewhere.
+  useEffect(() => {
+    if (expandedTab && activeTab !== "document") badges.mark("document");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedTab?.id, activeTab]);
+
+  const tabs: WorkbenchTab[] = [
+    {
+      id: "invoice",
+      eyebrow: "A2UI",
+      label: "Invoice",
+      badged: badges.isBadged("invoice"),
+      content: (
+        <div className="p-4">
+          {workspaceState?.surface ? (
+            <A2UISurfaceMount
+              surfaceId="workspace"
+              className="h-full"
+              sessionId={sessionId}
+              onAction={onAction}
+            />
+          ) : (
+            <EmptyTab
+              title="No invoice yet"
+              body="Drop or pick an invoice in the sidebar to run the pipeline. The extracted card will appear here as the agent emits it."
+            />
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "document",
+      label: "Document",
+      badged: badges.isBadged("document"),
+      content: expandedTab ? (
+        <div className="flex h-full flex-col">
+          <div
+            ref={docPanelRef}
+            className="min-h-0 flex-1 overflow-auto"
+            style={{
+              width:
+                expandedTab.viewMode === "focus"
+                  ? "100%"
+                  : docPanelWidthPx !== null
+                    ? "100%"
+                    : "100%",
+            }}
+          >
+            <DocumentPanel docId={expandedTab.id} />
+          </div>
+          <DocumentHistoryPanel
+            documentId={expandedTab.id}
+            activeSessionId={sessionIdUrl}
+            currentUserUid={userUid}
+            onSelectSession={onSelectSession}
+            onNewSession={onNewSession}
+            onDeleteActive={onNewSession}
+          />
+        </div>
+      ) : (
+        <EmptyTab
+          title="No document open"
+          body="Click any uploaded document in the sidebar to view its parsed content here while the agent works on it."
+        />
+      ),
+    },
+    {
+      id: "vendor",
+      eyebrow: "MCP App",
+      label: "Vendor",
+      badged: badges.isBadged("vendor"),
+      content: (
+        <div className="h-full p-4">
+          {globeContext ? (
+            <VendorGlobePanel
+              vendor={globeContext.vendor}
+              country={globeContext.country}
+              amount={globeContext.amount}
+              onClose={onClearGlobe}
+            />
+          ) : (
+            <EmptyTab
+              title="Vendor map"
+              body="Process an invoice or ask the agent to “show the vendor on a map.” A live globe will arc from London HQ to the vendor's country."
+            />
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "analytics",
+      eyebrow: "MCP App",
+      label: "Analytics",
+      badged: badges.isBadged("analytics"),
+      content: (
+        <div className="h-full p-4">
+          <APDashboardPanel
+            onClose={dashboardOpen ? onCloseDashboard : undefined}
+            invoices={dashboardInvoices.length > 0 ? dashboardInvoices : undefined}
+            replaceSeed={false}
+          />
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <Workbench
+      tabs={tabs}
+      activeTabId={activeTab}
+      onActiveTabChange={(id) => {
+        badges.clearOnActivate(id);
+        setActiveTab(id);
+      }}
+      className="md:max-w-2xl"
+    />
+  );
+}
+
+function EmptyTab({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 py-16 text-center">
+      <h3 className="font-display text-lg font-semibold tracking-tight text-foreground">
+        {title}
+      </h3>
+      <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">{body}</p>
     </div>
   );
 }
@@ -957,7 +1163,33 @@ function ChatShell({
           </aside>
         )}
 
-        {expandedTab && (
+        {/* Workbench — persistent tabbed pane. Replaces the prior conditional
+            ladder (DocumentPanel ⊕ WorkspaceSurface ⊕ Globe ⊕ Dashboard, only
+            one renders at a time). All four tabs stay mounted so MCP App
+            iframes don't remount on every switch. Only active on ap-orchestrator;
+            other skills fall through to legacy behavior below. */}
+        {isApOrchestrator && (
+          <APWorkbench
+            sessionId={sessionId ?? agentSessionId}
+            onAction={handleAction}
+            globeContext={globeContext}
+            dashboardOpen={dashboardOpen}
+            dashboardInvoices={dashboardInvoices}
+            expandedTab={expandedTab}
+            docPanelRef={docPanelRef}
+            docPanelWidthPx={docPanelWidthPx}
+            startDocPanelResize={startDocPanelResize}
+            setDocPanelWidthPx={setDocPanelWidthPx}
+            sessionIdUrl={sessionId}
+            userUid={user.uid}
+            onSelectSession={handleSelectSession}
+            onNewSession={handleNewSession}
+            onClearGlobe={() => setGlobeContext(null)}
+            onCloseDashboard={() => setDashboardOpen(false)}
+          />
+        )}
+
+        {!isApOrchestrator && expandedTab && (
           <>
             <div
               ref={docPanelRef}
@@ -999,15 +1231,13 @@ function ChatShell({
           </>
         )}
 
-        {/* MULTI-SURFACE-A2UI M3: workspace surface mount — takes the
-            doc-panel slot when no doc tab is currently expanded AND the
-            agent has published a workspace tree. */}
-        {!expandedTab && !globeContext && (
+        {/* MULTI-SURFACE-A2UI M3: workspace surface mount — non-AP legacy slot. */}
+        {!isApOrchestrator && !expandedTab && !globeContext && (
           <WorkspaceSurfaceRegion sessionId={sessionId ?? agentSessionId} onAction={handleAction} />
         )}
 
-        {/* M4: Vendor globe — shown when ap-orchestrator fires show_vendor_globe */}
-        {!expandedTab && globeContext && !dashboardOpen && (
+        {/* M4: Vendor globe — legacy non-AP path. */}
+        {!isApOrchestrator && !expandedTab && globeContext && !dashboardOpen && (
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-r md:max-w-xl">
             <VendorGlobePanel
               vendor={globeContext.vendor}
@@ -1018,8 +1248,8 @@ function ChatShell({
           </div>
         )}
 
-        {/* M5: AP analytics dashboard — shown when show_ap_dashboard fires */}
-        {!expandedTab && dashboardOpen && (
+        {/* M5: AP analytics dashboard — legacy non-AP path. */}
+        {!isApOrchestrator && !expandedTab && dashboardOpen && (
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-r md:max-w-xl">
             <APDashboardPanel
               onClose={() => setDashboardOpen(false)}

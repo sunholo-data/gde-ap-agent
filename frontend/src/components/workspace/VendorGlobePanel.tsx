@@ -78,7 +78,7 @@ export function VendorGlobePanel({ vendor, country, amount, onClose }: VendorGlo
           artefactPath="vendor-globe"
           onUpdateModelContext={handleModelContext}
           onInitialized={handleInitialized}
-          hostContext={{ theme: "dark", displayMode: "inline" }}
+          hostContext={{ theme: "light", displayMode: "inline" }}
           className="h-full w-full"
           title="Vendor geography globe"
         />
