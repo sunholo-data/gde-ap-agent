@@ -112,11 +112,7 @@ function APWorkbench({
   globeContext,
   dashboardOpen,
   dashboardInvoices,
-  expandedTab,
-  docPanelRef,
-  docPanelWidthPx,
-  startDocPanelResize,
-  setDocPanelWidthPx,
+  activeDocTab,
   sessionIdUrl,
   userUid,
   onSelectSession,
@@ -129,11 +125,11 @@ function APWorkbench({
   globeContext: { vendor: string; country: string; amount?: number } | null;
   dashboardOpen: boolean;
   dashboardInvoices: DashboardInvoice[];
-  expandedTab: DocTabData | null;
-  docPanelRef: React.MutableRefObject<HTMLDivElement | null>;
-  docPanelWidthPx: number | null;
-  startDocPanelResize: (e: React.MouseEvent) => void;
-  setDocPanelWidthPx: React.Dispatch<React.SetStateAction<number | null>>;
+  /** The currently-selected doc tab from the navbar (whichever the user
+   * last clicked) — or null when no doc is open. Drives the Document
+   * tab's content directly; the prior `viewMode === "side" | "focus"`
+   * gating is dropped since the Workbench tab itself owns the layout. */
+  activeDocTab: DocTabData | null;
   sessionIdUrl: string | null;
   userUid: string;
   onSelectSession: (sid: string) => void;
@@ -166,11 +162,22 @@ function APWorkbench({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dashboardOpen, activeTab]);
 
-  // Badge "Document" when a doc tab gets expanded while user is elsewhere.
+  // Auto-switch to the Document tab when the user clicks a doc in the
+  // navbar (activeDocTab.id changes). This is the simplification — the
+  // prior side/focus/minimize viewMode dance is gone for AP, so a doc
+  // click just opens the Document tab.
+  const lastDocIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (expandedTab && activeTab !== "document") badges.mark("document");
+    const nextId = activeDocTab?.id ?? null;
+    if (nextId && nextId !== lastDocIdRef.current) {
+      lastDocIdRef.current = nextId;
+      setActiveTab("document");
+      badges.clear("document");
+    } else if (!nextId) {
+      lastDocIdRef.current = null;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expandedTab?.id, activeTab]);
+  }, [activeDocTab?.id]);
 
   const tabs: WorkbenchTab[] = [
     {
@@ -200,24 +207,13 @@ function APWorkbench({
       id: "document",
       label: "Document",
       badged: badges.isBadged("document"),
-      content: expandedTab ? (
+      content: activeDocTab ? (
         <div className="flex h-full flex-col">
-          <div
-            ref={docPanelRef}
-            className="min-h-0 flex-1 overflow-auto"
-            style={{
-              width:
-                expandedTab.viewMode === "focus"
-                  ? "100%"
-                  : docPanelWidthPx !== null
-                    ? "100%"
-                    : "100%",
-            }}
-          >
-            <DocumentPanel docId={expandedTab.id} />
+          <div className="min-h-0 flex-1 overflow-auto">
+            <DocumentPanel docId={activeDocTab.id} />
           </div>
           <DocumentHistoryPanel
-            documentId={expandedTab.id}
+            documentId={activeDocTab.id}
             activeSessionId={sessionIdUrl}
             currentUserUid={userUid}
             onSelectSession={onSelectSession}
@@ -1079,6 +1075,7 @@ function ChatShell({
         onToggleInclude={handleTabToggleInclude}
         onToggleBrowser={() => setShowDocBrowser((v) => !v)}
         onSetViewMode={handleSetTabViewMode}
+        hideViewModeButtons={isApOrchestrator}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -1179,11 +1176,9 @@ function ChatShell({
             globeContext={globeContext}
             dashboardOpen={dashboardOpen}
             dashboardInvoices={dashboardInvoices}
-            expandedTab={expandedTab}
-            docPanelRef={docPanelRef}
-            docPanelWidthPx={docPanelWidthPx}
-            startDocPanelResize={startDocPanelResize}
-            setDocPanelWidthPx={setDocPanelWidthPx}
+            activeDocTab={
+              openTabs.find((t) => t.id === activeTabId) ?? null
+            }
             sessionIdUrl={sessionId}
             userUid={user.uid}
             onSelectSession={handleSelectSession}

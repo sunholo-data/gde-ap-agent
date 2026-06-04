@@ -34,6 +34,11 @@ interface DocTabProps {
   onClose: (id: string) => void;
   onToggleInclude: (id: string) => void;
   onSetViewMode: (id: string, mode: DocTabViewMode) => void;
+  /** Hide the side/focus/minimize view-mode buttons. Used by the
+   * AP-orchestrator chat where the Workbench tab owns layout — clicking
+   * a doc tab opens it in the Workbench Document tab directly, so the
+   * viewMode chooser is misleading dead-weight. */
+  hideViewModeButtons?: boolean;
 }
 
 function formatRelative(iso?: string): string | null {
@@ -131,6 +136,7 @@ export function DocTab({
   onClose,
   onToggleInclude,
   onSetViewMode,
+  hideViewModeButtons = false,
 }: DocTabProps) {
   const fmtColor =
     FORMAT_COLORS[tab.format.toLowerCase()] ?? "bg-muted text-muted-foreground";
@@ -186,30 +192,34 @@ export function DocTab({
 
       <span className="max-w-[140px] truncate">{tab.filename}</span>
 
-      {/* View-mode controls — one tab can be expanded at a time. */}
-      <div className="ml-1 flex items-center gap-0.5">
-        <ModeButton
-          active={tab.viewMode === "side"}
-          title={`Show ${tab.filename} in side panel`}
-          onClick={() => onSetViewMode(tab.id, "side")}
-        >
-          <PanelIcon active={tab.viewMode === "side"} />
-        </ModeButton>
-        <ModeButton
-          active={tab.viewMode === "focus"}
-          title={`Show ${tab.filename} fullscreen`}
-          onClick={() => onSetViewMode(tab.id, "focus")}
-        >
-          <FocusIcon active={tab.viewMode === "focus"} />
-        </ModeButton>
-        <ModeButton
-          active={tab.viewMode === "minimized"}
-          title={`Minimise ${tab.filename}`}
-          onClick={() => onSetViewMode(tab.id, "minimized")}
-        >
-          <MinimizeIcon active={tab.viewMode === "minimized"} />
-        </ModeButton>
-      </div>
+      {/* View-mode controls — one tab can be expanded at a time. Hidden
+          in AP-orchestrator mode where the Workbench Document tab owns
+          layout (the buttons would be inert and misleading). */}
+      {!hideViewModeButtons && (
+        <div className="ml-1 flex items-center gap-0.5">
+          <ModeButton
+            active={tab.viewMode === "side"}
+            title={`Show ${tab.filename} in side panel`}
+            onClick={() => onSetViewMode(tab.id, "side")}
+          >
+            <PanelIcon active={tab.viewMode === "side"} />
+          </ModeButton>
+          <ModeButton
+            active={tab.viewMode === "focus"}
+            title={`Show ${tab.filename} fullscreen`}
+            onClick={() => onSetViewMode(tab.id, "focus")}
+          >
+            <FocusIcon active={tab.viewMode === "focus"} />
+          </ModeButton>
+          <ModeButton
+            active={tab.viewMode === "minimized"}
+            title={`Minimise ${tab.filename}`}
+            onClick={() => onSetViewMode(tab.id, "minimized")}
+          >
+            <MinimizeIcon active={tab.viewMode === "minimized"} />
+          </ModeButton>
+        </div>
+      )}
 
       <button
         type="button"

@@ -12,6 +12,9 @@ interface DocTabsBarProps {
   onToggleInclude: (id: string) => void;
   onToggleBrowser: () => void;
   onSetViewMode: (id: string, mode: DocTabViewMode) => void;
+  /** Hide the side/focus/minimize view-mode buttons on each tab. Used
+   * in AP-orchestrator mode where the Workbench owns layout. */
+  hideViewModeButtons?: boolean;
 }
 
 export function DocTabsBar({
@@ -23,6 +26,7 @@ export function DocTabsBar({
   onToggleInclude,
   onToggleBrowser,
   onSetViewMode,
+  hideViewModeButtons = false,
 }: DocTabsBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -66,6 +70,7 @@ export function DocTabsBar({
             onClose={onClose}
             onToggleInclude={onToggleInclude}
             onSetViewMode={onSetViewMode}
+            hideViewModeButtons={hideViewModeButtons}
           />
         ))}
       </div>
