@@ -46,6 +46,7 @@ const config = {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
         },
+        ailang: 'hsl(var(--ailang))',
       },
       borderRadius: {
         lg: 'var(--radius)',

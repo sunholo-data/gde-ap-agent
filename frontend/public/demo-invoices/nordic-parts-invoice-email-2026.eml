@@ -1,0 +1,103 @@
+From: Billing <invoices@nordic-parts.se>
+To: ap@gde-ap-agent.com
+Cc: purchasing@gde-ap-agent.com
+Subject: Invoice INV-2026-889 — Nordic Parts AB — EUR 3,200.00 — Due 2026-07-01
+Date: Sun, 01 Jun 2026 09:00:00 +0200
+Message-ID: <inv-2026-889@nordic-parts.se>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="NordicParts_MIME_889"
+X-Invoice-Number: INV-2026-889
+X-Invoice-Amount: EUR 3200.00
+X-Invoice-Due: 2026-07-01
+X-Vendor-VAT: SE556123456701
+
+--NordicParts_MIME_889
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Dear Accounts Payable Team,
+
+Please find below our invoice INV-2026-889 for spare parts supplied in May 2026.
+
+INVOICE DETAILS
+===============
+Invoice Number : INV-2026-889
+Invoice Date   : 2026-06-01
+Due Date       : 2026-07-01 (Net 30)
+PO Reference   : PO-2026-0234
+Currency       : EUR
+
+LINE ITEMS
+----------
+1. Hydraulic Seal Kit HS-400 (x10)
+   GL Code: 5100-COGS
+   Unit Price: EUR 120.00 | Amount: EUR 1,200.00
+
+2. Bearing Assembly BA-22 (x5)
+   GL Code: 5100-COGS
+   Unit Price: EUR 280.00 | Amount: EUR 1,400.00
+
+3. O-Ring Set Standard Grade (x50)
+   GL Code: 5100-COGS
+   Unit Price: EUR 12.00  | Amount: EUR 600.00
+
+TOTALS
+------
+Subtotal : EUR 3,200.00
+VAT 0%   : EUR 0.00  (Intra-EU B2B — reverse charge applies)
+TOTAL    : EUR 3,200.00
+
+PAYMENT DETAILS
+---------------
+Bank      : Nordea Bank Abp
+IBAN      : SE35 5000 0000 0549 1000 0003
+BIC/SWIFT : NDEASESS
+Reference : INV-2026-889
+
+Regards,
+Anna Lindqvist
+Chief Financial Officer
+Nordic Parts AB
+Industrigatan 45, 211 24 Malmö, Sweden
+VAT: SE556123456701
+
+--NordicParts_MIME_889
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: Arial, sans-serif; font-size: 13px; color: #1a1f2e; }
+  .header { background: #1a1f2e; color: #fff; padding: 16px 24px; }
+  .header h1 { margin: 0; font-size: 22px; }
+  .header p { margin: 4px 0 0; font-size: 12px; opacity: 0.7; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th { background: #1a1f2e; color: #e8a800; padding: 8px 12px; text-align: left; font-size: 11px; text-transform: uppercase; }
+  td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 12px; }
+  .total-row td { font-weight: bold; background: #f9fafb; }
+  .footer { font-size: 11px; color: #6b7280; margin-top: 24px; }
+</style></head>
+<body>
+<div class="header">
+  <h1>Nordic Parts AB</h1>
+  <p>Industrigatan 45 · 211 24 Malmö · Sweden · VAT: SE556123456701</p>
+</div>
+<p><strong>Invoice:</strong> INV-2026-889 &nbsp;|&nbsp;
+   <strong>Date:</strong> 2026-06-01 &nbsp;|&nbsp;
+   <strong>Due:</strong> 2026-07-01 (Net 30) &nbsp;|&nbsp;
+   <strong>PO:</strong> PO-2026-0234</p>
+<table>
+  <tr><th>#</th><th>Description</th><th>GL Code</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr>
+  <tr><td>1</td><td>Hydraulic Seal Kit HS-400</td><td>5100-COGS</td><td>10</td><td>EUR 120.00</td><td>EUR 1,200.00</td></tr>
+  <tr><td>2</td><td>Bearing Assembly BA-22</td><td>5100-COGS</td><td>5</td><td>EUR 280.00</td><td>EUR 1,400.00</td></tr>
+  <tr><td>3</td><td>O-Ring Set Standard Grade</td><td>5100-COGS</td><td>50</td><td>EUR 12.00</td><td>EUR 600.00</td></tr>
+  <tr class="total-row"><td colspan="5" align="right">Subtotal:</td><td>EUR 3,200.00</td></tr>
+  <tr class="total-row"><td colspan="5" align="right">VAT 0% (EU reverse charge):</td><td>EUR 0.00</td></tr>
+  <tr class="total-row"><td colspan="5" align="right"><strong>TOTAL DUE:</strong></td><td><strong>EUR 3,200.00</strong></td></tr>
+</table>
+<p><strong>Payment:</strong> Nordea Bank · IBAN: SE35 5000 0000 0549 1000 0003 · BIC: NDEASESS · Ref: INV-2026-889</p>
+<div class="footer">Nordic Parts AB · Registered in Sweden · Corp. No. 556123-4567</div>
+</body></html>
+
+--NordicParts_MIME_889--

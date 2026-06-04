@@ -36,6 +36,7 @@ import {
 import { useSpecialistInvocations } from "@/hooks/useSpecialistInvocations";
 import { isAuditViewEnabled, type SpecialistKey } from "@/lib/auditViewFlag";
 import { skillHref } from "@/components/navigation/skillHref";
+import { SampleInvoicePicker } from "@/components/chat/SampleInvoicePicker";
 import { AGUIProvider } from "@/providers/AGUIProvider";
 import {
   SurfaceRegistryProvider,
@@ -231,6 +232,35 @@ function ChatPageInner({
     <AGUIProvider skillId={skillId} sessionId={stableThreadId}>
       <ChatShell skillId={skillId} pathPrefix={pathPrefix} user={user} />
     </AGUIProvider>
+  );
+}
+
+/**
+ * Tiny caption that tells the user exactly which uploaded documents will
+ * be sent on the next turn. Today the doc-tabs let users uncheck the
+ * `included` box per tab; without an explicit "what's in context"
+ * indicator, judges sometimes don't realise multi-doc state is in play
+ * (e.g. uploaded three files but only two checked). This caption removes
+ * the ambiguity — and stays out of the way when no doc is in context.
+ */
+function InContextBadge({
+  openTabs,
+  includedDocIds,
+}: {
+  openTabs: DocTabData[];
+  includedDocIds: string[];
+}) {
+  if (includedDocIds.length === 0) return null;
+  const includedTabs = openTabs.filter((t) => includedDocIds.includes(t.id));
+  const label =
+    includedTabs.length === 1
+      ? `Will process: ${includedTabs[0].filename}`
+      : `Will process ${includedTabs.length} documents on next turn`;
+  return (
+    <div className="mb-2 flex items-center gap-2 px-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      <span className="h-1.5 w-1.5 rounded-full bg-primary/70" aria-hidden />
+      <span className="truncate">{label}</span>
+    </div>
   );
 }
 
@@ -499,6 +529,14 @@ function ChatShell({
   // (multi-doc-context-fix.md / 1.22 D2).
   const includedDocIds = computeIncludedDocIds(openTabs);
 
+  // Slug-driven branch points for the AP demo polish. The slug is the
+  // last segment of the friendly URL (e.g. "ap-orchestrator"). For other
+  // skills these flags are false and the chat behaves as before.
+  const skillSlug = pathPrefix.split("/").pop() ?? "";
+  const isApOrchestrator = skillSlug === "ap-orchestrator";
+  const isFreshChat = messages.length === 0 && sessionId === null;
+  const showSamplePicker = isApOrchestrator && isFreshChat && openTabs.length === 0;
+
   async function handleSend() {
     const text = draft.trim();
     if (!text || isLoading || error) return;
@@ -707,6 +745,51 @@ function ChatShell({
     setActiveTabId(doc.id);
   }, []);
 
+  // Wired to UploadDropZone.onUploadComplete and SampleInvoicePicker.
+  // Adds a minimal tab (full metadata fills in on the next DocListView
+  // refresh) and, when the chat is a fresh ap-orchestrator session,
+  // immediately fires "Process this invoice" so judges don't need a
+  // second click. Mid-conversation uploads stay manual — re-deriving
+  // isFreshChat at call time means the second upload after a completed
+  // run never auto-sends.
+  const handleDocReady = useCallback(
+    (docId: string, filename: string) => {
+      const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+      setOpenTabs((prev) => {
+        if (prev.find((t) => t.id === docId)) {
+          return prev.map((t) =>
+            t.id === docId ? { ...t, included: true } : t,
+          );
+        }
+        return [
+          ...prev,
+          {
+            id: docId,
+            filename,
+            format: ext,
+            included: true,
+            viewMode: "minimized",
+          },
+        ];
+      });
+      setActiveTabId(docId);
+
+      const shouldAutoProcess =
+        isApOrchestrator &&
+        messages.length === 0 &&
+        sessionId === null &&
+        !isLoading;
+      if (shouldAutoProcess) {
+        lastUserMessageRef.current = "Process this invoice";
+        void sendMessage("Process this invoice", {
+          documentIds: [docId],
+          resumedSession: false,
+        });
+      }
+    },
+    [isApOrchestrator, messages.length, sessionId, isLoading, sendMessage],
+  );
+
   const handleTabClose = useCallback((id: string) => {
     setOpenTabs((prev) => {
       const next = prev.filter((t) => t.id !== id);
@@ -860,8 +943,12 @@ function ChatShell({
               </div>
             </SidebarSection>
 
-            <SidebarSection title="Upload from your computer" defaultOpen={false} bodyClassName="">
-              <UploadDropZone skillId={skillId} />
+            <SidebarSection
+              title="Upload from your computer"
+              defaultOpen={isApOrchestrator}
+              bodyClassName=""
+            >
+              <UploadDropZone skillId={skillId} onUploadComplete={handleDocReady} />
             </SidebarSection>
 
             {/* MULTI-SURFACE-A2UI M3: sidebar surface mount — only visible
@@ -943,6 +1030,14 @@ function ChatShell({
         )}
 
         <div className="flex min-w-0 flex-1 flex-col">
+          {showSamplePicker && (
+            <div className="border-b border-border bg-background/50">
+              <SampleInvoicePicker
+                skillId={skillId}
+                onSampleSelected={handleDocReady}
+              />
+            </div>
+          )}
           <ChatMessageList
             messages={messages}
             // initialMessages are the persisted history fetched by
@@ -991,6 +1086,7 @@ function ChatShell({
           />
 
           <footer className="border-t border-border bg-background p-3">
+            <InContextBadge openTabs={openTabs} includedDocIds={includedDocIds} />
             <form
               className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2 transition-all focus-within:border-primary/40 focus-within:shadow-[0_0_0_1px_rgba(232,168,0,0.12)] dark:border-white/[0.09] dark:bg-white/[0.04]"
               onSubmit={(e) => {

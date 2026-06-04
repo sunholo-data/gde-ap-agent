@@ -67,6 +67,34 @@ export const BRANDING = {
     email: "mark@aitanalabs.com",
     githubRepo: "https://github.com/sunholo-data/gde-ap-agent",
   },
+
+  /** Routes + copy for the AP showcase landing experience.
+   * The landing page funnels visitors to a single demo flow; the tech page
+   * exists for judges who want the protocol-stack story. */
+  demo: {
+    /** Friendly slug-route into the AP orchestrator chat. */
+    chatHref: "/chat/@gde-ap-agent/ap-orchestrator",
+    /** Judges-facing technical breakdown route. */
+    techHref: "/tech",
+    /** Hero copy. Two-line headline split for typographic control. */
+    heroEyebrow: "Live demo · Google for Startups AI Agents Challenge",
+    heroLineA: "Invoices in.",
+    heroLineB: "Audit-grade postings out.",
+    heroBody:
+      "Drop an invoice. Watch a four-agent ADK pipeline extract it deterministically with AILANG Parse, validate against the vendor master, decide a posting, and surface every step as an inspectable artifact.",
+    ctaPrimary: "Try the AP demo",
+    ctaSecondary: "How it works",
+    /** Six tech pillars used on landing + /tech. AILANG leads — it's the
+     * differentiator (everything else is industry protocols; AILANG is ours). */
+    pillars: [
+      { key: "ailang", label: "AILANG", tagline: "Deterministic parse + effect-typed code" },
+      { key: "adk", label: "Google ADK", tagline: "Multi-agent orchestration" },
+      { key: "a2ui", label: "A2UI", tagline: "Declarative agent UI" },
+      { key: "mcp-apps", label: "MCP Apps", tagline: "Sandboxed iframe artifacts" },
+      { key: "ag-ui", label: "AG-UI", tagline: "Streaming events to the client" },
+      { key: "a2a", label: "A2A", tagline: "Cross-agent discovery" },
+    ],
+  },
 } as const;
 
 export type Branding = typeof BRANDING;

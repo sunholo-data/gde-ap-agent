@@ -57,12 +57,13 @@ export function VendorGlobePanel({ vendor, country, amount, onClose }: VendorGlo
         <button
           type="button"
           onClick={onClose}
-          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label="Close vendor globe"
+          className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-foreground"
+          aria-label="Close vendor globe — back to invoice"
         >
-          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round"/>
+          <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M10 4l-4 4 4 4" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
+          Back to invoice
         </button>
       </div>
       <div className="relative flex-1 overflow-hidden">
