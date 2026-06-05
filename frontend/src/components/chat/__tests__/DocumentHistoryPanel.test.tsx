@@ -40,6 +40,14 @@ const DEFAULT_PROPS = {
   onNewSession: vi.fn(),
 };
 
+// The panel defaults to collapsed (see DocumentHistoryPanel.tsx — collapsed
+// keeps the document the primary thing on screen). Tests that assert on the
+// body content (rows, "No conversations yet", "+ New conversation", etc.)
+// must expand it first.
+function expandPanel() {
+  fireEvent.click(screen.getByText("Conversations"));
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -63,6 +71,7 @@ describe("DocumentHistoryPanel", () => {
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledOnce());
     expect(screen.getByText("Conversations")).toBeInTheDocument();
+    expandPanel();
     expect(screen.getByText("No conversations yet")).toBeInTheDocument();
   });
 
@@ -71,6 +80,8 @@ describe("DocumentHistoryPanel", () => {
 
     render(<DocumentHistoryPanel {...DEFAULT_PROPS} />);
 
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledOnce());
+    expandPanel();
     await waitFor(() => screen.getByText("Revenue drivers Q1"));
     expect(screen.getByText("Mine")).toBeInTheDocument();
   });
@@ -81,6 +92,8 @@ describe("DocumentHistoryPanel", () => {
 
     render(<DocumentHistoryPanel {...DEFAULT_PROPS} />);
 
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledOnce());
+    expandPanel();
     await waitFor(() => screen.getByText("Team"));
     expect(screen.queryByText("Mine")).toBeInTheDocument();
   });
@@ -91,6 +104,7 @@ describe("DocumentHistoryPanel", () => {
     render(<DocumentHistoryPanel {...DEFAULT_PROPS} />);
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledOnce());
+    expandPanel();
     expect(screen.queryByText("Team")).not.toBeInTheDocument();
   });
 
@@ -101,6 +115,8 @@ describe("DocumentHistoryPanel", () => {
 
     render(<DocumentHistoryPanel {...DEFAULT_PROPS} onSelectSession={onSelect} />);
 
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledOnce());
+    expandPanel();
     await waitFor(() => screen.getByText("Revenue drivers Q1"));
     fireEvent.click(screen.getByText("Revenue drivers Q1"));
 
@@ -113,11 +129,13 @@ describe("DocumentHistoryPanel", () => {
 
     render(<DocumentHistoryPanel {...DEFAULT_PROPS} activeSessionId="s0" />);
 
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledOnce());
+    expandPanel();
     await waitFor(() => screen.getByText("Revenue drivers Q1"));
     // The row is a div wrapping the title button + rename button; the
     // active highlight lives on the wrapper.
     const row = screen.getByText("Revenue drivers Q1").closest("div.group")!;
-    expect(row.className).toContain("bg-blue-50");
+    expect(row.className).toContain("bg-primary/5");
   });
 
   it("calls onNewSession when + New conversation is clicked", async () => {
@@ -127,25 +145,29 @@ describe("DocumentHistoryPanel", () => {
     render(<DocumentHistoryPanel {...DEFAULT_PROPS} onNewSession={onNew} />);
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledOnce());
+    expandPanel();
     fireEvent.click(screen.getByText("+ New conversation"));
 
     expect(onNew).toHaveBeenCalledOnce();
   });
 
-  it("collapses panel when header is clicked", async () => {
+  it("toggles panel open/closed when header is clicked", async () => {
     global.fetch = mockFetch([]) as typeof global.fetch;
 
     render(<DocumentHistoryPanel {...DEFAULT_PROPS} />);
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledOnce());
 
-    // Click to collapse
-    fireEvent.click(screen.getByText("Conversations"));
+    // Starts collapsed — body is hidden.
     expect(screen.queryByText("No conversations yet")).not.toBeInTheDocument();
 
-    // Click to re-expand
+    // Click to expand
     fireEvent.click(screen.getByText("Conversations"));
     await waitFor(() => expect(screen.getByText("No conversations yet")).toBeInTheDocument());
+
+    // Click to collapse again
+    fireEvent.click(screen.getByText("Conversations"));
+    expect(screen.queryByText("No conversations yet")).not.toBeInTheDocument();
   });
 
   it("F2 (chat-history-fixes): rename refetches the session list on success", async () => {
@@ -180,6 +202,8 @@ describe("DocumentHistoryPanel", () => {
 
     render(<DocumentHistoryPanel {...DEFAULT_PROPS} />);
 
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expandPanel();
     await waitFor(() => screen.getByText("Old title"));
 
     // Click the rename pencil — selector matches the aria-label set on
@@ -212,7 +236,11 @@ describe("DocumentHistoryPanel", () => {
 
     render(<DocumentHistoryPanel {...DEFAULT_PROPS} />);
 
-    await waitFor(() => screen.getByText("Mine"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledOnce());
+    expandPanel();
+    // "Mine" is ambiguous — it's both the section header AND the session title
+    // for this fixture. Wait on the unambiguous row affordances instead.
+    await waitFor(() => screen.getByRole("button", { name: /delete mine/i }));
     await waitFor(() => screen.getByText("Theirs"));
 
     // Owner row: trash button exists and matches the aria-label pattern.
@@ -248,6 +276,8 @@ describe("DocumentHistoryPanel", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<DocumentHistoryPanel {...DEFAULT_PROPS} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expandPanel();
     await waitFor(() => screen.getByText("Goodbye"));
 
     fireEvent.click(screen.getByRole("button", { name: /delete goodbye/i }));
@@ -292,6 +322,8 @@ describe("DocumentHistoryPanel", () => {
       />,
     );
 
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expandPanel();
     await waitFor(() => screen.getByText("Active one"));
     fireEvent.click(screen.getByRole("button", { name: /delete active one/i }));
 
@@ -306,6 +338,8 @@ describe("DocumentHistoryPanel", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
 
     render(<DocumentHistoryPanel {...DEFAULT_PROPS} />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledOnce());
+    expandPanel();
     await waitFor(() => screen.getByText("Keep me"));
 
     fireEvent.click(screen.getByRole("button", { name: /delete keep me/i }));

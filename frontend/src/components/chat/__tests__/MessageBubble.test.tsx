@@ -76,9 +76,10 @@ describe("MessageBubble — user variant", () => {
     expect(screen.getByText("Mark")).toBeInTheDocument();
   });
 
-  it("applies teal left border", () => {
+  it("applies a left accent border to user bubbles", () => {
+    // Theme-tokenized after the avatar restyle (was border-teal-500).
     const { container } = render(<MessageBubble message={userMsg()} {...baseProps} />);
-    expect(container.querySelector(".border-teal-500")).toBeInTheDocument();
+    expect(container.querySelector('[class*="border-l-"][class*="border-primary"]')).toBeInTheDocument();
   });
 
   it("renders initial avatar letter", () => {

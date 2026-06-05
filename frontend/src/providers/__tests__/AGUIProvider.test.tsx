@@ -8,6 +8,10 @@ vi.mock("@/lib/firebase", () => ({
     queueMicrotask(() => cb(null));
     return () => {};
   },
+  subscribeToIdToken: (cb: (token: string | null) => void) => {
+    queueMicrotask(() => cb("test-token"));
+    return () => {};
+  },
   getIdToken: async () => "test-token",
   signInWithGoogle: async () => {},
   signInWithGoogleRedirect: async () => {},

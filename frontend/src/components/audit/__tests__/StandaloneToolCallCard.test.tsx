@@ -121,7 +121,7 @@ describe("StandaloneToolCallCard", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("falls back to InputOutputCard for non-A2UI tools (now rendered as Cards)", () => {
+  it("falls back to InputOutputCard for non-A2UI tools (rendered via JsonAsStructuredCard)", () => {
     render(
       <StandaloneToolCallCard
         index={4}
@@ -135,10 +135,12 @@ describe("StandaloneToolCallCard", () => {
     );
     // The audit view no longer renders raw `<pre>` JSON. The tool
     // name is still the InputOutputCard title; the input/output
-    // payloads render as Cards via the (mocked) A2UIRenderer.
+    // payloads render via JsonAsStructuredCard + DefinitionList
+    // (Friction 6 fix replaced JsonAsA2UICard at this seam).
     expect(screen.queryByText("Raw JSON")).toBeNull();
     expect(screen.getByText("transfer_to_validator")).toBeTruthy();
-    // At least one Card mount should be present (input args).
-    expect(screen.queryAllByTestId("a2ui-renderer").length).toBeGreaterThan(0);
+    // The structured card surfaces the scalar field names.
+    expect(screen.getByText(/target/i)).toBeTruthy();
+    expect(screen.getByText(/ok/i)).toBeTruthy();
   });
 });
