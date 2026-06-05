@@ -49,6 +49,12 @@ interface APDashboardPanelProps {
 export function APDashboardPanel({ invoices, replaceSeed = true, onClose, onUserIntent }: APDashboardPanelProps) {
   const frameRef = useRef<StaticArtefactFrameHandle>(null);
   const [ready, setReady] = useState(false);
+  // Content hash of the last invoices array we pushed. Q&A turns
+  // re-trigger the host's session-state fetch which produces a new
+  // invoices array identity but the same content; without this guard
+  // the dashboard re-flashes its "Just added by agent" callout and
+  // staggers every card on every Q&A turn. Push only on real change.
+  const lastPushedJsonRef = useRef<string | null>(null);
 
   const handleModelContext = useCallback(
     (sc: Record<string, unknown>) => {
@@ -67,6 +73,9 @@ export function APDashboardPanel({ invoices, replaceSeed = true, onClose, onUser
   useEffect(() => {
     if (!ready || !frameRef.current) return;
     if (!invoices || invoices.length === 0) return;
+    const hash = JSON.stringify({ replaceSeed, invoices });
+    if (hash === lastPushedJsonRef.current) return;
+    lastPushedJsonRef.current = hash;
     // `source: "orchestrator"` tells the artefact which ADK agent
     // pushed the update so it can display "Updated by Orchestrator ·
     // just now" attribution + briefly flash the affected charts.

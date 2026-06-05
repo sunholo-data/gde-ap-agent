@@ -64,6 +64,15 @@ export function VendorKgPanel({ resultJson, payload, height, onUserIntent, sourc
 
   const update = useMemo<KgUpdate | null>(() => buildUpdate(payload, resultJson), [payload, resultJson]);
 
+  // Dedupe identical pushes — without this, every Q&A turn (which
+  // does NOT change app:emitted:* state) still triggers a fetch on
+  // the host side that produces a new merged-payload object identity,
+  // re-firing this effect with semantically-identical data. The
+  // artefact would then flash/animate on every Q&A and (when reset
+  // was true) wipe its seed's prior-invoice nodes. Stringify the
+  // outgoing payload as a content hash so we only push on real change.
+  const lastPushedJsonRef = useRef<string | null>(null);
+
   const handleModelContext = useCallback(
     (sc: Record<string, unknown>) => {
       const intentMsg = extractUserIntent(sc);
@@ -90,12 +99,20 @@ export function VendorKgPanel({ resultJson, payload, height, onUserIntent, sourc
 
   useEffect(() => {
     if (!ready || !frameRef.current || !update) return;
-    frameRef.current.sendNotification("ui/update-data", {
-      reset: true,
+    // Additive update — no `reset: true`. The artefact mounts with a
+    // realistic seed (vendor master, two prior invoices); we overlay
+    // the validator's emit on top. Resetting would wipe the seed's
+    // prior-invoice nodes every time the host refetched state, which
+    // happens on every Q&A turn even when no emit_* actually changed.
+    const payloadOut = {
       source: derivedSource,
       live: true,
       ...update,
-    });
+    };
+    const hash = JSON.stringify(payloadOut);
+    if (hash === lastPushedJsonRef.current) return;
+    lastPushedJsonRef.current = hash;
+    frameRef.current.sendNotification("ui/update-data", payloadOut);
   }, [ready, update, derivedSource]);
 
   if (!SANDBOX_URL) {

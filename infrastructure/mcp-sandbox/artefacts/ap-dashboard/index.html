@@ -317,6 +317,28 @@
     return { ctx, w, h };
   }
 
+  // Pick a "nice" integer tick scale for a chart whose values are all
+  // small counts (eg. invoice-aging buckets where max is usually 2-6).
+  // The naive `max * i / 4` then `Math.round` collapses 0.5 → 1 and
+  // 1.5 → 2, so a max=2 chart shows y-axis "0 1 1 2 2" (duplicates).
+  // Round the max UP to a multiple of `tickCount` so every label is
+  // distinct, and cap at 5 ticks total so the grid stays uncluttered.
+  function niceTicks(rawMax, maxTicks = 5) {
+    const m = Math.max(1, Math.ceil(rawMax));
+    // Try increasing step sizes (1, 2, 5, 10, 20, 50, …) until ≤ maxTicks.
+    const steps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+    for (const step of steps) {
+      const niceMax = Math.ceil(m / step) * step;
+      const count = niceMax / step + 1; // includes 0
+      if (count <= maxTicks) {
+        const ticks = [];
+        for (let v = 0; v <= niceMax; v += step) ticks.push(v);
+        return { ticks, niceMax };
+      }
+    }
+    return { ticks: [0, m], niceMax: m };
+  }
+
   function drawBar(canvas, labels, values, colors) {
     const { ctx, w, h } = clearCanvas(canvas);
     if (!values.length) {
@@ -327,22 +349,23 @@
     const pad = { top: 12, right: 12, bottom: 28, left: 38 };
     const cw = w - pad.left - pad.right;
     const ch = h - pad.top - pad.bottom;
-    const max = Math.max(...values, 1);
+    const rawMax = Math.max(...values, 1);
+    const { ticks, niceMax } = niceTicks(rawMax, 5);
     const bw = cw / labels.length;
 
     ctx.strokeStyle = tok("--chart-grid");
     ctx.lineWidth = 1;
-    for (let i = 0; i <= 4; i++) {
-      const y = pad.top + ch - (ch * i / 4);
+    ticks.forEach((tickVal) => {
+      const y = pad.top + ch - (ch * tickVal / niceMax);
       ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
       ctx.fillStyle = tok("--fg-faint");
       ctx.font = "9px ui-monospace, monospace"; ctx.textAlign = "right";
-      ctx.fillText(Math.round(max * i / 4), pad.left - 4, y + 3);
-    }
+      ctx.fillText(String(tickVal), pad.left - 4, y + 3);
+    });
 
     labels.forEach((lbl, i) => {
       const x = pad.left + i * bw;
-      const bh = (values[i] / max) * ch;
+      const bh = (values[i] / niceMax) * ch;
       const by = pad.top + ch - bh;
       ctx.fillStyle = Array.isArray(colors) ? colors[i % colors.length] : colors;
       // Slight rounded-top rectangle effect — just round corners via clip
