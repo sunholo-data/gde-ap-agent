@@ -1265,6 +1265,20 @@ function ChatShell({
       });
       setActiveTabId(docId);
 
+      // Clear the workbench's cached emit_* state on AP when a new
+      // doc is imported, even if the session stays the same. Without
+      // this, the right pane shows the PRIOR run's Hero Card (e.g.
+      // Acme GmbH) while the chat is mid-extraction on the new
+      // doc (e.g. Nordic Parts). The fetch effect repopulates with
+      // the new data once the extractor completes; clearing here
+      // gives the user an immediate visual signal that "the old
+      // result is gone, the new one is on its way."
+      if (isApOrchestrator) {
+        setEmittedInvoicePayload(null);
+        setPipelineEmissions({ invoice: null, verdict: null, posting: null });
+        setDashboardInvoices([]);
+      }
+
       const shouldAutoProcess =
         isApOrchestrator &&
         messages.length === 0 &&
