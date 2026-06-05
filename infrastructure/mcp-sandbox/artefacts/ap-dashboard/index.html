@@ -81,10 +81,27 @@
       display: flex; flex-direction: column; gap: 4px;
       transition: background 120ms ease, border-color 120ms ease;
     }
-    .stat[data-clickable="1"] { cursor: pointer; }
+    .stat[data-clickable="1"] {
+      cursor: pointer;
+      position: relative;
+    }
+    .stat[data-clickable="1"]::after {
+      content: "›";
+      position: absolute;
+      right: 10px; top: 50%;
+      transform: translateY(-50%);
+      color: var(--primary);
+      font-size: 18px; font-weight: 600;
+      opacity: 0.45;
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
     .stat[data-clickable="1"]:hover {
       background: var(--bg-elev);
       border-color: var(--primary);
+    }
+    .stat[data-clickable="1"]:hover::after {
+      opacity: 1;
+      transform: translateY(-50%) translateX(2px);
     }
     .stat-label {
       font-size: 9px; color: var(--fg-faint); text-transform: uppercase;
@@ -107,10 +124,114 @@
       padding: 12px; display: flex; flex-direction: column; overflow: hidden;
       transition: background 120ms ease, border-color 120ms ease;
     }
-    .chart-card[data-clickable="1"] { cursor: pointer; }
+    .chart-card[data-clickable="1"] {
+      cursor: pointer;
+      position: relative;
+    }
+    .chart-card[data-clickable="1"]::after {
+      content: "›";
+      position: absolute;
+      right: 12px; top: 12px;
+      color: var(--primary);
+      font-size: 16px; font-weight: 600;
+      opacity: 0.45;
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
     .chart-card[data-clickable="1"]:hover {
       background: var(--bg-elev);
       border-color: var(--primary);
+    }
+    .chart-card[data-clickable="1"]:hover::after {
+      opacity: 1;
+      transform: translateX(2px);
+    }
+    .interactive-hint {
+      font-size: 10px;
+      color: var(--primary);
+      background: var(--primary-soft);
+      border: 1px dashed var(--primary);
+      border-radius: 4px;
+      padding: 4px 10px;
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: ui-monospace, "JetBrains Mono", monospace;
+      letter-spacing: 0.02em;
+      flex-shrink: 0;
+    }
+    .interactive-hint::before {
+      content: "✦";
+      font-size: 11px;
+    }
+
+    /* Reactivity affordances — show the dashboard is being driven by
+       the agent in real time, not just demo data. */
+    .attribution {
+      font-size: 9px; color: var(--fg-faint);
+      font-family: ui-monospace, "JetBrains Mono", monospace;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border-soft);
+      transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
+    }
+    .attribution[data-recent="1"] {
+      color: var(--primary);
+      background: var(--primary-soft);
+      border-color: var(--primary);
+    }
+    .attribution .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--fg-faint);
+    }
+    .attribution[data-recent="1"] .dot {
+      background: var(--primary);
+      animation: pulseDot 1.6s ease-out infinite;
+    }
+    @keyframes pulseDot {
+      0%   { box-shadow: 0 0 0 0 var(--primary-soft); }
+      80%  { box-shadow: 0 0 0 6px transparent; }
+      100% { box-shadow: 0 0 0 0 transparent; }
+    }
+
+    .live-callout {
+      grid-column: span 4;
+      display: none;
+      align-items: center; gap: 10px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--primary);
+      background: var(--primary-soft);
+      font-size: 11px;
+      color: var(--primary);
+      font-family: ui-monospace, "JetBrains Mono", monospace;
+      letter-spacing: 0.02em;
+    }
+    .live-callout[data-visible="1"] { display: flex; }
+    .live-callout::before {
+      content: "✦";
+      font-size: 13px;
+    }
+    .live-callout .label {
+      color: var(--fg-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-weight: 600;
+    }
+    .live-callout .body {
+      color: var(--fg);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    @keyframes flashLive {
+      0%   { background: var(--primary-soft); }
+      100% { background: transparent; }
+    }
+    .stat[data-just-arrived="1"],
+    .chart-card[data-just-arrived="1"] {
+      animation: flashLive 1.4s ease-out;
     }
     .chart-card.full-width { grid-column: span 2; }
     @media (max-width: 540px) {
@@ -130,8 +251,16 @@
 <div id="app">
   <header class="header">
     <h1>AP Analytics Dashboard</h1>
-    <span class="badge" id="badge-live">DEMO + LIVE</span>
+    <span class="interactive-hint">Click any tile or chart to ask the agent</span>
+    <span class="attribution" id="attribution" data-recent="0">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="attribution-text">Showing demo data · awaiting agent run</span>
+    </span>
   </header>
+  <div class="live-callout" id="live-callout" data-visible="0">
+    <span class="label">Just added by agent</span>
+    <span class="body" id="live-callout-body">—</span>
+  </div>
   <section class="stats">
     <div class="stat" data-clickable="1" data-intent="invoices" role="button" tabindex="0" title="Ask the agent for a full invoice list">
       <div class="stat-label">Invoices</div>
@@ -412,16 +541,32 @@
     gl_codes: "Break down AP spend by GL code — which codes are dominant?",
   };
 
-  document.body.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target : null;
-    if (!target) return;
+  function handleActivation(target) {
+    if (!target) return false;
     const el = target.closest("[data-clickable='1'][data-intent]");
-    if (!el) return;
+    if (!el) return false;
     const key = el.getAttribute("data-intent") || "";
     const intent = INTENT_TEMPLATES[key];
-    if (!intent) return;
+    if (!intent) return false;
     sendUserIntent(intent, { intent_key: key });
     flashElement(el);
+    return true;
+  }
+
+  document.body.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    handleActivation(target);
+  });
+
+  // Keyboard activation — Enter / Space on role="button" elements,
+  // matching native button semantics so the role="button" tabindex="0"
+  // divs aren't keyboard-traps. (Restructuring as <button> would break
+  // the chart-card layout because <button> can't contain block-level
+  // children in valid HTML.)
+  document.body.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (handleActivation(target)) event.preventDefault();
   });
 
   function flashElement(el) {
@@ -432,6 +577,59 @@
       el.style.borderColor = prevBorder;
       el.style.background = "";
     }, 200);
+  }
+
+  // ─── Reactivity surfacing — make agent-driven updates visible ──
+  function markAttribution(source) {
+    const labelMap = {
+      validator: "Validator",
+      ap_validator: "Validator",
+      extractor: "Extractor",
+      invoice_extractor: "Extractor",
+      poster: "Poster",
+      ap_poster: "Poster",
+      orchestrator: "Orchestrator",
+      ap_orchestrator: "Orchestrator",
+    };
+    const label = labelMap[source] || source;
+    const el = document.getElementById("attribution");
+    const txt = document.getElementById("attribution-text");
+    if (!el || !txt) return;
+    txt.textContent = `Updated by ${label} · just now`;
+    el.dataset.recent = "1";
+    clearTimeout(el.__recencyTimer);
+    el.__recencyTimer = setTimeout(() => {
+      el.dataset.recent = "0";
+      txt.textContent = `Last updated by ${label}`;
+    }, 5000);
+  }
+
+  function showLiveCallout(inv) {
+    const el = document.getElementById("live-callout");
+    const body = document.getElementById("live-callout-body");
+    if (!el || !body) return;
+    const amount = typeof inv.amount === "number"
+      ? "$" + fmtNum(inv.amount)
+      : "";
+    const parts = [];
+    if (inv.vendor) parts.push(inv.vendor);
+    if (inv.invoiceNumber) parts.push(inv.invoiceNumber);
+    if (amount) parts.push(amount);
+    if (inv.status) parts.push(String(inv.status).toUpperCase());
+    body.textContent = parts.join(" · ");
+    el.dataset.visible = "1";
+  }
+
+  function flashAllCards() {
+    // Brief pulse on every chart + stat card so the user sees the
+    // dashboard "tick" in response to the agent's emission, not just
+    // the stat numbers silently changing.
+    document.querySelectorAll(".stat, .chart-card").forEach((el, i) => {
+      setTimeout(() => {
+        el.dataset.justArrived = "1";
+        setTimeout(() => { el.dataset.justArrived = "0"; }, 1500);
+      }, i * 60);
+    });
   }
 
   let __dash_initRequestId = 1;
@@ -485,6 +683,7 @@
     if (msg.method === "ui/update-data" && msg.params) {
       const p = msg.params;
       if (p.reset) { invoices = []; }
+      let liveAdded = null;
       if (p.invoice) {
         const inv = p.invoice;
         const existing = invoices.find(i => i.vendor === inv.vendor && i.invoiceNumber === inv.invoiceNumber);
@@ -493,11 +692,16 @@
         } else {
           invoices.push({ daysOld: 0, glCode: "Unknown", status: "pending", ...inv });
         }
+        liveAdded = inv;
       }
       if (p.invoices && Array.isArray(p.invoices)) {
         invoices = p.invoices.map(inv => ({ daysOld: 0, glCode: "Unknown", status: "pending", ...inv }));
+        liveAdded = p.invoices[p.invoices.length - 1] || null;
       }
       updateCharts();
+      if (p.source) markAttribution(p.source);
+      if (liveAdded) showLiveCallout(liveAdded);
+      flashAllCards();
       return;
     }
   });

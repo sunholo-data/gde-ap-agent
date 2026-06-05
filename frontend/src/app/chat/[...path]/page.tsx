@@ -309,7 +309,6 @@ function APWorkbench({
           {emittedInvoicePayload ? (
             <VendorKgPanel
               payload={emittedInvoicePayload}
-              height={520}
               onUserIntent={onMcpUserIntent}
             />
           ) : (

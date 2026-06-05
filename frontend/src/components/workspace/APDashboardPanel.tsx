@@ -67,9 +67,15 @@ export function APDashboardPanel({ invoices, replaceSeed = true, onClose, onUser
   useEffect(() => {
     if (!ready || !frameRef.current) return;
     if (!invoices || invoices.length === 0) return;
+    // `source: "orchestrator"` tells the artefact which ADK agent
+    // pushed the update so it can display "Updated by Orchestrator ·
+    // just now" attribution + briefly flash the affected charts.
+    // Makes the iframe visibly REACT to agent activity instead of
+    // looking like a static dashboard.
     if (replaceSeed) {
       frameRef.current.sendNotification("ui/update-data", {
         reset: true,
+        source: "orchestrator",
         invoices,
       });
     } else {
@@ -77,7 +83,10 @@ export function APDashboardPanel({ invoices, replaceSeed = true, onClose, onUser
       // artefact's handler (which dedupes by vendor+invoiceNumber)
       // adds them on top of its DEMO seed data instead of wiping it.
       for (const inv of invoices) {
-        frameRef.current.sendNotification("ui/update-data", { invoice: inv });
+        frameRef.current.sendNotification("ui/update-data", {
+          source: "orchestrator",
+          invoice: inv,
+        });
       }
     }
   }, [ready, invoices, replaceSeed]);
@@ -85,7 +94,9 @@ export function APDashboardPanel({ invoices, replaceSeed = true, onClose, onUser
   if (!SANDBOX_URL) return null;
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border bg-background shadow-xl" style={{ height: 420 }}>
+    <div
+      className="flex h-full min-h-[360px] flex-col overflow-hidden rounded-lg border bg-background shadow-xl"
+    >
       <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">AP Analytics</span>

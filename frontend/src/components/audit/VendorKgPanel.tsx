@@ -31,14 +31,22 @@ interface VendorKgPanelProps {
    * source when present. Typically the merged emit_invoice + verdict +
    * posting record produced by the AP pipeline. */
   payload?: Record<string, unknown> | null;
-  /** Fixed-height container override. Defaults to 320px for the audit
-   * view; the workbench mount benefits from a taller container. */
+  /** Fixed-height container override (px). When unset, the panel fills
+   * its parent (`h-full`) with a 360px floor — preferred for the
+   * workbench mount where the tab content provides the height bound.
+   * The audit view passes an explicit height because it sits in a
+   * scrollable inspector panel where `h-full` would resolve to zero. */
   height?: number;
   /** Optional user-intent handler. The artefact dispatches click events
    * via ``ui/update-model-context`` with a fork-side ``user_intent``
    * convention; when set, this callback fires with the natural-language
    * intent string so the host can auto-send it as a chat message. */
   onUserIntent?: (intent: string, context?: Record<string, unknown>) => void;
+  /** Which ADK agent last touched the payload. The artefact uses this
+   * to show a "Updated by Validator · just now" attribution chip, so
+   * the demo audience sees that the iframe is reactive to agent state
+   * rather than rendering a static template. */
+  source?: string;
 }
 
 interface KgUpdate {
@@ -50,7 +58,7 @@ interface KgUpdate {
   citations?: string[];
 }
 
-export function VendorKgPanel({ resultJson, payload, height = 320, onUserIntent }: VendorKgPanelProps) {
+export function VendorKgPanel({ resultJson, payload, height, onUserIntent, source }: VendorKgPanelProps) {
   const frameRef = useRef<StaticArtefactFrameHandle>(null);
   const [ready, setReady] = useState(false);
 
@@ -67,10 +75,28 @@ export function VendorKgPanel({ resultJson, payload, height = 320, onUserIntent 
   );
   const handleInitialized = useCallback(() => setReady(true), []);
 
+  // Derive a reasonable default source attribution from the payload
+  // shape — the merged emit_* record carries verdict/posting fields
+  // only after later specialists have run, so the latest field wins.
+  const derivedSource = useMemo(() => {
+    if (source) return source;
+    if (payload) {
+      if (payload.action || payload.gl_code) return "poster";
+      if (payload.verdict || payload.verdict_reason) return "validator";
+      if (payload.vendor_name) return "extractor";
+    }
+    return "validator"; // audit-view default — KG sits under the validator
+  }, [source, payload]);
+
   useEffect(() => {
     if (!ready || !frameRef.current || !update) return;
-    frameRef.current.sendNotification("ui/update-data", { reset: true, ...update });
-  }, [ready, update]);
+    frameRef.current.sendNotification("ui/update-data", {
+      reset: true,
+      source: derivedSource,
+      live: true,
+      ...update,
+    });
+  }, [ready, update, derivedSource]);
 
   if (!SANDBOX_URL) {
     return (
@@ -82,8 +108,12 @@ export function VendorKgPanel({ resultJson, payload, height = 320, onUserIntent 
 
   return (
     <div
-      className="flex flex-col overflow-hidden rounded-md border border-border bg-background"
-      style={{ height }}
+      className={
+        height
+          ? "flex flex-col overflow-hidden rounded-md border border-border bg-background"
+          : "flex h-full min-h-[360px] flex-col overflow-hidden rounded-md border border-border bg-background"
+      }
+      style={height ? { height } : undefined}
       data-testid="audit-vendor-kg"
     >
       <div className="relative flex-1 overflow-hidden">
