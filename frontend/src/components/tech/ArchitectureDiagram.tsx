@@ -36,6 +36,11 @@ interface NodeSpec {
   /** Optional small logo rendered at the top-right of the node — used
    * for AILANG to make the "powered by" relationship visible. */
   logoSrc?: string;
+  /** External / hypothetical node — rendered with a dashed border + a
+   * "HYPOTHETICAL" badge so the reader sees this is outside the live
+   * system, consuming a surface we publish. Today only Gemini Enterprise
+   * uses this; the box hangs off the A2A discovery node. */
+  external?: boolean;
 }
 
 interface EdgeSpec {
@@ -77,6 +82,20 @@ const NODES: NodeSpec[] = [
   { id: "post", x: 900, y: 260, w: 280, h: 56, title: "ap-poster", sub: "Gemini Flash" },
   { id: "mcpapps", x: 180, y: 380, w: 200, h: 70, title: "MCP Sandbox", sub: "Cloud Run · separate origin" },
   { id: "a2a", x: 620, y: 380, w: 200, h: 70, title: "A2A discovery", sub: "/.well-known/agent.json" },
+  // Hypothetical external consumer: Gemini Enterprise registers the
+  // ap-orchestrator via the A2A card and renders A2UI Cards natively in
+  // its own chat surface — no code changes on this side. Hangs off the
+  // a2a node visually so the consumption relationship is obvious.
+  {
+    id: "gemini-enterprise",
+    x: 900,
+    y: 380,
+    w: 280,
+    h: 70,
+    title: "Gemini Enterprise",
+    sub: "Hypothetical · managed agent registry",
+    external: true,
+  },
 ];
 
 const EDGES: EdgeSpec[] = [
@@ -161,7 +180,7 @@ const EDGES: EdgeSpec[] = [
     id: "e-frontend-mcp",
     from: "frontend",
     to: "mcpapps",
-    label: "MCP postMessage",
+    label: "MCP Apps postMessage",
     delay: 1600,
     tone: "ailang",
     labelT: 0.5,
@@ -176,6 +195,18 @@ const EDGES: EdgeSpec[] = [
     // Pin on the vertical segment going DOWN to A2A so it doesn't
     // collide with the ADK Runner label at the same elbow x=595.
     labelXY: [595, 330],
+  },
+  // A2A → Gemini Enterprise — the consumption edge. Same "muted" tone as
+  // the other A2A wiring; the dashed-border node treatment is enough to
+  // signal "external/hypothetical" without needing a new edge tone.
+  {
+    id: "e-a2a-gemini",
+    from: "a2a",
+    to: "gemini-enterprise",
+    label: "registers managed agent",
+    delay: 2000,
+    tone: "muted",
+    labelT: 0.5,
   },
 ];
 
@@ -318,8 +349,17 @@ export function ArchitectureDiagram() {
                 width={n.w}
                 height={n.h}
                 rx="8"
-                className="fill-background stroke-border"
-                strokeWidth="1.2"
+                // External nodes get a dashed primary-toned border so the
+                // eye reads them as "outside the live system, consuming
+                // it". Live system nodes keep the solid border-color
+                // stroke they always had.
+                className={
+                  n.external
+                    ? "fill-primary/[0.03] stroke-primary"
+                    : "fill-background stroke-border"
+                }
+                strokeWidth={n.external ? 1.4 : 1.2}
+                strokeDasharray={n.external ? "5 4" : undefined}
               />
               {n.logoSrc && (
                 <image
@@ -330,6 +370,32 @@ export function ArchitectureDiagram() {
                   height="20"
                   preserveAspectRatio="xMidYMid meet"
                 />
+              )}
+              {/* HYPOTHETICAL badge in the top-right corner of external
+                  nodes — small monospace pill so the reader knows this
+                  isn't live wiring even at a glance, without depending
+                  on reading the sub-line below the title. */}
+              {n.external && (
+                <g>
+                  <rect
+                    x={n.x + n.w - 92}
+                    y={n.y + 8}
+                    width="84"
+                    height="14"
+                    rx="3"
+                    className="fill-primary"
+                    opacity="0.85"
+                  />
+                  <text
+                    x={n.x + n.w - 50}
+                    y={n.y + 18}
+                    textAnchor="middle"
+                    className="fill-primary-foreground font-mono"
+                    style={{ fontSize: "9px", fontWeight: 700, letterSpacing: "0.04em" }}
+                  >
+                    HYPOTHETICAL
+                  </text>
+                </g>
               )}
               <text
                 x={n.x + n.w / 2}
