@@ -46,9 +46,9 @@ import {
 } from "@/providers/SurfaceRegistry";
 import { A2UISurfaceMount } from "@/components/protocols/A2UISurfaceMount";
 import { InvoiceHeroCard } from "@/components/chat/InvoiceHeroCard";
+import { VendorKgPanel } from "@/components/audit/VendorKgPanel";
 import { DocumentPanel } from "@/components/document/DocumentPanel";
 import { LatencyHUD } from "@/components/dev/LatencyHUD";
-import { VendorGlobePanel } from "@/components/workspace/VendorGlobePanel";
 import { APDashboardPanel, type InvoiceData as DashboardInvoice } from "@/components/workspace/APDashboardPanel";
 
 /**
@@ -103,9 +103,9 @@ function WorkspaceSurfaceRegion({
  * (e.g. workspace surface receives a new emit_* payload while user is
  * on Vendor tab) and clear the moment the user switches to it.
  *
- * The Globe / Dashboard `surface_action` events from the agent still
- * land via handleAction in the parent — they update globeContext /
- * dashboardOpen, which this component watches to badge the tabs.
+ * The Dashboard's `surface_action` event from the agent still lands
+ * via handleAction in the parent — it updates dashboardOpen, which
+ * this component watches to badge the Analytics tab.
  */
 /**
  * Merge the AP pipeline's three function-as-schema emissions into one
@@ -141,7 +141,6 @@ function mergeEmittedInvoicePayload(
 function APWorkbench({
   sessionId,
   onAction,
-  globeContext,
   dashboardOpen,
   dashboardInvoices,
   activeDocTab,
@@ -149,13 +148,12 @@ function APWorkbench({
   userUid,
   onSelectSession,
   onNewSession,
-  onClearGlobe,
   onCloseDashboard,
   emittedInvoicePayload,
+  onMcpUserIntent,
 }: {
   sessionId: string | null;
   onAction?: (event: { actionName: string; context: Record<string, unknown> }) => void;
-  globeContext: { vendor: string; country: string; amount?: number } | null;
   dashboardOpen: boolean;
   dashboardInvoices: DashboardInvoice[];
   /** The currently-selected doc tab from the navbar (whichever the user
@@ -167,7 +165,6 @@ function APWorkbench({
   userUid: string;
   onSelectSession: (sid: string) => void;
   onNewSession: () => void;
-  onClearGlobe: () => void;
   onCloseDashboard: () => void;
   /** Merged canonical invoice payload synthesised from ADK session
    * state (``app:emitted:invoice`` + ``app:emitted:verdict`` +
@@ -176,6 +173,11 @@ function APWorkbench({
    * A2UI message arrives during a run) and on session resume.
    * Null when the pipeline hasn't produced an extraction yet. */
   emittedInvoicePayload: Record<string, unknown> | null;
+  /** Click→chat handler fired when an MCP App artefact dispatches a
+   * `user_intent` via `ui/update-model-context`. The page wires this
+   * to sendMessage so the orchestrator receives the intent as a normal
+   * chat turn. Threaded into both the KG and the Dashboard. */
+  onMcpUserIntent?: (intent: string, context?: Record<string, unknown>) => void;
 }) {
   const workspaceState = useSurfaceState("workspace");
   const [activeTab, setActiveTab] = useState<string>("invoice");
@@ -190,11 +192,12 @@ function APWorkbench({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceState?.surface, activeTab]);
 
-  // Badge "Vendor" when the agent fires show_vendor_globe and we're not there.
+  // Badge "Vendor" when the emit_* payload arrives (validator has run)
+  // and the user is on a different tab.
   useEffect(() => {
-    if (globeContext && activeTab !== "vendor") badges.mark("vendor");
+    if (emittedInvoicePayload && activeTab !== "vendor") badges.mark("vendor");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [globeContext, activeTab]);
+  }, [emittedInvoicePayload, activeTab]);
 
   // Badge "Analytics" when show_ap_dashboard fires and we're not there.
   useEffect(() => {
@@ -236,8 +239,8 @@ function APWorkbench({
             // wire for protocol-purity / audit; we just don't render
             // it visually because the structured payload makes a
             // dramatically nicer card. A hidden A2UISurfaceMount
-            // below preserves the action-button wiring (show_vendor_globe,
-            // show_ap_dashboard) without contributing visible chrome.
+            // below preserves the action-button wiring (show_ap_dashboard)
+            // without contributing visible chrome.
             <>
               <InvoiceHeroCard data={emittedInvoicePayload} />
               {workspaceState?.surface && (
@@ -303,17 +306,16 @@ function APWorkbench({
       badged: badges.isBadged("vendor"),
       content: (
         <div className="h-full p-4">
-          {globeContext ? (
-            <VendorGlobePanel
-              vendor={globeContext.vendor}
-              country={globeContext.country}
-              amount={globeContext.amount}
-              onClose={onClearGlobe}
+          {emittedInvoicePayload ? (
+            <VendorKgPanel
+              payload={emittedInvoicePayload}
+              height={520}
+              onUserIntent={onMcpUserIntent}
             />
           ) : (
             <EmptyTab
-              title="Vendor map"
-              body="Process an invoice or ask the agent to “show the vendor on a map.” A live globe will arc from London HQ to the vendor's country."
+              title="Vendor knowledge graph"
+              body="Process an invoice — the vendor knowledge graph will populate with the validator's grounded references."
             />
           )}
         </div>
@@ -330,6 +332,7 @@ function APWorkbench({
             onClose={dashboardOpen ? onCloseDashboard : undefined}
             invoices={dashboardInvoices.length > 0 ? dashboardInvoices : undefined}
             replaceSeed={false}
+            onUserIntent={onMcpUserIntent}
           />
         </div>
       ),
@@ -344,7 +347,11 @@ function APWorkbench({
         badges.clearOnActivate(id);
         setActiveTab(id);
       }}
-      className="md:w-[520px] xl:w-[600px]"
+      // Width scale: tight on laptops (~520px), comfortable on 1080p
+      // (~600px), generous on ultrawide / 1440p+ (~720–820px) so the
+      // hero card, KG graph, and dashboard donut all get room to breathe
+      // instead of being pinned to the right edge.
+      className="md:w-[520px] xl:w-[640px] 2xl:w-[760px] [@media(min-width:2000px)]:w-[860px]"
     />
   );
 }
@@ -600,7 +607,6 @@ function ChatShell({
   const [showDocBrowser, setShowDocBrowser] = useState(true);
   const [openTabs, setOpenTabs] = useState<DocTabData[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [globeContext, setGlobeContext] = useState<{ vendor: string; country: string; amount?: number } | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   // Invoices pushed into APDashboardPanel — derived from session state's
   // ``app:emitted:invoice`` / ``app:emitted:verdict`` / ``app:emitted:posting``
@@ -889,6 +895,25 @@ function ChatShell({
     });
   }
 
+  // MCP App click → chat. The user clicked an interactive surface
+  // inside the KG or Dashboard iframe; the artefact pushed a
+  // `user_intent` over `ui/update-model-context`; we route it through
+  // the standard sendMessage path so the orchestrator answers in the
+  // chat as if the user had typed it. Suppressed while a turn is in
+  // flight (the chat input is disabled in that state — we silently
+  // drop rather than queue, to match the typed-message behaviour).
+  const handleMcpUserIntent = useCallback(
+    (intent: string, _context?: Record<string, unknown>) => {
+      if (isLoading || !intent.trim()) return;
+      lastUserMessageRef.current = intent;
+      void sendMessage(intent, {
+        documentIds: includedDocIds,
+        resumedSession: enteredViaResume,
+      });
+    },
+    [isLoading, sendMessage, includedDocIds, enteredViaResume],
+  );
+
   const handleRetry = useCallback(() => {
     const text = lastUserMessageRef.current;
     if (!text) { clearError(); return; }
@@ -901,14 +926,6 @@ function ChatShell({
 
   const handleAction = useCallback(
     (event: { actionName: string; context: Record<string, unknown> }) => {
-      if (event.actionName === "show_vendor_globe") {
-        setGlobeContext({
-          vendor: String(event.context.vendor ?? ""),
-          country: String(event.context.country ?? ""),
-          amount: typeof event.context.amount === "number" ? event.context.amount : undefined,
-        });
-        return;
-      }
       if (event.actionName === "show_ap_dashboard") {
         setDashboardOpen(true);
         const sid = sessionId ?? agentSessionId;
@@ -1347,20 +1364,8 @@ function ChatShell({
         )}
 
         {/* MULTI-SURFACE-A2UI M3: workspace surface mount — non-AP legacy slot. */}
-        {!isApOrchestrator && !expandedTab && !globeContext && (
+        {!isApOrchestrator && !expandedTab && (
           <WorkspaceSurfaceRegion sessionId={sessionId ?? agentSessionId} onAction={handleAction} />
-        )}
-
-        {/* M4: Vendor globe — legacy non-AP path. */}
-        {!isApOrchestrator && !expandedTab && globeContext && !dashboardOpen && (
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-r md:max-w-xl">
-            <VendorGlobePanel
-              vendor={globeContext.vendor}
-              country={globeContext.country}
-              amount={globeContext.amount}
-              onClose={() => setGlobeContext(null)}
-            />
-          </div>
         )}
 
         {/* M5: AP analytics dashboard — legacy non-AP path. */}
@@ -1479,7 +1484,6 @@ function ChatShell({
           <APWorkbench
             sessionId={sessionId ?? agentSessionId}
             onAction={handleAction}
-            globeContext={globeContext}
             dashboardOpen={dashboardOpen}
             dashboardInvoices={dashboardInvoices}
             activeDocTab={
@@ -1489,9 +1493,9 @@ function ChatShell({
             userUid={user.uid}
             onSelectSession={handleSelectSession}
             onNewSession={handleNewSession}
-            onClearGlobe={() => setGlobeContext(null)}
             onCloseDashboard={() => setDashboardOpen(false)}
             emittedInvoicePayload={emittedInvoicePayload}
+            onMcpUserIntent={handleMcpUserIntent}
           />
         )}
       </div>
@@ -1507,6 +1511,7 @@ function ChatShell({
         skills={userSkills}
         sessionId={sessionId ?? agentSessionId}
         uid={user.uid}
+        onMcpUserIntent={handleMcpUserIntent}
       />
       {/* MULTI-SURFACE-A2UI M3: modal surface mount — fixed-position
           overlay at page root. Only visible when populated; M4 will wire

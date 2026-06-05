@@ -969,3 +969,113 @@ cherry-pick:
 | 16 — Sidebar auto-collapse on first send | (round-3 polish) |
 | 17 — Chat-left / workbench-right layout swap | (round-3 polish) |
 | 18 — Filename tooltips + wider sidebar | (round-3 polish) |
+| 19 — MCP Apps interaction pass (bidirectional click→chat) | (round-4 polish, see commits on `dev` after `a7de829`) |
+| 20 — Big-screen workbench widths | (round-4 polish; pairs with 19 to let MCP Apps breathe) |
+
+---
+
+# Update 2026-06-05 (evening) — MCP Apps interaction pass
+
+## Friction 19 — MCP Apps without a return path read as "just an iframe"
+
+### Symptom
+
+The demo shipped 3 MCP App artefacts (Vendor Globe, Vendor KG,
+Analytics Dashboard) and the protocol pitch ("sandboxed UI primitives
+the agent can drive") landed as half a story. Reviewers said it looked
+like "yet another iframe embed" — visually polished, but inert.
+Clicking anything in any artefact did nothing. There was no
+demonstrable iframe→agent loop, which is the part of the MCP Apps
+protocol that distinguishes it from `<iframe src="...">`.
+
+### Root cause
+
+The vendored MCP Apps spec
+([mcp-apps-spec-2026-01-26.md](../../.claude/skills/agent-protocols/references/mcp-apps-spec-2026-01-26.md))
+defines `ui/update-model-context` as the iframe→host return channel,
+and `StaticArtefactFrame` already forwarded `structuredContent` via an
+`onUpdate` callback. **The receive side was plumbed; no artefact ever
+sent anything back.** The artefacts had no click handlers, no
+postMessage calls beyond `ui/notifications/initialized`.
+
+### Fix
+
+Three pieces:
+
+1. **Layer a `user_intent` convention on top of the spec's
+   `structuredContent`** — `{ user_intent: { intent: string, source:
+   string, context: {...} } }`. Not a new message type; just a
+   pattern-matched shape inside the spec's existing payload field.
+   Shared helper in
+   [frontend/src/lib/mcpUserIntent.ts](../../frontend/src/lib/mcpUserIntent.ts)
+   so every artefact host speaks the same dialect.
+
+2. **Add click handlers in the artefact HTMLs** — citation rows + the
+   vendor card in `ap-vendor-kg`; the four stat tiles + three chart
+   cards in `ap-dashboard`. Each click sends a `user_intent` with a
+   natural-language `intent` string (e.g. "Tell me more about vendor
+   V-1042's history"). Hover states + cursor:pointer make the
+   affordance obvious; a tiny flash animation acknowledges the click
+   immediately so the user doesn't think the iframe is dead.
+
+3. **Auto-route the intent to chat** — the page-level
+   `handleMcpUserIntent` callback calls `sendMessage(intent)`, same
+   path as a typed message. Gated on `!isLoading` so an in-flight
+   pipeline can't be interrupted. The auto-sent message appears in the
+   chat log; the orchestrator answers via the normal AG-UI stream.
+
+### Trust caveat (workshop talking point)
+
+Auto-sending a chat message from an iframe postMessage is a real
+trust surface. We accept it for the demo because (a) the iframe origin
+is our own sandbox service, (b) the auto-sent text is visible in the
+chat log before the agent reacts, (c) the intent goes through the
+same prompt-injection-aware path as typed text. A production version
+might want to render the intent as a **draft** in the chat input for
+user confirmation. The protocol gives you the data flow; the trust
+posture is yours to set.
+
+### Template improvement
+
+Ship the `user_intent` convention as the canonical pattern for
+bidirectional MCP App flows. Add a `<MCPAppFrame onUserIntent>` prop
+in the template that wraps `StaticArtefactFrame` + the intent
+extraction helper, so forks don't have to re-derive the pattern.
+
+---
+
+## Friction 20 — Workbench width caps at 600px even on 2500px screens
+
+### Symptom
+
+On a 2560×1440 display the workbench sat at ~600px, pinned to the
+right edge with the chat absorbing 2000px of horizontal space. The
+hero card and especially the MCP App artefacts (KG canvas, dashboard
+donut) looked cramped in the narrow column while the chat column was
+wider than any reasonable conversation needs. Reviewers' eyes went
+"why is the structured output so small on this big screen?"
+
+### Fix
+
+Add wider breakpoints to the workbench width class. The full ladder:
+
+| Breakpoint | Width |
+| --- | --- |
+| `md` (768px+) | 520px (tight laptop default) |
+| `xl` (1280px+) | 640px (comfortable 1080p) |
+| `2xl` (1536px+) | 760px (wide laptop / 1440p) |
+| 2000px+ (custom MQ) | 860px (ultrawide / 27" 4K) |
+
+Done in the [APWorkbench mount in page.tsx](../../frontend/src/app/chat/[...path]/page.tsx)
+via Tailwind's arbitrary media-query syntax `[@media(min-width:2000px)]:w-[860px]`.
+
+Pairs with Friction 19 — wider workbench means the dashboard donut
+stops clipping and the KG canvas has room for the full graph layout
+without the prior-invoice nodes overlapping.
+
+### Template improvement
+
+Ship the same width ladder as the default for any template fork with
+a workbench surface. The single-column fallback (no workbench) is
+unaffected. Forks that want to lock a narrower width can pass a
+`className` override.

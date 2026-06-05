@@ -23,6 +23,9 @@ interface InspectorPanelProps {
   sessionId: string | null;
   /** Current user uid — passed through to DocparsePicker for doc list. */
   uid: string;
+  /** Click→chat handler for MCP App user-intent dispatch (KG citation /
+   * vendor card clicks). Page-level routes to sendMessage. */
+  onMcpUserIntent?: (intent: string, context?: Record<string, unknown>) => void;
 }
 
 /** Recovers from sessionStorage on mount — judges who refresh mid-demo
@@ -65,6 +68,7 @@ export function InspectorPanel({
   skills,
   sessionId,
   uid,
+  onMcpUserIntent,
 }: InspectorPanelProps) {
   // ESC closes the panel
   useEffect(() => {
@@ -214,7 +218,10 @@ export function InspectorPanel({
             <h3 className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">
               Vendor knowledge graph (MCP App)
             </h3>
-            <VendorKgPanel resultJson={displayRecord?.resultContent} />
+            <VendorKgPanel
+              resultJson={displayRecord?.resultContent}
+              onUserIntent={onMcpUserIntent}
+            />
           </div>
         )}
       </div>

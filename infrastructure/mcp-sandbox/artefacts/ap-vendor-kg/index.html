@@ -121,13 +121,27 @@
       letter-spacing: 0.18em; margin-bottom: 6px; font-weight: 600;
     }
     .citation {
-      font-size: 11px; color: var(--fg); padding: 4px 0;
+      font-size: 11px; color: var(--fg); padding: 4px 6px;
+      margin: 0 -6px;
       border-top: 1px solid var(--border-soft);
+      border-radius: 4px;
+      transition: background 120ms ease;
     }
     .citation:first-of-type { border-top: none; }
+    .citation[data-clickable="1"] { cursor: pointer; }
+    .citation[data-clickable="1"]:hover {
+      background: var(--primary-soft);
+    }
     .citation .src {
       color: var(--primary); font-family: ui-monospace, "JetBrains Mono", monospace;
       font-size: 10px; margin-right: 6px;
+    }
+    .vendor-card[data-clickable="1"] {
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+    .vendor-card[data-clickable="1"]:hover {
+      background: var(--bg-soft);
     }
   </style>
 </head>
@@ -138,7 +152,7 @@
       <span class="badge">MCP App · Audit View</span>
     </header>
 
-    <div class="vendor-card" id="vendor-card">
+    <div class="vendor-card" id="vendor-card" data-clickable="1" role="button" tabindex="0" title="Click to ask the agent about this vendor">
       <div class="row">
         <div>
           <div class="vendor-name" id="vendor-name">Acme GmbH</div>
@@ -165,9 +179,9 @@
     <div class="citations">
       <div class="citations-label">Validator Citations</div>
       <div id="citations-list">
-        <div class="citation"><span class="src">vendor_master:V-1042</span>Approved · DE · Cloud Services · spend limit €50,000</div>
-        <div class="citation"><span class="src">open_pos:PO-2026-0189</span>EUR 9,000.00 · status open · approver J. Doe</div>
-        <div class="citation"><span class="src">prior_invoices</span>2 historical Acme invoices in last 12 months</div>
+        <div class="citation" data-clickable="1" data-source="vendor_master" data-id="V-1042" title="Ask the agent about this citation"><span class="src">vendor_master:V-1042</span>Approved · DE · Cloud Services · spend limit €50,000</div>
+        <div class="citation" data-clickable="1" data-source="open_pos" data-id="PO-2026-0189" title="Ask the agent about this citation"><span class="src">open_pos:PO-2026-0189</span>EUR 9,000.00 · status open · approver J. Doe</div>
+        <div class="citation" data-clickable="1" data-source="prior_invoices" title="Ask the agent about this citation"><span class="src">prior_invoices</span>2 historical Acme invoices in last 12 months</div>
       </div>
     </div>
   </div>
@@ -346,11 +360,37 @@
       return;
     }
     cl.innerHTML = model.citations.slice(0, 8).map(c => {
-      const parts = String(c).split(":");
-      const src = parts.length > 1 ? parts[0] + ":" + parts.slice(1, 2).join(":") : parts[0];
-      const detail = parts.length > 2 ? parts.slice(2).join(":") : "";
-      return `<div class="citation"><span class="src">${escapeHtml(src)}</span>${escapeHtml(detail)}</div>`;
+      // Citation format examples: "vendor_master:V-1042", "open_pos:PO-2026-0189",
+      // "prior_invoices", "vendor_master:V-1042 · Approved · DE · …".
+      // Parse a source prefix + optional id token + free-form detail tail.
+      const raw = String(c);
+      const colon = raw.indexOf(":");
+      let source = raw;
+      let id = "";
+      let detail = "";
+      if (colon >= 0) {
+        source = raw.slice(0, colon);
+        const rest = raw.slice(colon + 1);
+        // First token (up to space/middle-dot) is the id; remainder is detail.
+        const m = rest.match(/^([^\s·]+)\s*·?\s*(.*)$/);
+        if (m) {
+          id = m[1] || "";
+          detail = m[2] || "";
+        } else {
+          id = rest;
+        }
+      }
+      const label = source + (id ? ":" + id : "");
+      const attrs =
+        ` data-clickable="1" data-source="${escapeAttr(source)}"` +
+        (id ? ` data-id="${escapeAttr(id)}"` : "") +
+        ` title="Ask the agent about this citation"`;
+      return `<div class="citation"${attrs}><span class="src">${escapeHtml(label)}</span>${escapeHtml(detail)}</div>`;
     }).join("");
+  }
+
+  function escapeAttr(s) {
+    return String(s).replace(/"/g, "&quot;");
   }
 
   function escapeHtml(s) {
@@ -393,6 +433,84 @@
     window.parent.postMessage(
       { jsonrpc: "2.0", method, params, __platformTransport: true }, "*"
     );
+  }
+
+  // ─── Click → user_intent dispatch ──────────────────────────────
+  // Sends a structured user-intent through the spec's standard
+  // ui/update-model-context channel. The host pattern-matches on the
+  // `user_intent` key and auto-sends the `intent` string as a chat
+  // message; the orchestrator responds via its normal chat path.
+  function sendUserIntent(intent, context) {
+    notify("ui/update-model-context", {
+      structuredContent: {
+        user_intent: {
+          intent,
+          source: "vendor_kg",
+          context: context || {},
+        },
+      },
+    });
+  }
+
+  function intentForCitation(source, id) {
+    if (source === "vendor_master") {
+      return id
+        ? `Tell me more about vendor ${id} — approval status, country, spend limit, and category.`
+        : `Tell me about the vendor master record for this invoice.`;
+    }
+    if (source === "open_pos") {
+      return id
+        ? `Show me open PO ${id} — amount, currency, status, approver.`
+        : `Show me the open POs the validator referenced for this invoice.`;
+    }
+    if (source === "prior_invoices") {
+      return `Summarise the prior invoices from this vendor in the last 12 months.`;
+    }
+    return id
+      ? `Tell me more about ${source}:${id}.`
+      : `Tell me more about the ${source} citation.`;
+  }
+
+  function intentForVendor() {
+    const vid = model.vendor.id || "";
+    const vname = model.vendor.name || "this vendor";
+    return vid
+      ? `What's the full vendor master record for ${vname} (${vid}) — approval status, country, category, and spend cap?`
+      : `What's the full vendor master record for ${vname} — approval status, country, category, and spend cap?`;
+  }
+
+  // Delegated click handler covers both the seed-data DOM and the
+  // re-rendered citation list (renderCard rewrites #citations-list's
+  // innerHTML on every update). Element-level listeners would be
+  // wiped on every render; delegating to document.body keeps them
+  // resilient.
+  document.body.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const citation = target.closest(".citation[data-clickable='1']");
+    if (citation) {
+      const source = citation.getAttribute("data-source") || "";
+      const id = citation.getAttribute("data-id") || "";
+      sendUserIntent(intentForCitation(source, id), { source, id });
+      flashElement(citation);
+      return;
+    }
+    const vendorCard = target.closest(".vendor-card[data-clickable='1']");
+    if (vendorCard) {
+      sendUserIntent(intentForVendor(), { vendor_id: model.vendor.id, vendor_name: model.vendor.name });
+      flashElement(vendorCard);
+      return;
+    }
+  });
+
+  function flashElement(el) {
+    el.style.transition = "background 80ms ease";
+    el.style.background = "var(--primary)";
+    el.style.color = "#fff";
+    setTimeout(() => {
+      el.style.background = "";
+      el.style.color = "";
+    }, 180);
   }
 
   let __kg_initRequestId = 1;

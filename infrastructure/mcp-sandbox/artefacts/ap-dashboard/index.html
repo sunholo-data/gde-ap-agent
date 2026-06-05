@@ -74,10 +74,17 @@
     }
 
     .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    @media (max-width: 540px) { .stats { grid-template-columns: repeat(2, 1fr); } }
     .stat {
       background: var(--bg-card); border: 1px solid var(--border);
       border-radius: 6px; padding: 12px 14px;
       display: flex; flex-direction: column; gap: 4px;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+    .stat[data-clickable="1"] { cursor: pointer; }
+    .stat[data-clickable="1"]:hover {
+      background: var(--bg-elev);
+      border-color: var(--primary);
     }
     .stat-label {
       font-size: 9px; color: var(--fg-faint); text-transform: uppercase;
@@ -98,8 +105,18 @@
     .chart-card {
       background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
       padding: 12px; display: flex; flex-direction: column; overflow: hidden;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+    .chart-card[data-clickable="1"] { cursor: pointer; }
+    .chart-card[data-clickable="1"]:hover {
+      background: var(--bg-elev);
+      border-color: var(--primary);
     }
     .chart-card.full-width { grid-column: span 2; }
+    @media (max-width: 540px) {
+      .charts { grid-template-columns: 1fr; grid-template-rows: auto; }
+      .chart-card.full-width { grid-column: span 1; }
+    }
     .chart-title {
       font-size: 9px; font-weight: 600; color: var(--fg-faint);
       text-transform: uppercase; letter-spacing: 0.16em; margin-bottom: 8px; flex-shrink: 0;
@@ -116,33 +133,33 @@
     <span class="badge" id="badge-live">DEMO + LIVE</span>
   </header>
   <section class="stats">
-    <div class="stat">
+    <div class="stat" data-clickable="1" data-intent="invoices" role="button" tabindex="0" title="Ask the agent for a full invoice list">
       <div class="stat-label">Invoices</div>
       <div class="stat-value" id="stat-count">0</div>
     </div>
-    <div class="stat">
+    <div class="stat" data-clickable="1" data-intent="total" role="button" tabindex="0" title="Ask the agent about total spend">
       <div class="stat-label">Total Value</div>
       <div class="stat-value" id="stat-total">$0</div>
     </div>
-    <div class="stat ok">
+    <div class="stat ok" data-clickable="1" data-intent="approved" role="button" tabindex="0" title="Ask the agent for approved invoices">
       <div class="stat-label">Approved</div>
       <div class="stat-value" id="stat-approved">0</div>
     </div>
-    <div class="stat warn">
+    <div class="stat warn" data-clickable="1" data-intent="exceptions" role="button" tabindex="0" title="Ask the agent for invoices needing review">
       <div class="stat-label">Exceptions</div>
       <div class="stat-value" id="stat-exceptions">0</div>
     </div>
   </section>
   <section class="charts">
-    <div class="chart-card full-width">
+    <div class="chart-card full-width" data-clickable="1" data-intent="aging" role="button" tabindex="0" title="Ask the agent about invoice aging">
       <div class="chart-title">Invoice Aging</div>
       <div class="chart-wrap"><canvas id="aging-chart"></canvas></div>
     </div>
-    <div class="chart-card">
+    <div class="chart-card" data-clickable="1" data-intent="vendors" role="button" tabindex="0" title="Ask the agent about top vendors">
       <div class="chart-title">Top Vendors by Value</div>
       <div class="chart-wrap"><canvas id="vendor-chart"></canvas></div>
     </div>
-    <div class="chart-card">
+    <div class="chart-card" data-clickable="1" data-intent="gl_codes" role="button" tabindex="0" title="Ask the agent about GL code distribution">
       <div class="chart-title">GL Code Distribution</div>
       <div class="chart-wrap"><canvas id="gl-chart"></canvas></div>
     </div>
@@ -367,6 +384,54 @@
     window.parent.postMessage(
       { jsonrpc: "2.0", method, params, __platformTransport: true }, "*"
     );
+  }
+
+  // ─── Click → user_intent dispatch ───────────────────────────────
+  // Spec-standard ui/update-model-context channel with a `user_intent`
+  // convention. Host pattern-matches and auto-sends the `intent` string
+  // as a chat message; the orchestrator answers via its normal path.
+  function sendUserIntent(intent, context) {
+    notify("ui/update-model-context", {
+      structuredContent: {
+        user_intent: {
+          intent,
+          source: "ap_dashboard",
+          context: context || {},
+        },
+      },
+    });
+  }
+
+  const INTENT_TEMPLATES = {
+    invoices: "List all invoices in the current AP queue with status and amount.",
+    total: "Break down the total AP spend by status — approved vs needs-review vs exceptions.",
+    approved: "List the approved invoices ready for payment, oldest first.",
+    exceptions: "Show me the invoices currently flagged for review or exception — vendor, amount, reason.",
+    aging: "Which invoices are oldest? Group by aging band (0–7, 8–14, 15–30, 31–60, 60+ days).",
+    vendors: "List the top 5 vendors by spend this period, with their invoice counts.",
+    gl_codes: "Break down AP spend by GL code — which codes are dominant?",
+  };
+
+  document.body.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const el = target.closest("[data-clickable='1'][data-intent]");
+    if (!el) return;
+    const key = el.getAttribute("data-intent") || "";
+    const intent = INTENT_TEMPLATES[key];
+    if (!intent) return;
+    sendUserIntent(intent, { intent_key: key });
+    flashElement(el);
+  });
+
+  function flashElement(el) {
+    const prevBorder = el.style.borderColor;
+    el.style.borderColor = "var(--primary)";
+    el.style.background = "var(--primary-soft)";
+    setTimeout(() => {
+      el.style.borderColor = prevBorder;
+      el.style.background = "";
+    }, 200);
   }
 
   let __dash_initRequestId = 1;

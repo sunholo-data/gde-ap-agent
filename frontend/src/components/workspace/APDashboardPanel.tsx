@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { StaticArtefactFrame, type StaticArtefactFrameHandle } from "./StaticArtefactFrame";
+import { extractUserIntent } from "@/lib/mcpUserIntent";
 
 const SANDBOX_URL =
   process.env.NEXT_PUBLIC_MCP_SANDBOX_URL?.replace(/\/$/, "") ?? "";
@@ -35,15 +36,29 @@ interface APDashboardPanelProps {
    */
   replaceSeed?: boolean;
   onClose?: () => void;
+  /**
+   * Optional user-intent handler. The artefact dispatches click events
+   * via ``ui/update-model-context`` with a fork-side ``user_intent``
+   * convention; when set, this callback fires with the natural-language
+   * intent string so the host can auto-send it as a chat message.
+   * No-op when unset.
+   */
+  onUserIntent?: (intent: string, context?: Record<string, unknown>) => void;
 }
 
-export function APDashboardPanel({ invoices, replaceSeed = true, onClose }: APDashboardPanelProps) {
+export function APDashboardPanel({ invoices, replaceSeed = true, onClose, onUserIntent }: APDashboardPanelProps) {
   const frameRef = useRef<StaticArtefactFrameHandle>(null);
   const [ready, setReady] = useState(false);
 
-  const handleModelContext = useCallback((_sc: Record<string, unknown>) => {
-    // Dashboard doesn't push model context back in this implementation
-  }, []);
+  const handleModelContext = useCallback(
+    (sc: Record<string, unknown>) => {
+      const intentMsg = extractUserIntent(sc);
+      if (intentMsg && onUserIntent) {
+        onUserIntent(intentMsg.intent, intentMsg.context);
+      }
+    },
+    [onUserIntent],
+  );
 
   const handleInitialized = useCallback(() => {
     setReady(true);
