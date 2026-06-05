@@ -522,11 +522,17 @@
     if (Array.isArray(p.citations)) model.citations = p.citations;
     renderCard();
     draw();
-    // Source attribution + flash — the React panel passes `source`
-    // (eg "validator", "extractor", "poster") so the user sees which
-    // ADK sub-agent just touched this artefact. `live: true` opts the
-    // citations into the "LIVE" badge styling.
-    if (p.source) markAttribution(p.source);
+    // Source attribution + flash — any ui/update-data carrying data
+    // means an agent touched this artefact, so always update the
+    // attribution chip even when the host didn't pass `source`
+    // explicitly. Previously this gate was `if (p.source)` which left
+    // the chip stuck on "Awaiting agent run…" when the host shipped
+    // only model fields (vendor/po/citations) without the source key.
+    const hasData =
+      p.vendor || p.po || p.thisInvoice ||
+      Array.isArray(p.priorInvoices) ||
+      Array.isArray(p.citations);
+    if (p.source || hasData) markAttribution(p.source || "agent");
     if (p.live) markCitationsLive();
     flashOnChange(p);
   }
@@ -541,8 +547,9 @@
       ap_poster: "Poster",
       orchestrator: "Orchestrator",
       ap_orchestrator: "Orchestrator",
+      agent: "Agent",
     };
-    const label = labelMap[source] || source;
+    const label = labelMap[source] || (source && source.charAt(0).toUpperCase() + source.slice(1)) || "Agent";
     const el = document.getElementById("attribution");
     const txt = document.getElementById("attribution-text");
     if (!el || !txt) return;

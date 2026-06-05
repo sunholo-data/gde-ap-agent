@@ -414,9 +414,18 @@
     }
     const palette = chartPalette();
     const total = values.reduce((a, b) => a + b, 0);
-    const cx = w * 0.36, cy = h / 2;
-    const r = Math.min(cx, h / 2) * 0.85;
-    const inner = r * 0.62;
+    // Width-aware layout: split the card into a donut column on the
+    // left and a legend column on the right. Sized so the donut never
+    // crowds into the legend's text area (the pre-fix layout pinned
+    // `cx=w*0.36, lx=w*0.62` which overlaps at narrow card widths).
+    const pad = 8;
+    const legendCharCount = 14; // approx max legend text width
+    const legendW = Math.min(w * 0.55, legendCharCount * 7 + 18);
+    const donutW = w - legendW - pad;
+    const r = Math.min(donutW / 2, h / 2) - pad;
+    const cx = pad + r;
+    const cy = h / 2;
+    const inner = r * 0.6;
     let start = -Math.PI / 2;
     values.forEach((v, i) => {
       const angle = (v / total) * Math.PI * 2;
@@ -430,20 +439,35 @@
     });
     ctx.beginPath(); ctx.arc(cx, cy, inner, 0, Math.PI * 2); ctx.fillStyle = tok("--bg-card"); ctx.fill();
     ctx.fillStyle = tok("--fg");
-    ctx.font = "600 13px ui-monospace, monospace"; ctx.textAlign = "center";
+    ctx.font = "600 12px ui-monospace, monospace"; ctx.textAlign = "center";
     ctx.fillText(values.length + " codes", cx, cy + 4);
 
-    const lx = w * 0.62;
-    const lyStart = (h - labels.length * 16) / 2;
+    // Legend column — start with a clear gap from the donut's right edge.
+    const lx = cx + r + pad + 4;
+    const rowH = 16;
+    const lyStart = Math.max(pad, (h - labels.length * rowH) / 2);
+    const labelMaxW = w - lx - pad - 18; // 18 = swatch + gap
     labels.forEach((lbl, i) => {
-      const ly = lyStart + i * 16;
+      const ly = lyStart + i * rowH;
       ctx.fillStyle = palette[i % palette.length];
-      ctx.fillRect(lx, ly + 1, 10, 10);
+      ctx.fillRect(lx, ly + 2, 10, 10);
       ctx.fillStyle = tok("--fg-muted");
       ctx.font = "10px ui-sans-serif, system-ui"; ctx.textAlign = "left";
-      const short = lbl.length > 12 ? lbl.slice(0, 11) + "…" : lbl;
-      ctx.fillText(short, lx + 14, ly + 9);
+      ctx.fillText(truncateToWidth(ctx, String(lbl), labelMaxW), lx + 14, ly + 10);
     });
+  }
+
+  // Measure-aware truncation — replaces the old "if length > 12 …"
+  // heuristic which over-truncated short labels and under-truncated
+  // wide-glyph ones. Walks back one char at a time until the rendered
+  // width fits.
+  function truncateToWidth(ctx, text, maxW) {
+    if (ctx.measureText(text).width <= maxW) return text;
+    let s = text;
+    while (s.length > 1 && ctx.measureText(s + "…").width > maxW) {
+      s = s.slice(0, -1);
+    }
+    return s + "…";
   }
 
   function fmtNum(n) {

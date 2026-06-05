@@ -4,6 +4,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
+  onIdTokenChanged,
   signInWithPopup,
   signInWithRedirect,
   signOut as fbSignOut,
@@ -61,6 +62,45 @@ export function subscribeToAuthState(
     return () => {};
   }
   return onAuthStateChanged(auth, callback);
+}
+
+/**
+ * Subscribe to ID-token changes. Fires on initial sign-in, sign-out, and
+ * (crucially) every time Firebase auto-refreshes the token — typically
+ * ~5min before its 1h expiry. Callers can use this to keep long-lived
+ * agents' Authorization headers fresh without rebuilding the agent.
+ *
+ * LOCAL_MODE / anonymous-group-auth: returns a no-op unsubscribe and
+ * never fires the callback — those modes don't rotate tokens.
+ */
+export function subscribeToIdToken(
+  callback: (token: string | null) => void,
+): () => void {
+  if (isLocalMode()) {
+    callback(LOCAL_MODE_STUB_TOKEN);
+    return () => {};
+  }
+  if (isAnonymousGroupAuthMode()) {
+    callback(readStoredGroupSession()?.token ?? null);
+    return () => {};
+  }
+  const auth = getFirebaseAuth();
+  if (!auth) {
+    callback(null);
+    return () => {};
+  }
+  return onIdTokenChanged(auth, async (user) => {
+    if (!user) {
+      callback(null);
+      return;
+    }
+    try {
+      const token = await user.getIdToken();
+      callback(token);
+    } catch {
+      callback(null);
+    }
+  });
 }
 
 export async function getIdToken(): Promise<string | null> {

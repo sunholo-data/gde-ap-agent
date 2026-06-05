@@ -14,9 +14,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { subscribeToIdToken } from "@/lib/firebase";
 
 /**
  * AG-UI-native provider. Exposes one `HttpAgent` per `skillId`, targeting the
@@ -47,27 +49,61 @@ export function AGUIProvider({
   children: ReactNode;
 }) {
   const { getIdToken } = useAuth();
-  const [token, setToken] = useState<string | null>(null);
+  const [initialToken, setInitialToken] = useState<string | null>(null);
+  const [initialTokenLoaded, setInitialTokenLoaded] = useState(false);
 
+  // One-shot initial token fetch — populates the constructor's headers
+  // so the first request fires with a Bearer. After this, the
+  // onIdTokenChanged subscription below mutates the same headers
+  // object in-place; never rebuilds the agent.
   useEffect(() => {
     let cancelled = false;
     void getIdToken().then((t) => {
-      if (!cancelled) setToken(t);
+      if (cancelled) return;
+      setInitialToken(t);
+      setInitialTokenLoaded(true);
     });
     return () => {
       cancelled = true;
     };
   }, [getIdToken]);
 
+  // Headers Record is created ONCE and threaded into the HttpAgent's
+  // `headers` property. We mutate this object on every Firebase
+  // token-refresh (auto-fires ~5min before the 1h expiry) so the next
+  // request sends the new Bearer without rebuilding the agent — which
+  // would destroy `agent.messages` mid-conversation. HttpAgent reads
+  // `this.headers` per-request, so in-place mutation is sufficient.
+  const headersRef = useRef<Record<string, string>>({});
+
   const agent = useMemo(() => {
-    const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
+    if (initialToken) headersRef.current.Authorization = `Bearer ${initialToken}`;
     return new HttpAgent({
       url: `/api/proxy/api/skill/${encodeURIComponent(skillId)}/stream`,
-      headers,
+      headers: headersRef.current,
       threadId: sessionId,
     });
-  }, [skillId, token, sessionId]);
+    // initialTokenLoaded gates the first agent build so the constructor
+    // sees a token. After build, the agent is stable; the headers ref
+    // is mutated on subsequent token refreshes via the effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skillId, sessionId, initialTokenLoaded]);
+
+  // Long-running session keep-alive: mutate agent.headers in place on
+  // every token refresh. Without this, Firebase tokens expire ~1h after
+  // sign-in and every subsequent /api/skill/{id}/stream request returns
+  // 401, looking to the user like "the agent is broken" mid-demo.
+  useEffect(() => {
+    return subscribeToIdToken((token) => {
+      if (token) {
+        agent.headers.Authorization = `Bearer ${token}`;
+        headersRef.current.Authorization = `Bearer ${token}`;
+      } else {
+        delete agent.headers.Authorization;
+        delete headersRef.current.Authorization;
+      }
+    });
+  }, [agent]);
 
   return (
     <AGUIAgentContext.Provider value={agent}>

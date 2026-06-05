@@ -246,6 +246,13 @@ export function useSkillAgent(options?: {
     // chats — exactly Bugs A, B, and C from chat-history-deep-fixes.md.
     const agentChanged = lastAgentRef.current !== agent;
     lastAgentRef.current = agent;
+    // Cross-session reset of session-cumulative state. Agent identity
+    // changes on "+ New conversation", thread select, and Firebase
+    // token refresh. firedStages would otherwise leak prior-session
+    // pipeline completion into a fresh chat where no run has happened.
+    if (agentChanged) {
+      setFiredStages(new Set<string>());
+    }
 
     const sync = (allowReset = false) => {
       const next = agent.messages
@@ -291,10 +298,13 @@ export function useSkillAgent(options?: {
         setToolCalls((prev) => prev.filter((tc) => tc.status !== "running"));
         setThinkingContent("");
         setIsThinking(false);
-        // Per-run fired-stages set must start empty so a fresh turn's
-        // progress rail doesn't inherit the previous turn's completed
-        // stages.
-        setFiredStages(new Set<string>());
+        // firedStages is session-cumulative — DO NOT reset per turn.
+        // The progress rail (APPipelineSteps) shows "where the user is
+        // in the pipeline." Q&A turns after a pipeline completes don't
+        // re-run extract/validate/post; resetting the rail to empty
+        // would visibly LOSE the completion state and confuse the user.
+        // Cross-session reset is handled by the agent-identity-change
+        // branch below.
         runStartMessageCountRef.current = agent.messages.length;
         recordFirstEvent(performance.now());
         // Don't reset stageLabel here — STAGE_PROGRESS for

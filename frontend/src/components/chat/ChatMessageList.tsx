@@ -123,7 +123,9 @@ export function ChatMessageList({
   }, []);
 
   // ResizeObserver: auto-scroll whenever the inner content grows (streaming
-  // tokens, new messages, thinking content) without depending on message count.
+  // tokens, thinking content). Respects scroll position — only pulls to
+  // bottom if the user was already near it, so reading scrolled-up history
+  // mid-stream isn't disrupted.
   useEffect(() => {
     const inner = innerRef.current;
     if (!inner) return;
@@ -137,6 +139,20 @@ export function ChatMessageList({
     observer.observe(inner);
     return () => observer.disconnect();
   }, [isNearBottom, scrollToBottom]);
+
+  // Force-scroll on every new top-level message (user send OR agent
+  // turn boundary), regardless of current scroll position. The
+  // ResizeObserver path above respects the "user scrolled up to read"
+  // intent during streaming, but a brand-new message arriving is a
+  // signal-the-user-explicitly-wanted moment — match the behaviour
+  // users expect from every chat app they've used.
+  const lastMessageCountRef = useRef(messages.length);
+  useEffect(() => {
+    if (messages.length > lastMessageCountRef.current) {
+      scrollToBottom();
+    }
+    lastMessageCountRef.current = messages.length;
+  }, [messages.length, scrollToBottom]);
 
   const handleScroll = useCallback(() => {
     if (isNearBottom()) setShowScrollBadge(false);
