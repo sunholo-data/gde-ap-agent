@@ -913,6 +913,17 @@ function ChatShell({
   const [emittedInvoicePayload, setEmittedInvoicePayload] = useState<
     Record<string, unknown> | null
   >(null);
+  // Per-specialist raw emissions kept SEPARATE (not merged) so the
+  // audit view can show each specialist's distinct upstream input on
+  // the Input side and its own emit on the Output side. Without this
+  // split, every audit view would just show emit_*'s args on both
+  // sides — looks identical across specialists and hides the data
+  // handoff judges are trying to see.
+  const [pipelineEmissions, setPipelineEmissions] = useState<{
+    invoice: Record<string, unknown> | null;
+    verdict: Record<string, unknown> | null;
+    posting: Record<string, unknown> | null;
+  }>({ invoice: null, verdict: null, posting: null });
   const completedToolCount = useMemo(
     () =>
       toolCalls.filter(
@@ -933,6 +944,17 @@ function ChatShell({
         const state = (await res.json()) as Record<string, unknown>;
         const merged = mergeEmittedInvoicePayload(state);
         if (merged) setEmittedInvoicePayload(merged);
+        // Capture each emission separately for the audit-view input
+        // handoff display. Missing fields → null (graceful).
+        const asObj = (v: unknown): Record<string, unknown> | null =>
+          v && typeof v === "object" && !Array.isArray(v)
+            ? (v as Record<string, unknown>)
+            : null;
+        setPipelineEmissions({
+          invoice: asObj(state["app:emitted:invoice"]),
+          verdict: asObj(state["app:emitted:verdict"]),
+          posting: asObj(state["app:emitted:posting"]),
+        });
       } catch {
         // Network / parse errors are non-fatal — the workspace surface
         // fallback is still a valid view while the run is in flight.
@@ -945,6 +967,7 @@ function ChatShell({
   useEffect(() => {
     if (isFreshChat) {
       setEmittedInvoicePayload(null);
+      setPipelineEmissions({ invoice: null, verdict: null, posting: null });
     }
   }, [isFreshChat]);
 
@@ -1104,6 +1127,7 @@ function ChatShell({
     setDashboardOpen(false);
     setDashboardInvoices([]);
     setEmittedInvoicePayload(null);
+    setPipelineEmissions({ invoice: null, verdict: null, posting: null });
     handleNewSession();
   }, [handleNewSession]);
 
@@ -1615,6 +1639,8 @@ function ChatShell({
         sessionId={sessionId ?? agentSessionId}
         uid={user.uid}
         onMcpUserIntent={handleMcpUserIntent}
+        pipelineEmissions={pipelineEmissions}
+        openDocs={openTabs}
       />
       {/* MULTI-SURFACE-A2UI M3: modal surface mount — fixed-position
           overlay at page root. Only visible when populated; M4 will wire

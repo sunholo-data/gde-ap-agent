@@ -10,6 +10,7 @@ import { StandaloneResultView, type StandaloneResult } from "./StandaloneResultV
 import { VendorKgPanel } from "./VendorKgPanel";
 import { InputOutputCard, SectionLabel } from "./sharedView";
 import type { Skill } from "@/types/skill";
+import type { DocTabData } from "@/components/doc-browser/DocTab";
 
 interface InspectorPanelProps {
   open: boolean;
@@ -26,6 +27,20 @@ interface InspectorPanelProps {
   /** Click→chat handler for MCP App user-intent dispatch (KG citation /
    * vendor card clicks). Page-level routes to sendMessage. */
   onMcpUserIntent?: (intent: string, context?: Record<string, unknown>) => void;
+  /** Per-specialist raw emissions captured from ADK session state.
+   * Used to show the upstream specialist's output as the current
+   * specialist's INPUT in the audit view — so each panel reveals the
+   * data handoff (extractor → validator → poster) instead of showing
+   * the emit_* args on both sides of the I/O card. */
+  pipelineEmissions?: {
+    invoice: Record<string, unknown> | null;
+    verdict: Record<string, unknown> | null;
+    posting: Record<string, unknown> | null;
+  };
+  /** Currently-open document tabs. Used to surface the extractor's
+   * effective INPUT (parsed document(s) being processed) since the
+   * extractor reads documents, not JSON. */
+  openDocs?: DocTabData[];
 }
 
 /** Recovers from sessionStorage on mount — judges who refresh mid-demo
@@ -69,6 +84,8 @@ export function InspectorPanel({
   sessionId,
   uid,
   onMcpUserIntent,
+  pipelineEmissions,
+  openDocs,
 }: InspectorPanelProps) {
   // ESC closes the panel
   useEffect(() => {
@@ -205,7 +222,15 @@ export function InspectorPanel({
             renders here. Pushed below the standalone result when both
             exist — the user's most recent action is most visible. */}
         {displayRecord ? (
-          <InvocationBody record={displayRecord} />
+          <InvocationBody
+            record={displayRecord}
+            upstreamInput={resolveUpstreamInput(
+              specialistKey,
+              pipelineEmissions,
+              openDocs,
+            )}
+            upstreamLabel={resolveUpstreamLabel(specialistKey)}
+          />
         ) : !standaloneResult && !standaloneRunning ? (
           <EmptyState specialistKey={specialistKey} />
         ) : null}
@@ -257,9 +282,28 @@ function EmptyState({ specialistKey }: { specialistKey: SpecialistKey }) {
   );
 }
 
-function InvocationBody({ record }: { record: InvocationRecord }) {
+function InvocationBody({
+  record,
+  upstreamInput,
+  upstreamLabel,
+}: {
+  record: InvocationRecord;
+  upstreamInput?: string | null;
+  upstreamLabel?: string;
+}) {
   const latencyMs =
     record.endedAt !== null ? record.endedAt - record.startedAt : null;
+
+  // For function-as-schema emit_* tools the args ARE the specialist's
+  // OUTPUT. The INPUT side should show the upstream specialist's
+  // output (the data handoff) rather than mirroring the same args
+  // back — which is what the previous version did, making all three
+  // audit views look identical.
+  const isEmit = record.name.startsWith("emit_");
+  const inputJson = isEmit && upstreamInput ? upstreamInput : record.argsJson;
+  const inputLabel = isEmit && upstreamInput && upstreamLabel
+    ? upstreamLabel
+    : "Input (orchestrator → specialist)";
 
   return (
     <section
@@ -284,18 +328,18 @@ function InvocationBody({ record }: { record: InvocationRecord }) {
         <div className="mt-1">
           {/* For function-as-schema emit_* tools, the args ARE the canonical
               emitted payload — the tool result is just a STOP signal to the
-              orchestrator. Show the args as both Input and Output so judges
-              see the actual structured data on the Output side rather than
-              the "STOP. Do NOT call this tool again." message. */}
+              orchestrator. Show args on the Output side, and the upstream
+              specialist's emission on the Input side so the data handoff
+              between Extract → Validate → Post is visible. */}
           <InputOutputCard
             title={record.name}
-            input={record.argsJson}
+            input={inputJson}
             output={
               record.name.startsWith("emit_") && record.argsJson
                 ? record.argsJson
                 : record.resultContent
             }
-            inputLabel="Input (orchestrator → specialist)"
+            inputLabel={inputLabel}
             outputLabel={
               record.name.startsWith("emit_")
                 ? "Emitted payload (function-as-schema)"
@@ -315,6 +359,68 @@ function formatRelativeTime(ts: number): string {
   if (delta < 60_000) return `${Math.round(delta / 1000)}s ago`;
   if (delta < 3_600_000) return `${Math.round(delta / 60_000)}m ago`;
   return new Date(ts).toLocaleTimeString();
+}
+
+/**
+ * Resolve what to show as the SPECIALIST'S UPSTREAM INPUT in the audit
+ * view (i.e., what the previous stage handed them). Different per key:
+ *
+ *   docparse  → effectively reads a document, not JSON. Show the open
+ *               doc tabs as a tiny synthetic JSON for context.
+ *   validator → the extractor's emitted invoice.
+ *   poster    → the extractor's invoice + validator's verdict.
+ *
+ * Returns null when the upstream emission isn't available yet — the
+ * caller falls back to record.argsJson and the panel reads identically
+ * to the pre-fix behaviour.
+ */
+function resolveUpstreamInput(
+  specialistKey: SpecialistKey | null,
+  pipelineEmissions: InspectorPanelProps["pipelineEmissions"],
+  openDocs: InspectorPanelProps["openDocs"],
+): string | null {
+  if (!specialistKey) return null;
+  if (specialistKey === "docparse") {
+    const docs = openDocs?.filter((t) => t.included) ?? [];
+    if (docs.length === 0) return null;
+    const summary = docs.map((d) => ({
+      doc_id: d.id,
+      filename: d.filename,
+      format: d.format,
+      parse_status: d.parseStatus ?? "loaded",
+      block_count: d.blockCount ?? null,
+    }));
+    return JSON.stringify(
+      {
+        task: "Extract structured invoice fields from the attached document(s).",
+        documents: summary,
+      },
+      null,
+      2,
+    );
+  }
+  if (specialistKey === "validator") {
+    const invoice = pipelineEmissions?.invoice;
+    return invoice ? JSON.stringify(invoice, null, 2) : null;
+  }
+  if (specialistKey === "poster") {
+    const invoice = pipelineEmissions?.invoice;
+    const verdict = pipelineEmissions?.verdict;
+    if (!invoice && !verdict) return null;
+    return JSON.stringify(
+      { invoice: invoice ?? null, verdict: verdict ?? null },
+      null,
+      2,
+    );
+  }
+  return null;
+}
+
+function resolveUpstreamLabel(specialistKey: SpecialistKey | null): string {
+  if (specialistKey === "docparse") return "Input — parsed document(s) attached";
+  if (specialistKey === "validator") return "Input — invoice handed off by Extractor";
+  if (specialistKey === "poster") return "Input — invoice + verdict handed off by Validator";
+  return "Input (orchestrator → specialist)";
 }
 
 function StatusPill({ status }: { status: "idle" | "active" | "done" | "error" }) {
