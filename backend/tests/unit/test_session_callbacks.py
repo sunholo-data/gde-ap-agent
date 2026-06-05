@@ -729,3 +729,43 @@ class TestTryGenerateTitle:
             result = _try_generate_title(session)
 
         assert result is None
+
+    def test_prefers_invoice_vendor_when_state_has_emitted_invoice(self):
+        """When app:emitted:invoice is present, title is derived from vendor +
+        invoice number — bypasses the LLM titler so AP sessions don't all
+        converge on the same generic title."""
+        session = MagicMock()
+        session.events = []
+        state = {
+            "app:emitted:invoice": {
+                "vendor_name": "Acme GmbH",
+                "invoice_number": "INV-2026-042",
+            }
+        }
+
+        with patch("db.title_generator.generate_title_fast") as mock_llm:
+            result = _try_generate_title(session, state)
+
+        assert result == "Acme GmbH · INV-2026-042"
+        mock_llm.assert_not_called()
+
+    def test_invoice_title_falls_back_to_vendor_only_when_no_number(self):
+        session = MagicMock()
+        session.events = []
+        state = {"app:emitted:invoice": {"vendor_name": "Acme GmbH"}}
+
+        with patch("db.title_generator.generate_title_fast") as mock_llm:
+            result = _try_generate_title(session, state)
+
+        assert result == "Acme GmbH"
+        mock_llm.assert_not_called()
+
+    def test_falls_through_to_llm_when_no_emitted_invoice(self):
+        session = MagicMock()
+        session.events = []
+        state: dict = {}
+
+        with patch("db.title_generator.generate_title_fast", return_value="Some LLM title"):
+            result = _try_generate_title(session, state)
+
+        assert result == "Some LLM title"

@@ -45,6 +45,7 @@ import {
   useSurfaceState,
 } from "@/providers/SurfaceRegistry";
 import { A2UISurfaceMount } from "@/components/protocols/A2UISurfaceMount";
+import { InvoiceHeroCard } from "@/components/chat/InvoiceHeroCard";
 import { DocumentPanel } from "@/components/document/DocumentPanel";
 import { LatencyHUD } from "@/components/dev/LatencyHUD";
 import { VendorGlobePanel } from "@/components/workspace/VendorGlobePanel";
@@ -119,6 +120,7 @@ function APWorkbench({
   onNewSession,
   onClearGlobe,
   onCloseDashboard,
+  resumeInvoicePayload,
 }: {
   sessionId: string | null;
   onAction?: (event: { actionName: string; context: Record<string, unknown> }) => void;
@@ -136,6 +138,12 @@ function APWorkbench({
   onNewSession: () => void;
   onClearGlobe: () => void;
   onCloseDashboard: () => void;
+  /** On session resume, the live A2UI surface registry is empty (no
+   * stream to drive it). The page fetches ``app:emitted:invoice`` from
+   * the session state and passes it here; the Invoice tab falls back to
+   * rendering this directly via InvoiceHeroCard so the resumed session
+   * shows its primary delivery instead of an empty state. */
+  resumeInvoicePayload: Record<string, unknown> | null;
 }) {
   const workspaceState = useSurfaceState("workspace");
   const [activeTab, setActiveTab] = useState<string>("invoice");
@@ -194,6 +202,12 @@ function APWorkbench({
               sessionId={sessionId}
               onAction={onAction}
             />
+          ) : resumeInvoicePayload ? (
+            // Session resume — live A2UI registry is empty but the
+            // emitted payload survives in ADK state. Render the hero
+            // card directly so the user sees the primary delivery of
+            // the resumed pipeline.
+            <InvoiceHeroCard data={resumeInvoicePayload} />
           ) : (
             <EmptyTab
               title="No invoice yet"
@@ -758,6 +772,51 @@ function ChatShell({
     prevFreshChatRef.current = isFreshChat;
   }, [isFreshChat, enteredViaResume]);
 
+  // Workbench resume hydration. On AP-orchestrator session resume the
+  // live A2UI surface registry is empty (no stream to drive it), so the
+  // Workbench's Invoice tab would render an "empty state" even though
+  // the pipeline already ran. The emitted payload survives in ADK
+  // session state — fetch it once on resume and feed it to the workbench
+  // as a fallback. Specialist chips don't restore here (that needs
+  // tool-call replay, separate work) but the primary delivery card does.
+  const [resumeInvoicePayload, setResumeInvoicePayload] = useState<
+    Record<string, unknown> | null
+  >(null);
+  const resumeFetchedForSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isApOrchestrator || !enteredViaResume) return;
+    const sid = sessionId ?? agentSessionId;
+    if (!sid) return;
+    if (resumeFetchedForSessionRef.current === sid) return;
+    resumeFetchedForSessionRef.current = sid;
+    void (async () => {
+      try {
+        const res = await fetchWithAuth(
+          `/api/proxy/api/sessions/${encodeURIComponent(sid)}/state`,
+        );
+        if (!res.ok) return;
+        const state = (await res.json()) as Record<string, unknown>;
+        const invoice = state["app:emitted:invoice"];
+        if (invoice && typeof invoice === "object" && !Array.isArray(invoice)) {
+          setResumeInvoicePayload(invoice as Record<string, unknown>);
+        }
+      } catch {
+        // Network / parse errors are non-fatal — the empty-state tab
+        // is still a valid UX, just less informative.
+      }
+    })();
+  }, [isApOrchestrator, enteredViaResume, sessionId, agentSessionId]);
+
+  // Clear the resumed payload when the user starts a new session — once
+  // the live stream is driving the workspace surface, the synthetic
+  // fallback should yield.
+  useEffect(() => {
+    if (isFreshChat) {
+      setResumeInvoicePayload(null);
+      resumeFetchedForSessionRef.current = null;
+    }
+  }, [isFreshChat]);
+
   async function handleSend() {
     const text = draft.trim();
     if (!text || isLoading || error) return;
@@ -947,24 +1006,27 @@ function ChatShell({
   const handleDocClick = useCallback((doc: ParsedDocument) => {
     setOpenTabs((prev) => {
       if (prev.find((t) => t.id === doc.id)) return prev;
-      return [
-        ...prev,
-        {
-          id: doc.id,
-          filename: doc.originalFilename,
-          format: doc.sourceFormat,
-          included: true,
-          // Default minimised — opening a doc adds a tab but doesn't steal the
-          // viewport. User clicks the panel/fullscreen icon on the tab to view.
-          viewMode: "minimized",
-          parseStatus: doc.parseStatus,
-          blockCount: doc.blockCount ?? null,
-          createdAt: doc.createdAt,
-        },
-      ];
+      const tab: DocTabData = {
+        id: doc.id,
+        filename: doc.originalFilename,
+        format: doc.sourceFormat,
+        included: true,
+        // Default minimised — opening a doc adds a tab but doesn't steal the
+        // viewport. User clicks the panel/fullscreen icon on the tab to view.
+        viewMode: "minimized",
+        parseStatus: doc.parseStatus,
+        blockCount: doc.blockCount ?? null,
+        createdAt: doc.createdAt,
+      };
+      // AP single-doc invariant: the orchestrator's pipeline processes one
+      // invoice per turn, so opening a second doc on AP would just confuse
+      // the extractor (which doc is "this invoice"?). Replace the tabs
+      // rather than appending so includedDocIds is always at most one.
+      if (isApOrchestrator) return [tab];
+      return [...prev, tab];
     });
     setActiveTabId(doc.id);
-  }, []);
+  }, [isApOrchestrator]);
 
   // Wired to UploadDropZone.onUploadComplete and SampleInvoicePicker.
   // Adds a minimal tab (full metadata fills in on the next DocListView
@@ -977,21 +1039,23 @@ function ChatShell({
     (docId: string, filename: string) => {
       const ext = filename.split(".").pop()?.toLowerCase() ?? "";
       setOpenTabs((prev) => {
+        const newTab: DocTabData = {
+          id: docId,
+          filename,
+          format: ext,
+          included: true,
+          viewMode: "minimized",
+        };
+        // AP single-doc invariant — see handleDocClick. Importing a new
+        // invoice replaces whatever was open so the pipeline always
+        // processes exactly one doc per turn.
+        if (isApOrchestrator) return [newTab];
         if (prev.find((t) => t.id === docId)) {
           return prev.map((t) =>
             t.id === docId ? { ...t, included: true } : t,
           );
         }
-        return [
-          ...prev,
-          {
-            id: docId,
-            filename,
-            format: ext,
-            included: true,
-            viewMode: "minimized",
-          },
-        ];
+        return [...prev, newTab];
       });
       setActiveTabId(docId);
 
@@ -1366,6 +1430,7 @@ function ChatShell({
             onNewSession={handleNewSession}
             onClearGlobe={() => setGlobeContext(null)}
             onCloseDashboard={() => setDashboardOpen(false)}
+            resumeInvoicePayload={resumeInvoicePayload}
           />
         )}
       </div>

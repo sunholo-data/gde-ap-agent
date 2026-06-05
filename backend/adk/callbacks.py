@@ -579,8 +579,31 @@ def _derive_access_control(document_id: str | None) -> AccessControl:
     return AccessControl(type="private")
 
 
-def _try_generate_title(session: Any) -> str | None:
-    """Attempt to generate a title from session events. Returns None on any failure."""
+def _try_generate_title(session: Any, state: Any = None) -> str | None:
+    """Attempt to generate a title from session events. Returns None on any failure.
+
+    Skills that emit a structured invoice payload (``app:emitted:invoice``)
+    get a deterministic title derived from the vendor + invoice number
+    instead of the LLM-generated one. The LLM titler tends to converge on
+    "Invoice Processing and Extraction" for every AP run because the
+    user message + first assistant turn read identically across sessions;
+    using the vendor name gives each session a distinctive label like
+    "Acme GmbH · INV-2026-042". Falls through to the LLM path when no
+    invoice payload exists yet.
+    """
+    if state is not None:
+        try:
+            invoice = state.get("app:emitted:invoice")
+        except Exception:
+            invoice = None
+        if isinstance(invoice, dict):
+            vendor = str(invoice.get("vendor_name") or "").strip()
+            invoice_number = str(invoice.get("invoice_number") or "").strip()
+            if vendor and invoice_number:
+                return f"{vendor} · {invoice_number}"
+            if vendor:
+                return vendor
+
     events = list(getattr(session, "events", None) or [])
     try:
         from db.title_generator import generate_title_fast
@@ -639,7 +662,7 @@ def make_after_agent_response() -> Any:
         if not flush_counters:
             return
 
-        title = _try_generate_title(session) if needs_title_gen else None
+        title = _try_generate_title(session, state) if needs_title_gen else None
         if title is not None:
             state["titleSet"] = True
         _flush_session_index(session_id, turn_count, title)
