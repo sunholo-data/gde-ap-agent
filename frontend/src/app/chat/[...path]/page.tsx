@@ -1241,6 +1241,15 @@ function ChatShell({
   // second click. Mid-conversation uploads stay manual — re-deriving
   // isFreshChat at call time means the second upload after a completed
   // run never auto-sends.
+  // Stashed doc waiting to be processed in a freshly-reset session.
+  // Populated when the user imports a NEW doc while an active session
+  // is in progress; consumed by the auto-process effect once the
+  // session reset settles (isFreshChat flips to true). Without this
+  // indirection, calling handleNewSession() in handleDocReady would
+  // navigate the URL but the auto-process check would still see the
+  // OLD messages.length/sessionId via stale closure values.
+  const pendingAutoProcessRef = useRef<{ docId: string; filename: string } | null>(null);
+
   const handleDocReady = useCallback(
     (docId: string, filename: string) => {
       const ext = filename.split(".").pop()?.toLowerCase() ?? "";
@@ -1266,17 +1275,35 @@ function ChatShell({
       setActiveTabId(docId);
 
       // Clear the workbench's cached emit_* state on AP when a new
-      // doc is imported, even if the session stays the same. Without
-      // this, the right pane shows the PRIOR run's Hero Card (e.g.
-      // Acme GmbH) while the chat is mid-extraction on the new
-      // doc (e.g. Nordic Parts). The fetch effect repopulates with
-      // the new data once the extractor completes; clearing here
-      // gives the user an immediate visual signal that "the old
-      // result is gone, the new one is on its way."
+      // doc is imported. The fetch effect repopulates it once the new
+      // pipeline emits. Belt-and-braces: the session-switch effect
+      // below ALSO clears these, but we run it eagerly so the right
+      // pane blanks the moment the user clicks Import — no stale
+      // "Acme GmbH while Nordic Parts is being processed" flash.
       if (isApOrchestrator) {
         setEmittedInvoicePayload(null);
         setPipelineEmissions({ invoice: null, verdict: null, posting: null });
         setDashboardInvoices([]);
+      }
+
+      // New-doc-per-session UX: when there's already an active session
+      // (in-flight run OR completed prior invoice), importing a new
+      // doc on AP forks a fresh session. Each invoice gets its own
+      // session record with its own vendor-named title — the session
+      // sidebar becomes a per-invoice history the user can switch
+      // back into to ask follow-up questions about old runs.
+      //
+      // Implementation: stash the doc in pendingAutoProcessRef, then
+      // call handleNewSession() to clear the URL session. The
+      // useEffect below picks up the pending doc once isFreshChat
+      // flips to true and fires the auto-process from the fresh
+      // closure (correct messages.length / sessionId values).
+      const hasActiveSession =
+        isApOrchestrator && (sessionId !== null || messages.length > 0);
+      if (hasActiveSession) {
+        pendingAutoProcessRef.current = { docId, filename };
+        handleNewSession();
+        return;
       }
 
       const shouldAutoProcess =
@@ -1292,8 +1319,25 @@ function ChatShell({
         });
       }
     },
-    [isApOrchestrator, messages.length, sessionId, isLoading, sendMessage],
+    [isApOrchestrator, messages.length, sessionId, isLoading, sendMessage, handleNewSession],
   );
+
+  // Consume the pending auto-process once the fresh-chat state has
+  // settled after handleNewSession's URL reset. Fires exactly once
+  // per import → reset cycle: clears the ref immediately to avoid
+  // double-sending if isFreshChat oscillates.
+  useEffect(() => {
+    const pending = pendingAutoProcessRef.current;
+    if (!pending) return;
+    if (!isFreshChat) return;
+    if (isLoading) return;
+    pendingAutoProcessRef.current = null;
+    lastUserMessageRef.current = "Process this invoice";
+    void sendMessage("Process this invoice", {
+      documentIds: [pending.docId],
+      resumedSession: false,
+    });
+  }, [isFreshChat, isLoading, sendMessage]);
 
   const handleTabClose = useCallback((id: string) => {
     setOpenTabs((prev) => {
