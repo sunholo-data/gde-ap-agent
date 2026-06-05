@@ -34,6 +34,15 @@ interface PillarSection {
   whereToSee: string;
   source: { label: string; href: string };
   isFamily?: boolean;
+  /** External systems that could consume this protocol surface today.
+   * Used on A2A to show Gemini Enterprise as the headline consumer for
+   * the published agent card — the surface is built so the platform is
+   * registerable without code changes, not just demo-ware. */
+  consumers?: { name: string; href: string; note: string }[];
+  /** A live URL on the deployed service where the surface itself can be
+   * inspected (eg. the A2A agent card JSON). Rendered next to the
+   * consumers so the reader can click through and verify the claim. */
+  surfaceLink?: { label: string; href: string };
 }
 
 const PILLARS: PillarSection[] = [
@@ -97,6 +106,17 @@ const PILLARS: PillarSection[] = [
     whereToSee:
       "curl https://gde-ap-agent-blqtqfexwa-ew.a.run.app/.well-known/agent.json — every field is there.",
     source: { label: "a2aproject.dev", href: "https://a2aproject.dev" },
+    consumers: [
+      {
+        name: "Gemini Enterprise",
+        href: "https://cloud.google.com/products/agentspace",
+        note: "Hypothetical consumer — point Gemini Enterprise at the agent card URL and ap-orchestrator becomes a managed agent in the Agentspace catalogue, with A2UI Cards rendering natively in its chat surface.",
+      },
+    ],
+    surfaceLink: {
+      label: "Read the live agent card →",
+      href: "/.well-known/agent.json",
+    },
   },
 ];
 
@@ -327,6 +347,40 @@ function PillarBlock({ pillar, index }: { pillar: PillarSection; index: number }
             </p>
             <p className="text-sm leading-relaxed text-foreground">{pillar.whereToSee}</p>
           </div>
+
+          {pillar.consumers && pillar.consumers.length > 0 && (
+            <div className="rounded-md border border-primary/30 bg-primary/5 p-4">
+              <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                Who can consume this
+              </p>
+              <ul className="space-y-2">
+                {pillar.consumers.map((c) => (
+                  <li key={c.name} className="text-sm leading-relaxed text-foreground">
+                    <a
+                      href={c.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-primary underline-offset-2 hover:underline"
+                    >
+                      {c.name}
+                    </a>
+                    {" — "}
+                    {c.note}
+                  </li>
+                ))}
+              </ul>
+              {pillar.surfaceLink && (
+                <a
+                  href={pillar.surfaceLink.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-primary transition-colors hover:text-primary/80"
+                >
+                  {pillar.surfaceLink.label}
+                </a>
+              )}
+            </div>
+          )}
 
           <a
             href={pillar.source.href}
