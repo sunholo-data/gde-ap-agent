@@ -371,17 +371,16 @@ def _seed_in_process_mcp_servers() -> None:
 
         from db import firestore as fs
 
-        # Derive base URL from PUBLIC_BASE_URL when set (terraform-managed
-        # for deploy envs), or fall back to the current request scheme +
-        # host at lifespan time. The base URL is whatever clients use to
-        # reach this service; the in-process MCP servers are mounted at
-        # /mcp/<name> on that same host.
-        base_url = (
-            os.environ.get("PUBLIC_BASE_URL")
-            or os.environ.get("CLOUD_RUN_SERVICE_URL")
-            or "https://gde-ap-agent-blqtqfexwa-ew.a.run.app"
-        )
-        base = base_url.rstrip("/")
+        # The agent's McpToolset runs inside THIS Python process, so it
+        # talks to the in-process FastMCP mounts via loopback — never via
+        # the public Cloud Run URL. On Cloud Run the public hostname
+        # routes to the frontend container; /mcp/<name>/ lives only on
+        # the backend sidecar at localhost:PORT, so a public URL 404s.
+        # MCP_INTERNAL_BASE_URL lets ops override (e.g. test fixtures);
+        # otherwise we use http://127.0.0.1:<PORT> where PORT matches the
+        # uvicorn bind (1956 locally, $PORT on Cloud Run).
+        port = os.environ.get("PORT", "1956")
+        base = os.environ.get("MCP_INTERNAL_BASE_URL", f"http://127.0.0.1:{port}").rstrip("/")
         targets = {
             "vendor-master": {
                 "name": "Vendor Master (simulated)",
@@ -412,12 +411,21 @@ def _seed_in_process_mcp_servers() -> None:
             should_write = existing is None
             if existing is not None:
                 existing_url = (existing.get("url") or "").rstrip("/")
-                # Only overwrite if the URL points at THIS service's host.
-                # Custom operator URLs survive untouched.
+                # Overwrite when the URL points at THIS service — including
+                # the legacy public Cloud Run hostname seeded by earlier
+                # revisions, which doesn't work because the public URL
+                # routes /mcp/* to the frontend container (404). Custom
+                # operator URLs on other hosts survive untouched.
                 try:
                     existing_host = urlsplit(existing_url).netloc
                     expected_host = urlsplit(base).netloc
-                    if existing_host == expected_host and existing_url != config["url"].rstrip("/"):
+                    is_ours = existing_host in {
+                        expected_host,
+                        "127.0.0.1:1956",
+                        "localhost:1956",
+                        "gde-ap-agent-blqtqfexwa-ew.a.run.app",
+                    } or existing_host.startswith("gde-ap-agent-")
+                    if is_ours and existing_url != config["url"].rstrip("/"):
                         should_write = True
                 except Exception:
                     pass
