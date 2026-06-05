@@ -596,6 +596,22 @@
   renderCard();
   window.addEventListener("resize", draw);
 
+  // ResizeObserver — the canvas renders at 0×0 when the workbench tab
+  // is `hidden` (display:none) on mount, and window.resize doesn't
+  // fire on the subsequent hidden→visible flip. Observing the parent
+  // catches that visibility change AND big-screen widening so the
+  // graph stays crisp instead of being stretched from its initial
+  // hidden-zero-size canvas bitmap.
+  let kgPendingRaf = 0;
+  const kgRo = new ResizeObserver(() => {
+    if (kgPendingRaf) return;
+    kgPendingRaf = requestAnimationFrame(() => {
+      kgPendingRaf = 0;
+      draw();
+    });
+  });
+  if (canvas.parentElement) kgRo.observe(canvas.parentElement);
+
   // ─── MCP Apps protocol ──────────────────────────────────────────
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";

@@ -108,6 +108,55 @@ function WorkspaceSurfaceRegion({
  * this component watches to badge the Analytics tab.
  */
 /**
+ * Project the merged emit_* payload into the dashboard's InvoiceData
+ * shape so the AP Analytics tab updates automatically after every
+ * pipeline run — without requiring the orchestrator to fire the
+ * `show_ap_dashboard` action. Returns null when no extraction has
+ * happened. Keeps the same field mapping as the `show_ap_dashboard`
+ * action handler, refactored out for reuse.
+ */
+function dashboardInvoiceFromEmitted(
+  payload: Record<string, unknown> | null,
+): DashboardInvoice | null {
+  if (!payload) return null;
+  const vendorName = typeof payload.vendor_name === "string" ? payload.vendor_name : "";
+  if (!vendorName) return null;
+  const v = typeof payload.verdict === "string" ? payload.verdict : "";
+  const status: DashboardInvoice["status"] =
+    /pass|approve|post/i.test(v)
+      ? "approved"
+      : /review/i.test(v)
+        ? "needs_review"
+        : /fail|reject|block|exception/i.test(v)
+          ? "exception"
+          : "pending";
+  const totalRaw = payload.total;
+  const amount =
+    typeof totalRaw === "number"
+      ? totalRaw
+      : Number.parseFloat(String(totalRaw ?? "0")) || 0;
+  const invDateRaw = payload.invoice_date;
+  const invDate = typeof invDateRaw === "string" ? new Date(invDateRaw) : null;
+  const daysOld =
+    invDate && !Number.isNaN(invDate.getTime())
+      ? Math.max(0, Math.round((Date.now() - invDate.getTime()) / 86_400_000))
+      : undefined;
+  const glCode = typeof payload.gl_code === "string" ? payload.gl_code : undefined;
+  const country = typeof payload.vendor_country === "string"
+    ? payload.vendor_country
+    : typeof payload.country === "string" ? payload.country : undefined;
+  return {
+    vendor: vendorName,
+    country,
+    amount,
+    glCode,
+    status,
+    invoiceNumber: typeof payload.invoice_number === "string" ? payload.invoice_number : undefined,
+    daysOld,
+  };
+}
+
+/**
  * Merge the AP pipeline's three function-as-schema emissions into one
  * record InvoiceHeroCard can consume. The extractor writes
  * ``app:emitted:invoice`` (vendor_name, invoice_number, line_items[],
@@ -199,11 +248,14 @@ function APWorkbench({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emittedInvoicePayload, activeTab]);
 
-  // Badge "Analytics" when show_ap_dashboard fires and we're not there.
+  // Badge "Analytics" when show_ap_dashboard fires OR when a fresh
+  // emit_* lands (auto-feed path), and we're not already viewing it.
   useEffect(() => {
-    if (dashboardOpen && activeTab !== "analytics") badges.mark("analytics");
+    if ((dashboardOpen || emittedInvoicePayload) && activeTab !== "analytics") {
+      badges.mark("analytics");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dashboardOpen, activeTab]);
+  }, [dashboardOpen, emittedInvoicePayload, activeTab]);
 
   // Auto-switch to the Document tab when the user clicks a doc in the
   // navbar (activeDocTab.id changes). This is the simplification — the
@@ -329,7 +381,20 @@ function APWorkbench({
         <div className="h-full p-4">
           <APDashboardPanel
             onClose={dashboardOpen ? onCloseDashboard : undefined}
-            invoices={dashboardInvoices.length > 0 ? dashboardInvoices : undefined}
+            // Prefer the action-driven dashboardInvoices payload when
+            // present (orchestrator fired show_ap_dashboard with extra
+            // context). Otherwise fall back to a synthetic single-row
+            // entry derived from the current emit_* payload — so the
+            // dashboard tab visibly reacts to every pipeline run even
+            // when the agent didn't bother emitting the action.
+            invoices={
+              dashboardInvoices.length > 0
+                ? dashboardInvoices
+                : (() => {
+                    const derived = dashboardInvoiceFromEmitted(emittedInvoicePayload);
+                    return derived ? [derived] : undefined;
+                  })()
+            }
             replaceSeed={false}
             onUserIntent={onMcpUserIntent}
           />

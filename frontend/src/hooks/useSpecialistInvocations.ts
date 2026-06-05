@@ -57,8 +57,15 @@ export function useSpecialistInvocations(
   const [state, setState] = useState<SpecialistInvocations>(() => emptyAll());
 
   // Per-id startedAt timestamps so a row that flips from running → success
-  // doesn't lose its origin time.
+  // doesn't lose its origin time. Same for endedAt — once a tool call
+  // transitions out of "active", its end time MUST be frozen; otherwise
+  // every subsequent re-render of this hook (each new tool call event
+  // anywhere in the stream) updates `endedAt = Date.now()` and the
+  // displayed latency for already-completed specialists keeps ticking
+  // upward on the chip ("70.8s" → "75.2s" → "82.1s" with no run
+  // happening). The user notices as "the timers are jumpy."
   const startedAtRef = useRef<Map<string, number>>(new Map());
+  const endedAtRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     const next = emptyAll();
@@ -75,7 +82,18 @@ export function useSpecialistInvocations(
         startedAtRef.current.set(tc.id, startedAt);
       }
       const status = statusFromToolCall(tc);
-      const endedAt = status === "active" ? null : Date.now();
+      let endedAt: number | null;
+      if (status === "active") {
+        endedAt = null;
+      } else {
+        // Freeze on the first non-active observation; preserve thereafter.
+        let frozen = endedAtRef.current.get(tc.id);
+        if (frozen === undefined) {
+          frozen = Date.now();
+          endedAtRef.current.set(tc.id, frozen);
+        }
+        endedAt = frozen;
+      }
 
       const record: InvocationRecord = {
         id: tc.id,

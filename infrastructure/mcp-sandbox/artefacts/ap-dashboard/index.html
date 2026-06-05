@@ -545,6 +545,28 @@
   updateCharts();
   window.addEventListener("resize", updateCharts);
 
+  // ResizeObserver — redraw when the iframe (or its tab container) goes
+  // from hidden to visible, or when the workbench tab gets wider on big
+  // screens. window.resize doesn't fire on display:none → block flips,
+  // which is exactly the workbench tab-switch path: the Analytics tab
+  // is `hidden` while inactive, the canvas renders at 0×0, then becomes
+  // visible without a window-resize event — chart looked broken
+  // ("giant red rectangle" filling the chart area). Observing the
+  // canvas parents catches both the visibility flip and any subsequent
+  // resize. Coalesced via rAF so a burst of resize ticks does one redraw.
+  let pendingRaf = 0;
+  const ro = new ResizeObserver(() => {
+    if (pendingRaf) return;
+    pendingRaf = requestAnimationFrame(() => {
+      pendingRaf = 0;
+      updateCharts();
+    });
+  });
+  ["aging-chart", "vendor-chart", "gl-chart"].forEach((id) => {
+    const c = document.getElementById(id);
+    if (c && c.parentElement) ro.observe(c.parentElement);
+  });
+
   // ─── MCP Apps protocol ───────────────────────────────────────────
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
