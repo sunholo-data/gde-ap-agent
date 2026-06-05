@@ -41,9 +41,11 @@ COLLECTION = "mcp_servers"
 DEFAULT_LOCAL_URL = "http://localhost:3001/mcp"
 # WORKFLOW-PIPELINE M3: the simulated vendor-master + erp-posting MCP servers
 # run in-process inside the gde-ap-agent backend, mounted at /mcp/<name>. The
-# default base URL is the deployed dev service; local-dev users override with
-# --backend-base-url=http://localhost:1956.
-DEFAULT_BACKEND_BASE_URL = "https://gde-ap-agent-blqtqfexwa-ew.a.run.app"
+# agent's McpToolset talks to them via loopback — on Cloud Run multi-container
+# the public URL routes to the frontend (404 on /mcp/*), so the public
+# hostname is the *wrong* default. Use --backend-base-url to override (e.g.
+# a sibling deploy or a remote MCP host).
+DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:1956"
 
 EXT_APPS_MAP_CONFIG = {
     "name": "Geo / 3D Globe (ext-apps map-server)",

@@ -130,6 +130,39 @@ _AP_SKILL_NAMES = (
 )
 
 
+def _seed_local_mcp_servers() -> None:
+    """Seed mcp_servers/vendor-master + erp-posting for LOCAL_MODE / tests.
+
+    Mirrors the production lifespan seed in fast_api_app.py — required so
+    the strict-resolve check in resolve_mcp_tools doesn't raise when the
+    AP validator/poster skills declare these servers under
+    tool_configs.mcp.servers.
+    """
+    from db import firestore as fs
+
+    targets = {
+        "vendor-master": {
+            "name": "Vendor Master (simulated)",
+            "transport": "http",
+            "headers": {},
+            "operated_by": "aitana",
+            "tags": ["ap", "grounding", "simulated"],
+            "url": "http://127.0.0.1:1956/mcp/vendor-master/",
+        },
+        "erp-posting": {
+            "name": "ERP Posting (simulated)",
+            "transport": "http",
+            "headers": {},
+            "operated_by": "aitana",
+            "tags": ["ap", "action", "simulated"],
+            "url": "http://127.0.0.1:1956/mcp/erp-posting/",
+        },
+    }
+    for doc_id, config in targets.items():
+        if fs.get_document("mcp_servers", doc_id) is None:
+            fs.set_document("mcp_servers", doc_id, config)
+
+
 def _seed_ap_skills(now: float) -> None:
     """Seed the AP skill bundle from disk templates. Idempotent per skill_id.
 
@@ -145,6 +178,12 @@ def _seed_ap_skills(now: float) -> None:
     from db import firestore as fs
 
     templates_root = Path(__file__).resolve().parent.parent / "skills" / "templates"
+    # The validator/poster SKILL.md files declare vendor-master + erp-posting
+    # under tool_configs.mcp.servers. Their Firestore docs must exist or the
+    # agent factory's strict-resolve raises at build time. Loopback URLs
+    # mirror what the in-process FastMCP mounts expose in single-process
+    # local dev (port 1956 — same as backend/Dockerfile CMD default).
+    _seed_local_mcp_servers()
     for name in _AP_SKILL_NAMES:
         skill_md = templates_root / name / "SKILL.md"
         if not skill_md.exists():

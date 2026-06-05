@@ -95,14 +95,42 @@ class TestResolveMcpTools:
         assert result == []
 
     def test_calls_get_mcp_tools_with_server_ids(self):
+        from unittest.mock import MagicMock
+
         from adk.tools import resolve_mcp_tools
 
-        fake_toolset = object()
-        with patch("tools.mcp.registry.get_mcp_tools", return_value=[fake_toolset]) as mock:
+        ts1 = MagicMock(aitana_server_id="srv-1")
+        ts2 = MagicMock(aitana_server_id="srv-2")
+        with patch("tools.mcp.registry.get_mcp_tools", return_value=[ts1, ts2]) as mock:
             result = resolve_mcp_tools({"mcp": {"servers": ["srv-1", "srv-2"]}})
 
         mock.assert_called_once_with(["srv-1", "srv-2"])
-        assert result == [fake_toolset]
+        assert result == [ts1, ts2]
+
+    def test_raises_when_declared_server_silently_skipped(self):
+        """The silent-skip path historically masked the Cloud Run multi-container
+        misconfig — fail loud at build time instead.
+        """
+        from unittest.mock import MagicMock
+
+        from adk.tools import resolve_mcp_tools
+
+        # Only one of the two declared servers resolved.
+        ts1 = MagicMock(aitana_server_id="srv-1")
+        with patch("tools.mcp.registry.get_mcp_tools", return_value=[ts1]):
+            with pytest.raises(ValueError, match=r"srv-2.*Firestore mcp_servers"):
+                resolve_mcp_tools({"mcp": {"servers": ["srv-1", "srv-2"]}})
+
+    def test_allows_optional_server_to_no_op(self):
+        """Servers listed under mcp.optional may be missing without raising."""
+        from unittest.mock import MagicMock
+
+        from adk.tools import resolve_mcp_tools
+
+        ts1 = MagicMock(aitana_server_id="srv-1")
+        with patch("tools.mcp.registry.get_mcp_tools", return_value=[ts1]):
+            result = resolve_mcp_tools({"mcp": {"servers": ["srv-1", "srv-2"], "optional": ["srv-2"]}})
+        assert result == [ts1]
 
 
 class TestResolveToolsErrors:

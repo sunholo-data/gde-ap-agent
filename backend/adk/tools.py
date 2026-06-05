@@ -220,15 +220,46 @@ def resolve_mcp_tools(tool_configs: dict[str, dict]) -> list:
 
     Called from agent.py when "mcp" appears in the skill's tool list.
 
+    Fails loud when a declared server didn't resolve (missing Firestore
+    doc, missing URL field, etc.) instead of silently skipping. The
+    silent-skip path historically masked a Cloud Run multi-container
+    misconfig where the public hostname routed /mcp/* to the wrong
+    container; the validator agent booted with an incomplete toolset,
+    SKILL.md told the LLM to call missing tools, and ADK raised at
+    run time deep in the AG-UI stream. The build-time assertion turns
+    that runtime explosion into a deploy-time error with a useful diff.
+
     Args:
         tool_configs: Per-tool config dict; reads tool_configs["mcp"]["servers"].
+            Optional: ``tool_configs["mcp"]["optional"]`` is a list of
+            server ids allowed to no-op (e.g. an experimental side-channel
+            server that may or may not exist in this environment).
 
     Returns:
         List of McpToolset instances (empty if no mcp config).
+
+    Raises:
+        ValueError: If a declared server (not in ``optional``) didn't
+            resolve to a toolset.
     """
-    server_ids: list[str] = (tool_configs.get("mcp") or {}).get("servers", [])
+    mcp_cfg = tool_configs.get("mcp") or {}
+    server_ids: list[str] = mcp_cfg.get("servers", [])
     if not server_ids:
         return []
+    optional: set[str] = set(mcp_cfg.get("optional") or [])
+
     from tools.mcp.registry import get_mcp_tools
 
-    return get_mcp_tools(server_ids)
+    toolsets = get_mcp_tools(server_ids)
+    # TaggedMcpToolset exposes the server_id via aitana_server_id; fall back
+    # to a duck-typed attribute lookup for plain McpToolset injected in tests.
+    resolved_ids = {getattr(ts, "aitana_server_id", None) or getattr(ts, "server_id", None) for ts in toolsets}
+    missing_required = [sid for sid in server_ids if sid not in resolved_ids and sid not in optional]
+    if missing_required:
+        raise ValueError(
+            f"MCP server(s) declared in tool_configs.mcp.servers did not resolve: "
+            f"{missing_required!r}. Check Firestore mcp_servers/<id> docs exist and "
+            "have a 'url' field. Mark a server as 'optional' under "
+            "tool_configs.mcp.optional to allow silent skip."
+        )
+    return toolsets
