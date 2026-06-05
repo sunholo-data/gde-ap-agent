@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrandFooter } from "@/components/BrandFooter";
 import { ChatMessageList } from "@/components/chat/ChatMessageList";
 import type { DocTabData } from "@/components/doc-browser/DocTab";
@@ -107,6 +107,37 @@ function WorkspaceSurfaceRegion({
  * land via handleAction in the parent — they update globeContext /
  * dashboardOpen, which this component watches to badge the tabs.
  */
+/**
+ * Merge the AP pipeline's three function-as-schema emissions into one
+ * record InvoiceHeroCard can consume. The extractor writes
+ * ``app:emitted:invoice`` (vendor_name, invoice_number, line_items[],
+ * subtotal, tax, total, ...); the validator writes
+ * ``app:emitted:verdict`` (verdict, verdict_reason, routing,
+ * escalation_assignee, sla_hours, audit_citations_csv); the poster
+ * writes ``app:emitted:posting`` (gl_code, action). Validator/poster
+ * fields are merged shallow into the invoice so the hero card's
+ * verdict-footer band and metadata rows light up as the pipeline
+ * progresses. Returns null when no extraction has happened yet.
+ */
+function mergeEmittedInvoicePayload(
+  state: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const invoice = state["app:emitted:invoice"];
+  if (!invoice || typeof invoice !== "object" || Array.isArray(invoice)) {
+    return null;
+  }
+  const merged: Record<string, unknown> = { ...(invoice as Record<string, unknown>) };
+  const verdict = state["app:emitted:verdict"];
+  if (verdict && typeof verdict === "object" && !Array.isArray(verdict)) {
+    Object.assign(merged, verdict as Record<string, unknown>);
+  }
+  const posting = state["app:emitted:posting"];
+  if (posting && typeof posting === "object" && !Array.isArray(posting)) {
+    Object.assign(merged, posting as Record<string, unknown>);
+  }
+  return merged;
+}
+
 function APWorkbench({
   sessionId,
   onAction,
@@ -120,7 +151,7 @@ function APWorkbench({
   onNewSession,
   onClearGlobe,
   onCloseDashboard,
-  resumeInvoicePayload,
+  emittedInvoicePayload,
 }: {
   sessionId: string | null;
   onAction?: (event: { actionName: string; context: Record<string, unknown> }) => void;
@@ -138,12 +169,13 @@ function APWorkbench({
   onNewSession: () => void;
   onClearGlobe: () => void;
   onCloseDashboard: () => void;
-  /** On session resume, the live A2UI surface registry is empty (no
-   * stream to drive it). The page fetches ``app:emitted:invoice`` from
-   * the session state and passes it here; the Invoice tab falls back to
-   * rendering this directly via InvoiceHeroCard so the resumed session
-   * shows its primary delivery instead of an empty state. */
-  resumeInvoicePayload: Record<string, unknown> | null;
+  /** Merged canonical invoice payload synthesised from ADK session
+   * state (``app:emitted:invoice`` + ``app:emitted:verdict`` +
+   * ``app:emitted:posting``). This is the source the Invoice tab's
+   * InvoiceHeroCard renders from — both live (refreshed after each
+   * A2UI message arrives during a run) and on session resume.
+   * Null when the pipeline hasn't produced an extraction yet. */
+  emittedInvoicePayload: Record<string, unknown> | null;
 }) {
   const workspaceState = useSurfaceState("workspace");
   const [activeTab, setActiveTab] = useState<string>("invoice");
@@ -195,19 +227,41 @@ function APWorkbench({
       badged: badges.isBadged("invoice"),
       content: (
         <div className="p-4">
-          {workspaceState?.surface ? (
+          {emittedInvoicePayload ? (
+            // The Invoice tab renders our canonical hero card driven
+            // by the function-as-schema payload from ADK state, not
+            // the A2UI workspace surface's display-shape dataModel
+            // (flattened strings like "USD 800.00" + "3 line items —
+            // Widget A ×10"). The A2UI surface keeps emitting on the
+            // wire for protocol-purity / audit; we just don't render
+            // it visually because the structured payload makes a
+            // dramatically nicer card. A hidden A2UISurfaceMount
+            // below preserves the action-button wiring (show_vendor_globe,
+            // show_ap_dashboard) without contributing visible chrome.
+            <>
+              <InvoiceHeroCard data={emittedInvoicePayload} />
+              {workspaceState?.surface && (
+                <div className="sr-only" aria-hidden>
+                  <A2UISurfaceMount
+                    surfaceId="workspace"
+                    sessionId={sessionId}
+                    onAction={onAction}
+                  />
+                </div>
+              )}
+            </>
+          ) : workspaceState?.surface ? (
+            // First-pass rendering before the extractor's emit_*
+            // payload has been fetched. The A2UI workspace surface
+            // arrives first via SSE and the canonical state fetch
+            // catches up shortly after; until then this is the live
+            // "watch it assemble" view.
             <A2UISurfaceMount
               surfaceId="workspace"
               className="h-full"
               sessionId={sessionId}
               onAction={onAction}
             />
-          ) : resumeInvoicePayload ? (
-            // Session resume — live A2UI registry is empty but the
-            // emitted payload survives in ADK state. Render the hero
-            // card directly so the user sees the primary delivery of
-            // the resumed pipeline.
-            <InvoiceHeroCard data={resumeInvoicePayload} />
           ) : (
             <EmptyTab
               title="No invoice yet"
@@ -772,23 +826,34 @@ function ChatShell({
     prevFreshChatRef.current = isFreshChat;
   }, [isFreshChat, enteredViaResume]);
 
-  // Workbench resume hydration. On AP-orchestrator session resume the
-  // live A2UI surface registry is empty (no stream to drive it), so the
-  // Workbench's Invoice tab would render an "empty state" even though
-  // the pipeline already ran. The emitted payload survives in ADK
-  // session state — fetch it once on resume and feed it to the workbench
-  // as a fallback. Specialist chips don't restore here (that needs
-  // tool-call replay, separate work) but the primary delivery card does.
-  const [resumeInvoicePayload, setResumeInvoicePayload] = useState<
+  // Workbench Invoice tab is driven by the canonical emit_* payloads
+  // from ADK state (`app:emitted:invoice` + verdict + posting), merged
+  // into one record and passed to InvoiceHeroCard. The A2UI workspace
+  // surface uses a flattened display shape ("USD 800.00", "3 line items —
+  // Widget A ×10") which doesn't have line_items as an array; the
+  // function-as-schema payloads do. So we render OUR hero card from
+  // state, not from the SDK's A2uiSurface rendering of the surface model.
+  //
+  // Refresh trigger: every time the number of completed tool calls
+  // ticks up. Each specialist's emit_* call increments the counter,
+  // so the card progressively updates as Extract → Validate → Post
+  // complete. Also fires on first mount when resuming a session
+  // (toolCalls is empty but the persisted state still has emitted
+  // payloads, so the initial fetch on session-id presence catches that).
+  const [emittedInvoicePayload, setEmittedInvoicePayload] = useState<
     Record<string, unknown> | null
   >(null);
-  const resumeFetchedForSessionRef = useRef<string | null>(null);
+  const completedToolCount = useMemo(
+    () =>
+      toolCalls.filter(
+        (tc) => tc.status === "success" || tc.status === "error",
+      ).length,
+    [toolCalls],
+  );
   useEffect(() => {
-    if (!isApOrchestrator || !enteredViaResume) return;
+    if (!isApOrchestrator) return;
     const sid = sessionId ?? agentSessionId;
     if (!sid) return;
-    if (resumeFetchedForSessionRef.current === sid) return;
-    resumeFetchedForSessionRef.current = sid;
     void (async () => {
       try {
         const res = await fetchWithAuth(
@@ -796,24 +861,20 @@ function ChatShell({
         );
         if (!res.ok) return;
         const state = (await res.json()) as Record<string, unknown>;
-        const invoice = state["app:emitted:invoice"];
-        if (invoice && typeof invoice === "object" && !Array.isArray(invoice)) {
-          setResumeInvoicePayload(invoice as Record<string, unknown>);
-        }
+        const merged = mergeEmittedInvoicePayload(state);
+        if (merged) setEmittedInvoicePayload(merged);
       } catch {
-        // Network / parse errors are non-fatal — the empty-state tab
-        // is still a valid UX, just less informative.
+        // Network / parse errors are non-fatal — the workspace surface
+        // fallback is still a valid view while the run is in flight.
       }
     })();
-  }, [isApOrchestrator, enteredViaResume, sessionId, agentSessionId]);
+  }, [isApOrchestrator, sessionId, agentSessionId, completedToolCount]);
 
-  // Clear the resumed payload when the user starts a new session — once
-  // the live stream is driving the workspace surface, the synthetic
-  // fallback should yield.
+  // Clear the cached payload when the user starts a new session — old
+  // session's card must not bleed into the fresh chat.
   useEffect(() => {
     if (isFreshChat) {
-      setResumeInvoicePayload(null);
-      resumeFetchedForSessionRef.current = null;
+      setEmittedInvoicePayload(null);
     }
   }, [isFreshChat]);
 
@@ -1430,7 +1491,7 @@ function ChatShell({
             onNewSession={handleNewSession}
             onClearGlobe={() => setGlobeContext(null)}
             onCloseDashboard={() => setDashboardOpen(false)}
-            resumeInvoicePayload={resumeInvoicePayload}
+            emittedInvoicePayload={emittedInvoicePayload}
           />
         )}
       </div>
