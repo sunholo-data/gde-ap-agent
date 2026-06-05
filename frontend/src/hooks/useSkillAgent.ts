@@ -79,6 +79,16 @@ export interface UseSkillAgentReturn {
    * new run (``onRunStartedEvent``).
    */
   firedStages: ReadonlySet<string>;
+  /**
+   * Date.now() timestamp the first STAGE_PROGRESS event for each
+   * stage name was observed. Used by useSpecialistInvocations to
+   * derive accurate per-specialist durations from the gaps between
+   * adjacent stage starts — sub-agent invocations under the
+   * SequentialAgent don't surface as separate tool calls, so the
+   * tool-call latency on each specialist's emit_* is ~instantaneous
+   * (the args ARE the payload) and useless as a duration signal.
+   */
+  stageStartTimes: ReadonlyMap<string, number>;
   sendMessage: (
     text: string,
     opts?: { documentIds?: string[]; resumedSession?: boolean },
@@ -200,6 +210,16 @@ export function useSkillAgent(options?: {
   const [firedStages, setFiredStages] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
   );
+  // Per-stage timestamps (Date.now ms) so the specialist chips can
+  // display the SPECIALIST'S full run duration, not the emit_* tool
+  // call duration (which is ~instantaneous since the args ARE the
+  // payload). Each STAGE_PROGRESS event records the moment its stage
+  // began; specialist duration is derived from gaps between adjacent
+  // stage starts (extract = validate_start - extract_start, etc.) by
+  // useSpecialistInvocations.
+  const [stageStartTimes, setStageStartTimes] = useState<
+    ReadonlyMap<string, number>
+  >(() => new Map<string, number>());
 
   // Inactivity watchdog: bumps on every AG-UI event so the UI can flip into
   // a "still working… (Xs)" indicator past `stallSoftMs` and auto-abort
@@ -252,6 +272,7 @@ export function useSkillAgent(options?: {
     // pipeline completion into a fresh chat where no run has happened.
     if (agentChanged) {
       setFiredStages(new Set<string>());
+      setStageStartTimes(new Map<string, number>());
     }
 
     const sync = (allowReset = false) => {
@@ -337,6 +358,12 @@ export function useSkillAgent(options?: {
               if (prev.has(stageName)) return prev;
               const next = new Set(prev);
               next.add(stageName);
+              return next;
+            });
+            setStageStartTimes((prev) => {
+              if (prev.has(stageName)) return prev; // freeze first-seen ts
+              const next = new Map(prev);
+              next.set(stageName, Date.now());
               return next;
             });
           }
@@ -586,6 +613,7 @@ export function useSkillAgent(options?: {
     isThinking,
     stageLabel,
     firedStages,
+    stageStartTimes,
     sendMessage,
     isLoading,
     stalledMs,

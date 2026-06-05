@@ -18,6 +18,7 @@ function makeReturn(overrides: Partial<UseSkillAgentReturn>): UseSkillAgentRetur
     isThinking: false,
     stageLabel: null,
     firedStages: new Set<string>(),
+    stageStartTimes: new Map<string, number>(),
     stalledMs: null,
     sendMessage: mockSendMessage,
     isLoading: false,

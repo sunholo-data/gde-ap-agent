@@ -50,9 +50,26 @@ function statusFromToolCall(tc: ToolCallState): InvocationStatus {
  * latest record per specialist into sessionStorage so forms can prefill
  * "Load from last X" and a refresh recovers the audit-view state.
  */
+// Stage names emitted by the backend. Maps each specialist to the
+// STAGE_PROGRESS event that marks the START of its work, and the
+// stage that marks the END (i.e., the start of the NEXT specialist
+// or `pipeline_done`). Used to derive per-specialist durations from
+// stage-start timestamps because the SequentialAgent refactor stopped
+// surfacing sub-agent invocations as separate tool calls — each
+// specialist's emit_* tool latency is ~instantaneous (function-as-
+// schema args ARE the payload), so the only honest "how long did
+// this specialist take" signal is the gap between STAGE_PROGRESS
+// events.
+const STAGE_RANGES: Record<SpecialistKey, { start: string; end: string }> = {
+  docparse: { start: "ap_stage_extract", end: "ap_stage_validate" },
+  validator: { start: "ap_stage_validate", end: "ap_stage_post" },
+  poster: { start: "ap_stage_post", end: "pipeline_done" },
+};
+
 export function useSpecialistInvocations(
   toolCalls: ToolCallState[],
   sessionId: string | null,
+  stageStartTimes?: ReadonlyMap<string, number>,
 ): SpecialistInvocations {
   const [state, setState] = useState<SpecialistInvocations>(() => emptyAll());
 
@@ -124,8 +141,25 @@ export function useSpecialistInvocations(
           r.resultContent &&
           !/stop\.?\s*do not call this tool again/i.test(r.resultContent),
       );
-      const current = canonical ?? records[records.length - 1];
+      let current = canonical ?? records[records.length - 1];
       const history = records.slice(-5);
+
+      // Stage-based duration override: use the gap between this
+      // specialist's stage start and the next stage's start (or
+      // pipeline_done) when both timestamps are available. This is
+      // the only accurate signal of how long the specialist took to
+      // do its work — emit_* tool latency is ~instantaneous.
+      if (stageStartTimes) {
+        const range = STAGE_RANGES[key];
+        const stageStart = stageStartTimes.get(range.start);
+        const stageEnd = stageStartTimes.get(range.end);
+        if (stageStart !== undefined) {
+          const startedAt = stageStart;
+          const endedAt = stageEnd ?? null;
+          current = { ...current, startedAt, endedAt };
+        }
+      }
+
       next[key] = { current, history, status: current.status };
 
       // Persist the most-recent completed structured output so
@@ -143,7 +177,7 @@ export function useSpecialistInvocations(
     }
 
     setState(next);
-  }, [toolCalls, sessionId]);
+  }, [toolCalls, sessionId, stageStartTimes]);
 
   return state;
 }

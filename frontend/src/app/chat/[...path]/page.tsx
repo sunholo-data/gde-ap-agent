@@ -656,6 +656,7 @@ function ChatShell({
     isThinking,
     stageLabel,
     firedStages,
+    stageStartTimes,
     sendMessage,
     isLoading,
     stalledMs,
@@ -799,7 +800,11 @@ function ChatShell({
   // Audit-View: derive per-specialist invocation state from the orchestrator's
   // toolCalls stream. Drives the chip row + InspectorPanel. When the audit-view
   // flag is off the state is computed but unused — cheap.
-  const invocations = useSpecialistInvocations(toolCalls, sessionId ?? agentSessionId);
+  const invocations = useSpecialistInvocations(
+    toolCalls,
+    sessionId ?? agentSessionId,
+    stageStartTimes,
+  );
 
   // Legacy URL redirect: if the user landed on /chat/{specialist-skill-id} and
   // the audit-view flag is on (and ?devmode=1 isn't set), bounce them to the
@@ -970,6 +975,24 @@ function ChatShell({
       setPipelineEmissions({ invoice: null, verdict: null, posting: null });
     }
   }, [isFreshChat]);
+
+  // ALSO clear on session-switch (URL `?session=` change, e.g. user
+  // clicks a different session in the sidebar). Without this, the
+  // workbench card and audit-view upstream-inputs keep showing the
+  // PRIOR session's data until the new session's first emit_* lands —
+  // visible as "I'm processing Nordic Parts but the right pane still
+  // shows Acme GmbH" stale-render. isFreshChat doesn't fire here
+  // because sessionId goes from oldId → newId without passing through
+  // null. Tracked via a ref so we only clear on transitions, not on
+  // every render.
+  const prevSessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    if (prevSessionIdRef.current !== sessionId) {
+      setEmittedInvoicePayload(null);
+      setPipelineEmissions({ invoice: null, verdict: null, posting: null });
+      prevSessionIdRef.current = sessionId;
+    }
+  }, [sessionId]);
 
   async function handleSend() {
     const text = draft.trim();
