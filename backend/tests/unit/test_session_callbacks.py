@@ -558,6 +558,86 @@ class TestDocumentInjectorBugF:
             assert b"PRIVACY NOTICE" not in saved["claim"], "claim artifact contains privacy's content — content bleed."
 
 
+class TestLoaderClearsEmittedStateOnNewDoc:
+    """When a NEW document_id arrives, the loader must clear
+    app:emitted:invoice / verdict / posting so the next pipeline turn's
+    emit_* tools don't trip their idempotency guard. Without this clear,
+    processing a second invoice in the same session leaves the FIRST
+    invoice's data stuck in state forever and the workbench shows stale
+    data while the chat shows the new extraction.
+    """
+
+    @pytest.mark.asyncio
+    async def test_loader_clears_emit_state_when_new_doc_arrives(self):
+        from adk.callbacks import make_document_loader
+
+        async def _load_artifact(filename: str):
+            return None
+
+        async def _save_artifact(filename: str, artifact):
+            return None
+
+        ctx = MagicMock()
+        ctx.state = {
+            "document_ids": ["doc-new"],
+            # Pretend a prior pipeline run already populated emit state:
+            "app:emitted:invoice": {"vendor_name": "Acme GmbH"},
+            "app:emitted:verdict": {"verdict": "needs_review"},
+            "app:emitted:posting": {"action": "escalate"},
+        }
+        ctx.load_artifact = _load_artifact
+        ctx.save_artifact = _save_artifact
+        ctx.session = MagicMock()
+        ctx.session.id = "sess-new-doc"
+
+        loader = make_document_loader()
+
+        with patch(
+            "tools.documents.context.build_document_context",
+            return_value=("md", [{"type": "paragraph", "text": "x"}]),
+        ):
+            await loader(ctx)
+
+        # Emit keys must now be None so the next emit_invoice_extraction
+        # call writes the new invoice's data through the idempotency guard.
+        assert ctx.state["app:emitted:invoice"] is None
+        assert ctx.state["app:emitted:verdict"] is None
+        assert ctx.state["app:emitted:posting"] is None
+
+    @pytest.mark.asyncio
+    async def test_loader_preserves_emit_state_when_no_new_doc(self):
+        """Q&A turns (no new doc_id) MUST leave the emit state intact so
+        the audit view / workbench hero card keep showing the prior
+        pipeline run's data for the user's follow-up questions."""
+        from adk.callbacks import _STATE_DOCS_LOADED, make_document_loader
+
+        async def _load_artifact(filename: str):
+            from google.genai.types import Blob, Part
+
+            # Pretend the doc artifact already exists from a prior turn.
+            return Part(inline_data=Blob(data=b"{}", mime_type="application/json"))
+
+        ctx = MagicMock()
+        ctx.state = {
+            "document_ids": ["doc-already-loaded"],
+            _STATE_DOCS_LOADED: ["doc-already-loaded"],
+            "app:emitted:invoice": {"vendor_name": "Apex Consulting LLC"},
+            "app:emitted:verdict": {"verdict": "pass"},
+            "app:emitted:posting": {"action": "post"},
+        }
+        ctx.load_artifact = _load_artifact
+        ctx.session = MagicMock()
+        ctx.session.id = "sess-qa-turn"
+
+        loader = make_document_loader()
+        await loader(ctx)
+
+        # Nothing new to load → emit state must survive untouched.
+        assert ctx.state["app:emitted:invoice"] == {"vendor_name": "Apex Consulting LLC"}
+        assert ctx.state["app:emitted:verdict"] == {"verdict": "pass"}
+        assert ctx.state["app:emitted:posting"] == {"action": "post"}
+
+
 class TestLoaderTurnOneInvariant:
     """Stranded-session-prevention (1.23) — Option 2.
 

@@ -270,7 +270,30 @@ def make_document_loader() -> Any:
             logger.info("doc loader: nothing to load — verified loaded=%s", loaded)
             return
 
-        logger.info("doc loader: will load %d new doc(s): %s", len(to_load), to_load)
+        # New documents detected — clear the previous run's emit_*
+        # results so the next pipeline turn doesn't trip the
+        # idempotency guard in emit_invoice_extraction / emit_ap_verdict
+        # / emit_posting_record. Without this, processing a second
+        # invoice in the same session leaves Acme (or whatever ran
+        # first) stuck in `app:emitted:invoice` because the guard
+        # returns STOP without overwriting -- the symptom users see
+        # is "the workbench keeps showing the first invoice forever."
+        # The clear only fires when there's ACTUALLY a new doc to
+        # load, so Q&A turns (no new doc -> early return above) keep
+        # the emit data intact for the audit view / hero card.
+        for emit_key in (
+            "app:emitted:invoice",
+            "app:emitted:verdict",
+            "app:emitted:posting",
+        ):
+            if state.get(emit_key) is not None:
+                # ADK's state proxy supports __setitem__ + del; setting
+                # to None is safer (some backends choke on del on
+                # non-existent keys, and downstream `state.get(...)` in
+                # the emit guard reads None as "not yet emitted").
+                state[emit_key] = None
+
+        logger.info("doc loader: will load %d new doc(s): %s (cleared emit_* state)", len(to_load), to_load)
 
         from google.genai.types import Blob, Part
 
