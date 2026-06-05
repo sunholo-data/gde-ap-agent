@@ -297,6 +297,33 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/**
+ * Try to extract a structured value (object or array) from a string
+ * that may be JSON-encoded one OR more times. The poster's
+ * `emit_posting_record(invoice_json: str, ...)` accepts the invoice
+ * as a pre-stringified blob, and the LLM has been observed escaping
+ * it twice (once when calling the tool, again at some layer in the
+ * ADK serialisation). A single JSON.parse on the outer string then
+ * returns ANOTHER string (the invoice JSON), not an object — at
+ * which point the old code's `isPlainObject` check failed and the
+ * whole blob rendered raw in the Posting Record card. Recurse up to
+ * a small depth so we always land on the structured value.
+ */
+function deepParseJsonString(raw: string, maxDepth = 3): unknown {
+  let v: unknown = raw;
+  for (let i = 0; i < maxDepth; i++) {
+    if (typeof v !== "string") return v;
+    const trimmed = v.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return v;
+    try {
+      v = JSON.parse(trimmed);
+    } catch {
+      return v;
+    }
+  }
+  return v;
+}
+
 function unwrapStringEncodedNested(
   data: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -305,18 +332,14 @@ function unwrapStringEncodedNested(
     if (typeof value === "string") {
       const trimmed = value.trim();
       if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
-        try {
-          const parsed = JSON.parse(trimmed);
-          if (
-            (Array.isArray(parsed) && parsed.length > 0 && isPlainObject(parsed[0])) ||
-            (isPlainObject(parsed) && Object.keys(parsed).length > 0)
-          ) {
-            const clean = key.endsWith("_json") ? key.slice(0, -5) : key;
-            out[clean] = parsed;
-            continue;
-          }
-        } catch {
-          // not JSON, fall through
+        const parsed = deepParseJsonString(trimmed);
+        if (
+          (Array.isArray(parsed) && parsed.length > 0 && isPlainObject(parsed[0])) ||
+          (isPlainObject(parsed) && Object.keys(parsed as Record<string, unknown>).length > 0)
+        ) {
+          const clean = key.endsWith("_json") ? key.slice(0, -5) : key;
+          out[clean] = parsed;
+          continue;
         }
       }
     }
