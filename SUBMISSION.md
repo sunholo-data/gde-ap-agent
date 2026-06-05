@@ -17,24 +17,25 @@
 4. Click any chip to open the **Audit View side panel** — see that specialist&apos;s input, tool calls, citations, and structured output rendered as an A2UI surface
 5. On the Validator Audit View, the embedded **`ap-vendor-kg` MCP App** visualizes the cited vendor record, the matched PO, prior invoices, and the duplicate-detection graph — AG-UI + A2UI + MCP Apps showcased together on one specialist
 6. Optionally **Run Standalone** any specialist with a structured input form (no chat box — typed JSON / picker only) to audit its behaviour in isolation
-7. The **Invoice Review Card** renders in the workspace pane with all fields, verdict, and action
-8. Click **🌍 View Vendor on Map** — a rotating 3D canvas globe shows London HQ → vendor location arc
-9. Click **📊 AP Analytics** — an inline dashboard shows invoice aging, vendor bar, GL donut
+7. The **Invoice Hero Card** renders in the Workbench Invoice tab — vendor + total as visual anchors, ledger-style line items, verdict band tied to validator output
+8. Switch to the **MCP App Vendor tab** — the `ap-vendor-kg` knowledge graph shows the validator's grounded references with `LIVE` citation badges. Click any citation row or graph node → an `ui/update-model-context` notification fires → the host auto-sends a follow-up chat query to the agent → the orchestrator answers in the chat. Demonstrates the bidirectional MCP Apps protocol loop end-to-end.
+9. Switch to the **MCP App Analytics tab** — invoice aging, top-vendors-by-value, GL-code distribution. Auto-updates from the current pipeline run's emit_* state; the stat tiles and chart cards are clickable, same `user_intent` channel as the KG.
 
 ---
 
 ## What Was Built
 
-An **Accounts-Payable multi-agent system** that turns an incoming vendor invoice into a trustworthy posting decision with a complete audit trail — built on Google ADK, Gemini 2.5 Pro/Flash, and the open-source [`ai-protocol-platform`](https://github.com/sunholo-data/ai-protocol-platform) template.
+An **Accounts-Payable multi-agent system** that turns an incoming vendor invoice into a trustworthy posting decision with a complete audit trail — built on Google ADK, the Gemini Flash family (3.5 Flash / 3.1 Flash-Lite / 2.5 Flash), and the open-source [`ai-protocol-platform`](https://github.com/sunholo-data/ai-protocol-platform) template.
 
-The headline artifact is four declarative skill files and ~80 lines of wiring:
+**No Pro tokens. No LLM at the workflow layer.** The pipeline order is code (ADK `SequentialAgent`), not prose — which removes prompt-injection risk on the routing path and keeps unit cost dominated by Flash-Lite specialists. The headline artifact is five declarative skill files and ~80 lines of wiring:
 
 | Agent | Model | Role |
 |---|---|---|
-| `ap-orchestrator` | Gemini 2.5 Pro | Workflow owner — coordinates the three specialists and owns the human handoff |
-| `docparse` | Gemini 2.5 Flash | Extraction — turns a raw invoice file into clean, typed fields using `ailang-parse` for structured formats |
-| `ap-validator` | Gemini 2.5 Flash | Grounded validation — checks extracted fields against the vendor master, open POs, and approval policy via Vertex AI Search |
-| `ap-poster` | Gemini 2.5 Flash | Action — posts a clean invoice or escalates with a written audit trail |
+| `ap-orchestrator` | Gemini 3.5 Flash | Entry agent — owns the human handoff and delegates to `ap-pipeline` |
+| `ap-pipeline` | *(no model — ADK `SequentialAgent`)* | Deterministic workflow — walks Extract → Validate → Post in code, not prose |
+| `invoice-extractor` | Gemini 2.5 Flash | Extraction — turns a raw invoice file into clean, typed fields using `ailang-parse` for structured formats |
+| `ap-validator` | Gemini 3.1 Flash-Lite | Grounded validation — checks extracted fields against the vendor master, open POs, and approval policy via Vertex AI Search |
+| `ap-poster` | Gemini 3.1 Flash-Lite | Action — posts a clean invoice or escalates with a written audit trail |
 
 ---
 
@@ -42,27 +43,30 @@ The headline artifact is four declarative skill files and ~80 lines of wiring:
 
 | Feature | Implementation |
 |---------|---------------|
-| AP/Finance theme | Navy+gold CSS custom properties (`--primary: hsl(43 96% 46%)`) |
-| Pipeline step visualizer | `APPipelineSteps.tsx` — live 4-step progress bar driven by AG-UI `TOOL_CALL_START/END` events |
-| Invoice review card | A2UI v0.9 `updateComponents` tree pushed from `ap-orchestrator/SKILL.md`; renders in workspace pane |
-| Vendor geography globe | MCP App artefact — 100% canvas, 50-country lat/lng table, animated arc from London HQ |
-| AP analytics dashboard | MCP App artefact — aging bar, vendor bar, GL donut; canvas-only, no CDN |
-| Audit View chips + side panel | `SpecialistChip` row replaces specialist tabs; `InspectorPanel` slides in 40% width, renders per-specialist input/tools/output, with invocation history dropdown |
+| AP/Finance theme | Parse-blue CSS custom properties + Montserrat display / JetBrains Mono numbers; light-default with dark-mode variants |
+| Pipeline step visualizer | `APPipelineSteps.tsx` — live 4-step progress bar driven by AG-UI `STAGE_PROGRESS` events. Session-cumulative (Intake / Extract / Validate / Post stay lit across Q&A turns so the user sees where they are in the pipeline). |
+| Invoice Hero Card | `InvoiceHeroCard.tsx` — purpose-built financial card: status-toned accent stripe, vendor name + total as the two typographic anchors, ledger-style line items with totals footer, status-toned verdict band with routing / SLA / audit-citation chips. Fed from merged `app:emitted:invoice` + `verdict` + `posting` state, so it progressively fills in as each specialist completes. |
+| AP Analytics Dashboard | MCP App artefact — aging bar with `niceTicks` integer-friendly y-axis, top-vendors horizontal bar, GL-code donut with width-aware legend. Reactivity: pulsing attribution chip showing "Updated by Orchestrator · just now", "Just added by agent" callout summarising the live invoice merge, click any stat tile or chart card to send a chat query (`ui/update-model-context` → `user_intent` → `sendMessage`). |
+| Vendor Knowledge Graph MCP App | `ap-vendor-kg` artefact — vendor master record with approval status, prior-invoice nodes, PO edges, "this invoice" highlight. Validator citations with `LIVE` badges that click through to chat queries (vendor_master:V-1042 → "Tell me more about V-1042's history"). Same bidirectional channel as the Dashboard. Mounted both in the workbench Vendor tab AND inside the validator's Audit View. |
+| Audit View chips + side panel | `SpecialistChip` row replaces specialist tabs; `InspectorPanel` slides in with animated entrance, renders per-specialist input/tools/output. Each panel shows the **upstream specialist's output as its own input** (Validator's input = Extractor's invoice; Poster's input = invoice + verdict) so judges read the data handoff directly off the audit panel. |
 | Structured-input "Run Standalone" | Hand-rolled forms (DocparsePicker / ValidatorJsonForm / PosterVerdictForm) post to `POST /api/skill/{id}/structured`; server validates against `metadata.structuredInput` JSON Schema in each SKILL.md |
-| `ap-vendor-kg` MCP App | New MCP App artefact rendering a stylised vendor knowledge graph from the validator&apos;s citations — embedded in the validator Audit View so AG-UI + A2UI + MCP Apps appear together |
-| MCP sandbox | Separate-origin Cloud Run service (`mcp-sandbox-374404277595.europe-west1.run.app`) per MCP Apps spec |
+| MCP sandbox | Separate-origin Cloud Run service (`mcp-sandbox-374404277595.europe-west1.run.app`) per MCP Apps spec; auto-deploys via conditional Cloud Build step that watches `infrastructure/mcp-sandbox/**` paths |
 
 ### Protocol Chain (end-to-end)
 
 ```
-User types invoice text
+User uploads an invoice (or picks one from the GCS bucket browser)
    → AG-UI SSE stream fires TOOL_CALL_START per sub-agent (pipeline visualizer advances)
-   → ap-orchestrator finishes → calls send_a2ui_json_to_client
-   → A2UI createSurface + updateComponents renders Invoice Review Card in workspace
-   → User clicks "🌍 View Vendor on Map" Button
-   → A2UI action "show_vendor_globe" fires → setGlobeContext state
-   → StaticArtefactFrame fetches /artefacts/vendor-globe/index.html from sandbox origin
-   → postMessage ui/initialize handshake → ui/update-data push → globe animates to vendor country
+   → SequentialAgent walks Extract → Validate → Post; each specialist
+     emits its function-as-schema payload (app:emitted:invoice / verdict / posting)
+   → Workbench Invoice tab renders InvoiceHeroCard from merged emit_* state
+   → Workbench Vendor tab renders the ap-vendor-kg MCP App showing
+     validator citations (vendor_master / open_pos / prior_invoices)
+   → User clicks a citation row inside the iframe
+   → Artefact posts ui/update-model-context with `{ user_intent: { intent, source, context } }`
+   → StaticArtefactFrame forwards the structuredContent to onMcpUserIntent
+   → Host auto-sends the intent string as a chat message through the normal sendMessage path
+   → Orchestrator responds in the chat → bidirectional protocol loop complete
 ```
 
 ---
@@ -71,18 +75,24 @@ User types invoice text
 
 ### 1. ADK + Declarative Intent
 
-The entire AP system is defined in four `SKILL.md` files. Each file is a YAML frontmatter block (name, model, tools, `subSkills`) plus a markdown instruction body — no Python pipeline, no orchestration loop, no token counting. ADK handles all of that.
+The entire AP system is defined in five `SKILL.md` files. Each file is a YAML frontmatter block (name, model, tools, `subSkills`) plus a markdown instruction body — no Python pipeline, no orchestration loop, no token counting. ADK handles all of that.
 
-The orchestrator's `subSkills` declaration:
+The orchestrator delegates to a single workflow sub-skill, which is itself a `SequentialAgent` with no model:
 
 ```yaml
+# ap-orchestrator/SKILL.md
 subSkills:
-  - docparse
+  - ap-pipeline
+
+# ap-pipeline/SKILL.md
+agentType: sequential   # → google.adk.agents.SequentialAgent
+subSkills:
+  - invoice-extractor
   - ap-validator
   - ap-poster
 ```
 
-ADK resolves these to `LlmAgent` sub-agents at runtime via the factory in `backend/adk/agent.py`. The orchestrator delegates via ADK's native `transfer_to_agent` mechanism — no hand-rolled routing.
+The orchestrator (Gemini 3.5 Flash) is an `LlmAgent` that owns the human handoff and `transfer_to_agent`s into `ap-pipeline`. `ap-pipeline` has **no model** — ADK's `SequentialAgent` walks its `sub_agents` in Python, in order, passing schema-enforced state forward (`ap_invoice` → `ap_verdict` → `ap_posting_record`). No LLM is asked "what comes next" at the workflow level.
 
 → See [`backend/skills/templates/ap-orchestrator/SKILL.md`](backend/skills/templates/ap-orchestrator/SKILL.md)
 
@@ -90,7 +100,7 @@ ADK resolves these to `LlmAgent` sub-agents at runtime via the factory in `backe
 
 **Current MCP surface** (in this submission):
 
-- `list_documents` / `get_document_content` / `structured_extraction` — MCP-style tool wrappers in `backend/tools/` used by `docparse` and `ap-poster` to read invoice artifacts.
+- `list_documents` / `get_document_content` / `structured_extraction` — MCP-style tool wrappers in `backend/tools/` used by `invoice-extractor` and `ap-poster` to read invoice artifacts.
 - The platform exposes its own MCP server at `/.well-known/agent.json` for A2A discovery, meaning the AP orchestrator is discoverable by other agents.
 
 **Planned MCP surface** (Phase 2, documented):
@@ -149,7 +159,7 @@ Once running:
 1. Sign in via the workshop stub identity (LOCAL_MODE — no real auth needed).
 2. Pick **ap-orchestrator** from the skills bar.
 3. Upload or reference an invoice document.
-4. Watch the orchestrator delegate: `docparse` → `ap-validator` → `ap-poster` → audit card in the workspace pane.
+4. Watch the orchestrator delegate to `ap-pipeline`, which walks `invoice-extractor` → `ap-validator` → `ap-poster` → audit card in the workspace pane.
 
 In LOCAL_MODE, `vertex_search` is stubbed — the validator runs grounding checks but returns a deterministic fixture response (see [Gap 4 in the submission-readiness doc](docs/design/forks/gde-ap-agent/v0.1.0/submission-readiness.md)). For production grounding, set `AP_DATASTORE_ID` (see below).
 
@@ -213,10 +223,11 @@ toolConfigs:
 ```
 backend/
 ├── skills/templates/
-│   ├── ap-orchestrator/SKILL.md   # Workflow + human handoff (Gemini 2.5 Pro)
-│   ├── docparse/SKILL.md          # Extraction via ailang-parse + Gemini multimodal
-│   ├── ap-validator/SKILL.md      # Grounded validation via Vertex AI Search
-│   └── ap-poster/SKILL.md         # Post xor escalate with audit trail
+│   ├── ap-orchestrator/SKILL.md   # Entry + human handoff (Gemini 3.5 Flash)
+│   ├── ap-pipeline/SKILL.md       # Deterministic workflow (ADK SequentialAgent — no model)
+│   ├── invoice-extractor/SKILL.md # Extraction via ailang-parse + Gemini 2.5 Flash multimodal
+│   ├── ap-validator/SKILL.md      # Grounded validation via Vertex AI Search (Gemini 3.1 Flash-Lite)
+│   └── ap-poster/SKILL.md         # Post xor escalate with audit trail (Gemini 3.1 Flash-Lite)
 ├── adk/agent.py                   # create_agent() — resolves subSkills at runtime
 ├── db/local_fixture.py            # LOCAL_MODE fixture (seeds AP bundle)
 └── tests/unit/
@@ -244,7 +255,8 @@ curl https://gde-ap-agent-blqtqfexwa-ew.a.run.app/.well-known/agent.json \
 - **[Google ADK](https://github.com/google/adk-python)** — agent orchestration, sub-agent delegation, sessions, artifacts
 - **[ai-protocol-platform](https://github.com/sunholo-data/ai-protocol-platform)** — open-source platform template (AG-UI, A2UI, MCP, A2A)
 - **[ailang-parse](https://ailang.dev)** — deterministic document parsing (<1s, no LLM tokens) for structured invoice formats
-- **Gemini 2.5 Pro/Flash** via Vertex AI — orchestrator + specialist models
+- **Gemini 3.5 Flash / 3.1 Flash-Lite / 2.5 Flash** via Vertex AI — entry agent + specialist models (no Pro)
+- **Vertex AI Agent Engine** (Reasoning Engine) — managed ADK session service + Memory Bank for cross-session recall via the `load_memory` tool
 - **Vertex AI Search** — grounded validation against enterprise knowledge base
-- **Google Cloud Run** — deployment target
+- **Google Cloud Run** — backend, frontend, and MCP sandbox deployment target (`europe-west1`)
 - **Firebase Auth + Firestore** — auth and skill storage

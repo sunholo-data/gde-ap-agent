@@ -30,11 +30,16 @@ Fork of Aitana Platform v6 for the **Google AI Agents Challenge, Track 3** (dead
 ## What ships in v0.1.0
 
 - 4-skill AP pipeline (ap-orchestrator → invoice-extractor → ap-validator → ap-poster)
-- Navy + gold AP finance theme, dark mode default
-- AG-UI streaming with APPipelineSteps 4-step progress visualizer
-- A2UI invoice result card (workspace surface)
-- MCP sandbox vendor globe + AP analytics dashboard
+- Parse-blue AP theme, light-default with dark-mode variants
+- AG-UI streaming with `APPipelineSteps` 4-step progress visualizer (session-cumulative across Q&A turns)
+- A2UI workspace surface + bespoke `InvoiceHeroCard` (ledger-style line items, status-toned verdict band)
+- Two MCP App artefacts with bidirectional click→chat via `ui/update-model-context`:
+  - `ap-vendor-kg` — vendor knowledge graph (workbench Vendor tab + validator Audit View) with `LIVE` citation badges
+  - `ap-dashboard` — AP analytics dashboard with auto-feed from emit_* state
+  - *(Vendor Globe was dropped in the MCP Apps Interaction Pass — decorative-only artefact with no interaction surface; the KG with clickable citations tells the bidirectional protocol story instead.)*
 - GCS bucket browser with demo invoices + user bucket support
-- Hub-and-spokes navigation: orchestrator as the only chat tab, three live specialist inspector chips with structured-input-only invocation and an `ap-vendor-kg` MCP App showcase on the validator
+- Hub-and-spokes navigation: orchestrator as the only chat tab, three live specialist inspector chips with structured-input-only invocation
+- Per-specialist Audit View showing the data handoff — each panel's Input side displays the upstream specialist's output (extractor's invoice → validator's input → poster's input)
 - Schema-enforced structured extraction: each specialist's output is JSON Schema-validated server-side via the declarative `metadata.extraction_schema` field in SKILL.md — hard structural guarantees, not prose-followed-by-vibes
-- Deterministic multi-agent workflow: `ap-pipeline` is an ADK `SequentialAgent` (no LLM at the workflow level) that walks Extract → Validate → Post in code, eliminating the "model decides whether to continue" failure mode. Adds simulated `vendor-master` and `erp-posting` MCP servers so the validator and poster have grounded tool calls to demo. Each stage maps to a distinct protocol surface — the demo *explains* the agent stack by running it.
+- Deterministic multi-agent workflow: `ap-pipeline` is an ADK `SequentialAgent` (no LLM at the workflow level) that walks Extract → Validate → Post in code, eliminating the "model decides whether to continue" failure mode. Simulated `vendor-master` and `erp-posting` MCP servers ground the validator and poster's tool calls. Each stage maps to a distinct protocol surface — the demo *explains* the agent stack by running it.
+- Long-running session resilience: Firebase ID token refreshes in-place on `onIdTokenChanged` (no 401 wall after 1h); workbench Invoice tab + KG rehydrate from session state on resume.

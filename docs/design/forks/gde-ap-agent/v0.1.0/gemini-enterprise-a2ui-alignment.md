@@ -25,7 +25,7 @@ The GDE AP Agent slots into the four-layer model described in the blog and exten
 Two extra surfaces sit alongside the four-layer stack:
 
 - **A2A discovery** — `/.well-known/agent.json` ([`backend/protocols/a2a.py`](../../../../../backend/protocols/a2a.py)) advertises this agent's public skills and supported A2UI patterns. Used by Gemini Enterprise during registration.
-- **MCP Apps sandbox** — separate-origin Cloud Run service (`mcp-sandbox-374404277595.europe-west1.run.app`) hosting iframe artefacts (vendor globe, analytics dashboard, vendor knowledge graph). Postmessage handshake per ADR-013.
+- **MCP Apps sandbox** — separate-origin Cloud Run service (`mcp-sandbox-374404277595.europe-west1.run.app`) hosting iframe artefacts (vendor knowledge graph, AP analytics dashboard). Each artefact wires the spec's `ui/update-model-context` channel back to a fork-side `user_intent` convention — click inside an iframe → host auto-sends the corresponding query as a chat message → orchestrator responds. Postmessage handshake per ADR-013.
 
 ## Theme-by-theme map
 
