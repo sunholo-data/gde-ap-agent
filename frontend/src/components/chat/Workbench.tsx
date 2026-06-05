@@ -117,13 +117,19 @@ export function Workbench({
                 {tab.badged && !isActive && (
                   <span
                     aria-label="new content"
-                    className="ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                  />
+                    className="relative ml-0.5 flex h-1.5 w-1.5 shrink-0 items-center justify-center"
+                  >
+                    {/* Soft ping halo — three pulses then naturally
+                        fades; works in tandem with the solid dot so
+                        the eye is drawn to the tab. */}
+                    <span className="absolute inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-primary/40" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+                  </span>
                 )}
                 {isActive && (
                   <span
                     aria-hidden
-                    className="absolute inset-x-2 -bottom-px h-0.5 rounded-t-sm bg-primary"
+                    className="absolute inset-x-2 -bottom-px h-0.5 origin-center animate-in fade-in zoom-in-x-50 rounded-t-sm bg-primary duration-200"
                   />
                 )}
               </button>
@@ -143,7 +149,13 @@ export function Workbench({
               aria-hidden={!isActive}
               className={cn(
                 "h-full w-full overflow-auto",
-                !isActive && "hidden",
+                isActive
+                  ? // Gentle fade on activation. tailwindcss-animate's
+                    // `animate-in` only fires when the element first
+                    // appears; using a key tied to the active id forces
+                    // the animation each time the user switches in.
+                    "animate-in fade-in duration-200"
+                  : "hidden",
               )}
             >
               {tab.content}

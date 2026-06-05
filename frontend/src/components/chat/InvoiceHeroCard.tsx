@@ -87,6 +87,11 @@ export function InvoiceHeroCard({ data, className, compact = false }: InvoiceHer
     <article
       className={cn(
         "relative overflow-hidden rounded-lg border border-border bg-background shadow-[0_1px_0_0_rgba(0,0,0,0.03),0_4px_16px_-12px_rgba(0,0,0,0.08)] dark:shadow-[0_1px_0_0_rgba(255,255,255,0.04),0_4px_16px_-12px_rgba(0,0,0,0.6)]",
+        // Entrance: gentle fade + slight slide-up the first time the
+        // card mounts (e.g. when the pipeline finishes and the
+        // workbench Invoice tab swaps from EmptyTab to the hero).
+        // tailwindcss-animate utilities — runs once at mount.
+        "animate-in fade-in slide-in-from-bottom-2 duration-500",
         className,
       )}
     >

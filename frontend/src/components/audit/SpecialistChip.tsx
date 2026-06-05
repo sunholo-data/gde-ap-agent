@@ -55,17 +55,17 @@ export function SpecialistChip({ specialistKey, state, active, onClick }: Specia
       </span>
       <span className="max-w-[7rem] truncate">{meta.tagline}</span>
       {status === "done" && latencyLabel && (
-        <span className="ml-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-primary">
+        <span className="ml-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-primary animate-in fade-in zoom-in-95 duration-200">
           {latencyLabel}
         </span>
       )}
       {status === "active" && (
-        <span className="ml-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">
+        <span className="ml-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary animate-in fade-in zoom-in-95 duration-200">
           live
         </span>
       )}
       {status === "error" && (
-        <span className="ml-0.5 rounded-full bg-destructive/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-destructive">
+        <span className="ml-0.5 rounded-full bg-destructive/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-destructive animate-in fade-in zoom-in-95 duration-200">
           err
         </span>
       )}

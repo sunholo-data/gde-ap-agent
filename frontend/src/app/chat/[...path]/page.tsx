@@ -1505,9 +1505,16 @@ function ChatShell({
                 onClick={handleRestartDemo}
                 disabled={isLoading}
                 title="Clear the conversation and return to the sample picker"
-                className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border/60 disabled:hover:bg-background disabled:hover:text-muted-foreground"
+                className="group inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border/60 disabled:hover:bg-background disabled:hover:text-muted-foreground"
               >
-                <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                <svg
+                  className="h-3 w-3 transition-transform duration-500 ease-out group-hover:-rotate-180"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  aria-hidden="true"
+                >
                   <path d="M3 8a5 5 0 0 1 9-3l1.5-1.5M13 8a5 5 0 0 1-9 3L2.5 12.5" strokeLinecap="round" strokeLinejoin="round" />
                   <path d="M11 3.5h2.5V6M5 12.5H2.5V10" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>

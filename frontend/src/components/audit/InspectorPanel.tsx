@@ -133,7 +133,10 @@ export function InspectorPanel({
       aria-label={`Audit view: ${meta.tagline}`}
       className={cn(
         "fixed inset-y-0 right-0 z-30 flex w-full flex-col border-l border-border bg-background shadow-2xl",
-        "transition-transform duration-200 ease-out",
+        // Slide in from the right when opened. `animate-in` runs once
+        // at mount (the panel is only mounted while open, so each open
+        // → close → reopen cycle gets the entrance animation fresh).
+        "animate-in slide-in-from-right-8 fade-in duration-250 ease-out",
         "md:w-[40%] md:max-w-[600px]",
       )}
     >
