@@ -249,6 +249,13 @@ export function InspectorPanel({
             <VendorKgPanel
               resultJson={displayRecord?.resultContent}
               onUserIntent={onMcpUserIntent}
+              // Explicit height for the audit-view mount. Without it
+              // the panel uses h-full, which inside the InspectorPanel's
+              // scrollable body collapses unpredictably — the iframe
+              // mounts but renders with zero height and the graph
+              // canvas shows blank. 360px matches the original audit-
+              // view sizing and gives the canvas room to draw.
+              height={360}
             />
           </div>
         )}
