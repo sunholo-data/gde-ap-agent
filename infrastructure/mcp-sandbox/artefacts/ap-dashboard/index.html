@@ -295,7 +295,13 @@
   </section>
 </div>
 
-<script type="module">
+<script>
+// IIFE wrapper — see ap-vendor-kg/index.html for context. Sandbox
+// proxy can re-inject the artefact script into the same iframe;
+// without local scoping the top-level `let __dash_initRequestId`
+// would throw on the second injection ("redeclaration of let …")
+// and the whole dashboard would silently stop responding to updates.
+(function () {
   function tok(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
@@ -422,7 +428,13 @@
     const legendCharCount = 14; // approx max legend text width
     const legendW = Math.min(w * 0.55, legendCharCount * 7 + 18);
     const donutW = w - legendW - pad;
-    const r = Math.min(donutW / 2, h / 2) - pad;
+    // Clamp r >= 0. The ResizeObserver fires on hidden→visible flip
+    // (workbench tab activation) but the canvas can momentarily have
+    // w<legendW, producing negative donutW. ctx.arc with a negative
+    // radius throws DOMException; bail out and let the next redraw
+    // (after the layout stabilises) finish the job.
+    const r = Math.max(0, Math.min(donutW / 2, h / 2) - pad);
+    if (r < 4) return;
     const cx = pad + r;
     const cy = h / 2;
     const inner = r * 0.6;
@@ -791,6 +803,7 @@
       clientInfo: { name: "ap-dashboard", version: "1.1" },
     });
   })();
+})();
 </script>
 </body>
 </html>

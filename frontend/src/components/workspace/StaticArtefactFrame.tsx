@@ -156,6 +156,16 @@ export const StaticArtefactFrame = forwardRef<
   // edge and still keep the original notification-driven path
   // idempotent for well-behaved artefacts.
   const initializedFiredRef = useRef(false);
+  // The sandbox proxy can emit `sandbox-proxy-ready` more than once
+  // per iframe lifetime (observed when the iframe page becomes visible
+  // again after being hidden via `display: none` — workbench tab
+  // switching is the trigger). Without this guard, we'd re-inject the
+  // artefact HTML into the same iframe document, and the artefact's
+  // top-level `let` declarations would collide
+  // ("redeclaration of let __kg_initRequestId") — silently breaking
+  // every subsequent ui/update-data because the second injection
+  // throws before its listeners get registered.
+  const resourceReadyFiredRef = useRef(false);
 
   // Helper to push a JSON-RPC message to the proxy iframe.
   const sendToProxy = useCallback((msg: JsonRpcMessage) => {
@@ -184,6 +194,14 @@ export const StaticArtefactFrame = forwardRef<
 
       // --- Lifecycle: proxy is ready, push the artefact HTML ---
       if (data.method === PROXY_READY) {
+        if (resourceReadyFiredRef.current) {
+          // Spec line 487 / sandbox.ts proxy can re-emit proxy-ready
+          // on iframe hidden→visible transitions. We've already pushed
+          // the artefact HTML; second injection would corrupt the
+          // already-running artefact instance.
+          return;
+        }
+        resourceReadyFiredRef.current = true;
         void (async () => {
           try {
             const res = await fetch(`${expectedOrigin}/artefacts/${artefactPath}/index.html`);

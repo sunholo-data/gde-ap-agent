@@ -298,6 +298,15 @@
   </div>
 
 <script>
+// IIFE wrapper — the sandbox proxy can inject this script more than
+// once into the same iframe (eg. a React parent re-firing sandbox-
+// resource-ready). Top-level `let`/`const` would throw on the second
+// injection with "redeclaration of let __kg_initRequestId", which
+// observers see as the whole artefact failing silently after the
+// first render. Wrapping in a self-invoked function scopes every
+// declaration to its own invocation; re-injection just runs a fresh
+// initialisation pass cleanly.
+(function () {
   function tok(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
@@ -789,6 +798,7 @@
       clientInfo: { name: "ap-vendor-kg", version: "1.1" },
     });
   })();
+})();
 </script>
 </body>
 </html>
