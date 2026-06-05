@@ -353,6 +353,83 @@ ChannelRegistry.mount_webhooks(app)
 _parent_lifespan = app.router.lifespan_context
 
 
+def _seed_in_process_mcp_servers() -> None:
+    """Idempotently write the vendor-master + erp-posting Firestore configs
+    so the validator/poster specialists can resolve their MCP tools at
+    agent build time. Without these docs, `resolve_mcp_tools` skips the
+    server silently and the LLM (which still calls lookup_vendor /
+    post_to_ledger per its SKILL.md) crashes the run with
+    ``ValueError: Tool 'lookup_vendor' not found``.
+
+    Lives in the FastAPI lifespan so a fresh deploy auto-recovers
+    without needing a manual ``scripts/seed_mcp_servers.py`` run.
+    Failures here are non-fatal — log and continue; the older manual
+    seed path still works if the runtime seed misfires.
+    """
+    try:
+        from urllib.parse import urlsplit
+
+        from db import firestore as fs
+
+        # Derive base URL from PUBLIC_BASE_URL when set (terraform-managed
+        # for deploy envs), or fall back to the current request scheme +
+        # host at lifespan time. The base URL is whatever clients use to
+        # reach this service; the in-process MCP servers are mounted at
+        # /mcp/<name> on that same host.
+        base_url = (
+            os.environ.get("PUBLIC_BASE_URL")
+            or os.environ.get("CLOUD_RUN_SERVICE_URL")
+            or "https://gde-ap-agent-blqtqfexwa-ew.a.run.app"
+        )
+        base = base_url.rstrip("/")
+        targets = {
+            "vendor-master": {
+                "name": "Vendor Master (simulated)",
+                "transport": "http",
+                "headers": {},
+                "operated_by": "aitana",
+                "tags": ["ap", "grounding", "simulated"],
+                "url": f"{base}/mcp/vendor-master/",
+            },
+            "erp-posting": {
+                "name": "ERP Posting (simulated)",
+                "transport": "http",
+                "headers": {},
+                "operated_by": "aitana",
+                "tags": ["ap", "action", "simulated"],
+                "url": f"{base}/mcp/erp-posting/",
+            },
+        }
+        for doc_id, config in targets.items():
+            existing = None
+            try:
+                existing = fs.get_document("mcp_servers", doc_id)
+            except Exception as exc:
+                _log.warning("startup mcp seed: get %s failed: %s", doc_id, exc)
+            # Only write when missing OR the URL doesn't match — the
+            # write isn't free (Firestore) and we don't want to clobber
+            # operator-overridden configs (e.g., a custom MCP server URL).
+            should_write = existing is None
+            if existing is not None:
+                existing_url = (existing.get("url") or "").rstrip("/")
+                # Only overwrite if the URL points at THIS service's host.
+                # Custom operator URLs survive untouched.
+                try:
+                    existing_host = urlsplit(existing_url).netloc
+                    expected_host = urlsplit(base).netloc
+                    if existing_host == expected_host and existing_url != config["url"].rstrip("/"):
+                        should_write = True
+                except Exception:
+                    pass
+            if should_write:
+                fs.set_document("mcp_servers", doc_id, config)
+                _log.info("startup mcp seed: wrote mcp_servers/%s (url=%s)", doc_id, config["url"])
+            else:
+                _log.info("startup mcp seed: mcp_servers/%s already up-to-date", doc_id)
+    except Exception as exc:
+        _log.warning("startup mcp seed: skipped (%s)", exc)
+
+
 @asynccontextmanager
 async def _lifespan_with_mcp(app_: FastAPI):
     async with AsyncExitStack() as stack:
@@ -360,6 +437,12 @@ async def _lifespan_with_mcp(app_: FastAPI):
         await stack.enter_async_context(mcp_server.session_manager.run())
         await stack.enter_async_context(vendor_master_mcp.session_manager.run())
         await stack.enter_async_context(erp_posting_mcp.session_manager.run())
+        # After the FastMCP session managers are up, seed the Firestore
+        # docs that point the agent's McpToolset at those mounts.
+        # Lifespan order matters — seeding before the mounts are live
+        # would leave a brief window where a request could hit a missing
+        # tool. Seeding after is safe.
+        _seed_in_process_mcp_servers()
         yield
 
 
