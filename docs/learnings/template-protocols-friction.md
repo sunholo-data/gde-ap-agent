@@ -318,3 +318,495 @@ The summary: protocols good, defaults in the template need work.
    ergonomics around it are what needs improvement. That distinction
    matters for the workshop's pitch — we're teaching protocols, not
    apologising for ADK.
+
+---
+
+# Update 2026-06-05 — chat-surface frictions
+
+A second round of friction surfaced while polishing the chat surface
+for the AP demo (workbench layout, audit panes, embedded MCP App
+iframes, avatars). None of these are protocol bugs either — they're
+template-component defaults that don't survive a real-world skill with
+many sessions, many docs, and three MCP App embeds active at once.
+Captured here so the next workshop / template-cut absorbs them.
+
+## Friction 5 — `DocumentHistoryPanel` grows unbounded
+
+### Symptom
+
+Open a frequently-used document in the workbench Document tab.
+`DocumentHistoryPanel` lists every chat session that touched that doc.
+For a doc with 50+ sessions, the list pushes the actual
+`DocumentPanel` off-screen — the user can't see the document they
+opened.
+
+### Root cause
+
+[frontend/src/components/chat/DocumentHistoryPanel.tsx](../../frontend/src/components/chat/DocumentHistoryPanel.tsx)
+defaults `isOpen={true}` and renders its open body with no `max-h` or
+internal scroll. The parent Document pane is a flex column with
+`flex-1` on `DocumentPanel` and the history panel as a sibling — when
+the history's intrinsic height exceeds available space, it wins
+because the row body is `space-y-3` with intrinsic content height.
+
+### Fix
+
+```tsx
+const [isOpen, setIsOpen] = useState(false); // collapsed by default
+
+// body wrapper
+<div className="max-h-[25vh] space-y-3 overflow-y-auto …">
+```
+
+Default-collapsed makes the document the primary thing on screen; the
+25vh cap means even an expanded list scrolls within its own container
+instead of pushing siblings out of the viewport. A count badge next to
+the header (`Conversations [50]`) tells the user the history exists
+without needing to expand.
+
+### Template improvement
+
+Ship the cap + collapsed default. Optionally take a `maxHeight` prop
+for forks that want a taller list. The current default ("always
+visible, unbounded") is wrong for any doc used more than a handful of
+times.
+
+---
+
+## Friction 6 — A2UI `Row` has no fixed-label-column convention
+
+### Symptom
+
+Every JSON-shaped Card the template renders — audit pane input/output,
+inline emit_* in the chat bubble, workspace surface card — shows
+cramped, two-line labels: "Po Reference", "Invoice Number", "Currency"
+wrap onto two lines as the container narrows. Numeric values land on
+the next line below the label, breaking the "ledger" reading that
+financial data needs.
+
+### Root cause
+
+`buildA2UICardFromJson` in
+[frontend/src/components/chat/JsonCardBuilder.ts](../../frontend/src/components/chat/JsonCardBuilder.ts)
+renders scalar key/value pairs as
+`Row([labelText, valueText])` — both children are A2UI `Text`
+components, neither has a width constraint. A2UI v0.9's BasicCatalog
+`Row` is a `flex` container with no convention for "label column +
+value column"; the SDK gives both children whatever width their
+content wants and wraps in flow order.
+
+### Fix
+
+Bypass A2UI for scalar-heavy JSON. We added
+[JsonAsStructuredCard.tsx](../../frontend/src/components/chat/JsonAsStructuredCard.tsx)
++ a [DefinitionList](../../frontend/src/components/shared/DefinitionList.tsx)
+primitive that owns the layout: labels in a fixed `minmax(120px, 160px)`
+column, values flex-grow with monospace tabular-nums on numeric fields.
+The workspace path (`A2UISurfaceMount` consuming backend-emitted A2UI
+messages) is untouched — that's still "real A2UI on the wire" for
+the protocol-purity story; the change is only at the JSON→inline-card
+render layer.
+
+### Template improvement
+
+Ship a `<DefinitionList>` primitive in the template and switch
+`JsonAsA2UICard`'s inline render path to use it. Or — better — extend
+the A2UI BasicCatalog with a `DefinitionList` component whose semantics
+explicitly include a label-column convention. The current cramped feel
+is felt by **every** fork that renders structured tool payloads
+inline, not just the AP one.
+
+---
+
+## Friction 7 — `InputOutputCard` is empty on every `emit_*` audit row
+
+### Symptom
+
+Open the Audit View on any specialist that uses function-as-schema
+(invoice-extractor, ap-validator, ap-poster). The INPUT side renders
+the structured payload nicely. The OUTPUT side shows:
+
+> *Your structured output has been recorded. STOP. Do NOT call this
+> tool again. End your turn now — the SequentialAgent pipeline will
+> advance to the next specialist.*
+
+…which is the orchestrator-facing STOP message, not the emitted data.
+Judges open the audit view to see the agent's structured output and
+find a blank panel with a guard rail string.
+
+### Root cause
+
+[backend/tools/ap_pipeline_emit.py](../../backend/tools/ap_pipeline_emit.py)
+returns the STOP_AFTER_EMIT_MESSAGE string — that **is** the tool
+result. The actual emitted payload is the tool *args* (the
+function-as-schema pattern). The frontend's
+`useSpecialistInvocations` records `argsJson` (input) and the tool's
+result text (output) but never substitutes args for output on
+function-as-schema tools.
+
+### Fix
+
+In [InspectorPanel.tsx](../../frontend/src/components/audit/InspectorPanel.tsx)
+gate on the tool name:
+
+```tsx
+<InputOutputCard
+  title={record.name}
+  input={record.argsJson}
+  output={
+    record.name.startsWith("emit_") && record.argsJson
+      ? record.argsJson  // for emit_* the args ARE the payload
+      : record.resultContent
+  }
+  outputLabel={
+    record.name.startsWith("emit_")
+      ? "Emitted payload (function-as-schema)"
+      : "Output (specialist → orchestrator)"
+  }
+/>
+```
+
+The audit view now shows the same structured Card on both sides — INPUT
+labelled as "orchestrator → specialist", OUTPUT labelled as "emitted
+payload" — making the function-as-schema mental model explicit.
+
+### Template improvement
+
+Bake the `emit_*` substitution into the template's audit view, or
+generalise it: any tool whose result equals a "stop" sentinel should
+show its args as the output. Better still — surface a typed flag on
+the FunctionTool itself (e.g., `result_is_sentinel=True`) so the
+audit view doesn't have to string-match tool names.
+
+---
+
+## Friction 8 — Workspace pane is a single-slot conditional ladder
+
+### Symptom
+
+When the user opens the Vendor Globe MCP App, the invoice card
+disappears. When the AP Dashboard opens, the globe disappears.
+When a doc is expanded from the sidebar, both vanish. The user
+loses context every time the agent emits a `surface_action`.
+
+### Root cause
+
+The template's chat page renders the right-hand pane with
+mutually-exclusive conditionals:
+
+```tsx
+{expandedTab && <DocumentPanel … />}
+{!expandedTab && !globeContext && <WorkspaceSurfaceRegion … />}
+{!expandedTab && globeContext && !dashboardOpen && <VendorGlobePanel … />}
+{!expandedTab && dashboardOpen && <APDashboardPanel … />}
+```
+
+Only one slot can render at a time. The `surface_action` handler swaps
+the slot wholesale, which means:
+- MCP App iframes remount on every switch (postMessage handshake fires
+  again — observable as a ~200ms flash + re-init)
+- The user's mental model breaks ("where did my invoice go?")
+- Inline emit_* Cards in the chat bubble and the workspace
+  surface card render the same data in two different styles
+
+### Fix
+
+Replace the conditional ladder with a persistent tabbed
+[`Workbench`](../../frontend/src/components/chat/Workbench.tsx). All
+tabs (Invoice · Document · Vendor · Analytics) stay mounted; switching
+just toggles a `hidden` class so iframes don't remount. The
+`surface_action` handler badges the relevant tab instead of swapping
+panes; the user keeps control of what's visible.
+
+### Template improvement
+
+Ship the tabbed-pane primitive as the default workspace pattern. The
+current "swap the whole right pane" pattern works for skills with one
+output type, but every interesting skill has multiple (chat output,
+document view, embedded artifacts). Make the multi-surface case the
+default; the single-surface case is just a one-tab Workbench.
+
+---
+
+## Friction 9 — MCP App artefacts ignore `hostContext.theme`
+
+### Symptom
+
+The host shell flipped to light mode (parse-blue on white). The
+embedded MCP App iframes (Vendor Globe, AP Analytics, Vendor KG) still
+render in dark navy + gold — visually clashing with the host page,
+looking pasted-on.
+
+### Root cause
+
+`StaticArtefactFrame` correctly sends `hostContext.theme` in the
+`ui/initialize` handshake (per [MCP Apps spec §Host Context](https://modelcontextprotocol.io)).
+The template's artefact HTMLs in
+[infrastructure/mcp-sandbox/artefacts/](../../infrastructure/mcp-sandbox/artefacts/)
+hardcode their colours (`#0a0f1e`, `#e8a800`) and never read the
+hostContext field — so the host's theme intent is lost.
+
+### Fix
+
+Replace hardcoded colours with CSS custom properties on
+`:root[data-theme="light"|"dark"]`. After the artefact's
+`ui/initialize` response comes back, set
+`document.documentElement.dataset.theme = initResult.hostContext.theme`.
+Also add a runtime `ui/update-theme` notification so the host can flip
+themes mid-session.
+
+### Template improvement
+
+Ship a shared `infrastructure/mcp-sandbox/artefacts/shared/theme.css`
+with the canonical CSS-var palette + theme handler boilerplate, and
+have every starter artefact `@import` it. Workshop should teach
+"never hardcode colours in an MCP App — always consume hostContext"
+as a first-class principle, not a "nice to have."
+
+---
+
+## Friction 10 — MCP App artefacts ship with empty/skeletal default state
+
+### Symptom
+
+The Vendor Knowledge Graph MCP App opens to a single placeholder node
+with text "Run the validator to populate the graph." Judges open it
+once, see nothing interesting, never come back. The MCP App protocol's
+whole pitch is "rich interactive artifact running in a sandboxed
+iframe" — that pitch lands only if there's something rich on screen
+the moment they look.
+
+### Root cause
+
+The template's
+[ap-vendor-kg/index.html](../../infrastructure/mcp-sandbox/artefacts/ap-vendor-kg/index.html)
+treats the empty state as the literal default — no seed data, just a
+"waiting" message.
+
+### Fix
+
+Pre-seed the artefact with a realistic snapshot lifted from the same
+vendor master fixture the backend reads (Acme GmbH + V-1042 +
+PO-2026-0189 + 2 prior invoices + canonical citations). Validator's
+runtime push overlays the current invoice on top of the seeded graph.
+
+### Template improvement
+
+The template's starter artefacts should ship with **demonstrable
+content** by default — even if it's marked "DEMO + LIVE" or watermarked.
+"Empty state" is a UX failure mode for a showcase template; users need
+to see what good looks like before they touch the data flow.
+
+---
+
+## Friction 11 — `DocTab` viewMode buttons assume a non-tabbed layout
+
+### Symptom
+
+Each doc tab in the navbar has three little icons (side / focus /
+minimize). After the Workbench landed, clicking these does nothing
+visible — the Workbench Document tab owns layout, the viewMode
+property is now decorative. The user reports "the navbar buttons no
+longer work."
+
+Related: the Workbench Document tab also gated on
+`tab.viewMode !== "minimized"` because that's the old "expanded" flag,
+which meant a freshly-clicked tab (default `viewMode="minimized"`)
+never appeared in the Document tab. Two coupled bugs from the same
+assumption.
+
+### Root cause
+
+The template's `DocTab` and `DocTabsBar` were designed for the
+single-slot conditional ladder where the right pane could be in one of
+three states (no doc, side panel, fullscreen). The Workbench changes
+the layout contract; the buttons + flag are still wired but operate on
+state nothing observes.
+
+### Fix
+
+Add `hideViewModeButtons?: boolean` to DocTab and DocTabsBar, default
+false (preserves template behaviour for other skills). In the AP chat
+page, pass `hideViewModeButtons={isApOrchestrator}`. And the Workbench
+Document tab keys off `activeDocTab` (whichever tab is focused) rather
+than `expandedTab` (the viewMode-gated one), so a click in the navbar
+actually opens the doc.
+
+### Template improvement
+
+When the template ships the tabbed Workbench (per Friction 8), the
+viewMode toggle buttons should be optional / off by default. The
+mental model "I open a doc by clicking on it; the workbench tab
+opens" is simpler than the viewMode dance. Keep the viewMode property
+for forks that genuinely need a side panel; don't make it the entry
+path.
+
+---
+
+## Friction 12 — Inline `emit_*` Card duplicates the workspace surface Card
+
+### Symptom
+
+Two visually different renderings of the same payload appear after
+each pipeline step: one inline in the chat bubble (MessageBubble) and
+one in the workspace surface pane. Different border styles, different
+spacing, different label-wrap behaviour. Reads as a styling bug; user
+asks "why is this rendered twice?"
+
+### Root cause
+
+`emit_invoice_extraction` produces both a text Part AND an A2UI tool
+call. The frontend's MessageBubble renders the text Part inline as a
+JsonAsA2UICard; the SurfaceRegistry routes the tool call to the
+workspace surface mount, which renders the same payload again via
+A2UISurfaceMount.
+
+### Fix
+
+Two-pronged: (a) keep both views (user prefers "two views of one
+thing, mirrored"), and (b) **harmonise their styles** so the
+duplication reads as intentional. Inline gets a compact summary
+variant of JsonAsStructuredCard with the same border + typography as
+the workspace card; the workspace card stays as the canonical full
+view.
+
+### Template improvement
+
+Either suppress the inline render when a workspace mount is also
+populated (cleanest), or — if the duplication is intentional — make
+the inline variant explicitly a "summary card" with a `View full →`
+link to the workbench. Pick one model and ship it consistently; the
+current "two slightly-different cards" feels like a bug even when
+working as designed.
+
+---
+
+## Friction 13 — Chat avatars hardcoded gradients, `user.photoURL` not threaded
+
+### Symptom
+
+User avatar in the chat bubble is a teal-green initial chip
+(`from-teal-400 to-teal-600`). Bot avatar is an amber gradient
+(`from-amber-400 to-yellow-600`). Both clash with the new
+parse-blue/white shell. Also: when the user signs in with Google,
+their profile photo is available in `user.photoURL` but the template
+doesn't thread it through to `MessageBubble`, so they see an "M"
+initial chip instead of their own face.
+
+### Root cause
+
+Two separate template gaps:
+- `BrandAvatar.tsx` and `MessageBubble.tsx` use Tailwind color literals
+  rather than theme tokens.
+- The prop chain `useAuth → chat page → ChatMessageList → MessageBubble`
+  carries `userInitial` but not `userPhotoURL`.
+
+### Fix
+
+`BrandAvatar` → soft `bg-primary/5` + `border-primary/20` ring with the
+app mark. User bubble: `user.photoURL` threaded through; when present,
+render the photo as an `<img>` with `border-border` and
+`object-cover`; fallback to a parse-blue initial chip when null.
+
+### Template improvement
+
+Ship the user-photo path as the default. Forks that don't use Firebase
+Auth's Google provider get the initial-chip fallback automatically.
+Use theme tokens for both avatars so a rebrand doesn't require
+touching avatar code.
+
+---
+
+## Friction 14 — MCP sandbox auto-deploy gap
+
+### Symptom
+
+Frontend / backend changes deploy automatically on push to `dev` via
+Cloud Build. Changes to `infrastructure/mcp-sandbox/artefacts/**` —
+the HTML/JS that runs **inside** the MCP App iframes — do not. The
+fork user pushes a retheme, sees the new app shell, opens the iframe,
+sees the OLD artefact, and assumes the deploy didn't happen.
+
+### Root cause
+
+The `mcp-sandbox` service is a separate Cloud Run service with its own
+`cloudbuild.yaml` but no automated trigger watching the artefact path.
+Only the [scripts/deploy-mcp-sandbox.sh](../../scripts/deploy-mcp-sandbox.sh)
+helper exists, run manually.
+
+### Fix (template)
+
+Add a Cloud Build trigger that watches `infrastructure/mcp-sandbox/**`
+paths on the dev branch and deploys the sandbox service. Or — simpler
+— have the main backend cloudbuild.yaml detect `git diff` against
+that path and chain the sandbox deploy as a step.
+
+### Template improvement
+
+Either path makes the "push a retheme, see it land" loop work like
+every other change. The current "you also need to remember `make
+deploy-mcp-sandbox`" is exactly the kind of foot-gun the template
+should eliminate.
+
+---
+
+## What still works well, after round two
+
+- **The protocol stack itself** — AG-UI streaming, A2UI surface
+  routing, MCP App handshake — never failed during any of the polish
+  work. The frictions above are all template/component defaults, not
+  protocol bugs.
+- **ADK SequentialAgent + function-as-schema** held up under the
+  bigger demo (sample picker → auto-process → emit_* cards → tabbed
+  workbench → audit chips → MCP App embeds). The original Friction 1
+  fix (function-as-schema) compounds: every other improvement is
+  cleaner because the schema enforcement is already deterministic.
+- **The `light theme` default** (`globals.css :root` palette) was
+  always there in the template — the host just needed to drop the
+  hardcoded `dark` class on `<html>`. The template ships both palettes
+  ready; the choice of default is a one-line fork decision.
+
+## Workshop talking points — round two additions
+
+6. **Layout primitives matter as much as protocol primitives.** A
+   `DefinitionList` component owned by the template would have
+   prevented Friction 6 from biting every fork. Workshop should call
+   this out: "the protocol gives you a typed payload; you still need a
+   layout primitive to render it well."
+
+7. **Tabbed workbench, not slot-swapping.** Show the conditional
+   ladder pattern AND the tabbed Workbench replacement side-by-side.
+   Make the case that multi-surface skills are the norm, not the
+   exception.
+
+8. **MCP App artefacts are templates too.** They have their own
+   default-state problem (Friction 10) AND their own theme problem
+   (Friction 9). Workshop should hand attendees a starter artefact
+   that already consumes `hostContext.theme` and ships with realistic
+   demo data.
+
+9. **Auto-deploy every code surface.** The mcp-sandbox-not-auto-deploy
+   gap is the kind of infrastructure foot-gun that wastes an hour the
+   first time someone hits it. Workshop's deploy story should include
+   "what surfaces auto-deploy and what surfaces don't" up front.
+
+---
+
+## Index of recent commits (forks that want to absorb these)
+
+The fixes for Frictions 5–14 ship across these commits on
+`Aitana-Labs/gde-ap-agent@dev`. A fork that wants to absorb them can
+cherry-pick:
+
+| Friction | Commit(s) |
+| --- | --- |
+| 5 — DocumentHistoryPanel unbounded | `ce70a82` |
+| 6 — A2UI Row label wrap → DefinitionList | `2965c87` (DefinitionList, JsonAsStructuredCard) |
+| 7 — emit_* audit pane shows args as output | `2965c87` (InspectorPanel + sharedView) |
+| 8 — Tabbed Workbench replaces conditional ladder | `2965c87` (Workbench + APWorkbench wiring) |
+| 9 — MCP App artefacts consume hostContext.theme | `2965c87` (3 artefact HTMLs + StaticArtefactFrame caller) |
+| 10 — Vendor KG pre-seeded with vendor master | `2965c87` (ap-vendor-kg seed) |
+| 11 — DocTab viewMode buttons hidden in AP mode | `123928f` |
+| 12 — Inline emit_* card harmonised | `2965c87` (MessageBubble) |
+| 13 — Avatar restyling + user.photoURL threaded | `ca9053f` |
+| 14 — MCP sandbox auto-deploy gap | (template-only — not fixed here) |
