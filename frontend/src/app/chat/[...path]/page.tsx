@@ -940,13 +940,24 @@ function ChatShell({
     if (!isApOrchestrator) return;
     const sid = sessionId ?? agentSessionId;
     if (!sid) return;
+    // Race guard: a slow in-flight fetch from the PRIOR session could
+    // return after the new session's fetch has already populated
+    // emittedInvoicePayload + pipelineEmissions, clobbering the new
+    // data with stale values from the old session. The user observes
+    // as "the chat shows Apex Consulting being processed but the
+    // workbench Hero Card still says Acme GmbH" — the symptom looks
+    // like local storage corruption but it's actually a fetch race.
+    // `cancelled` is set true in cleanup; the async block bails out
+    // before any setState if its parent effect has been superseded.
+    let cancelled = false;
     void (async () => {
       try {
         const res = await fetchWithAuth(
           `/api/proxy/api/sessions/${encodeURIComponent(sid)}/state`,
         );
-        if (!res.ok) return;
+        if (cancelled || !res.ok) return;
         const state = (await res.json()) as Record<string, unknown>;
+        if (cancelled) return;
         const merged = mergeEmittedInvoicePayload(state);
         if (merged) setEmittedInvoicePayload(merged);
         // Capture each emission separately for the audit-view input
@@ -965,6 +976,9 @@ function ChatShell({
         // fallback is still a valid view while the run is in flight.
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [isApOrchestrator, sessionId, agentSessionId, completedToolCount]);
 
   // Clear the cached payload when the user starts a new session — old
