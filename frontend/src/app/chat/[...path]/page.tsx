@@ -276,7 +276,7 @@ function APWorkbench({
         badges.clearOnActivate(id);
         setActiveTab(id);
       }}
-      className="md:max-w-2xl"
+      className="md:w-[520px] xl:w-[600px]"
     />
   );
 }
@@ -743,6 +743,21 @@ function ChatShell({
   const isFreshChat = messages.length === 0 && sessionId === null;
   const showSamplePicker = isApOrchestrator && isFreshChat && openTabs.length === 0;
 
+  // Auto-collapse the sidebar on the user's first message in a fresh chat
+  // so the chat + workbench own the screen during a run. Detected as the
+  // isFreshChat → active transition. Re-opening the sidebar manually
+  // mid-conversation won't be auto-closed again until a new fresh chat
+  // starts (e.g. via "+ New"), so the rule is "auto-close once per
+  // session-start." Resumed sessions land with isFreshChat already false
+  // and never trigger this.
+  const prevFreshChatRef = useRef(isFreshChat);
+  useEffect(() => {
+    if (prevFreshChatRef.current && !isFreshChat && !enteredViaResume) {
+      setShowDocBrowser(false);
+    }
+    prevFreshChatRef.current = isFreshChat;
+  }, [isFreshChat, enteredViaResume]);
+
   async function handleSend() {
     const text = draft.trim();
     if (!text || isLoading || error) return;
@@ -1080,7 +1095,7 @@ function ChatShell({
 
       <div className="flex min-h-0 flex-1">
         {showDocBrowser && (
-          <aside className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-border bg-background">
+          <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-border bg-background">
             {activeSkillMeta && (
               <SidebarSection title="Skill" defaultOpen bodyClassName="px-3 pb-3 pt-1">
                 <div className="mb-1.5 flex items-center gap-2">
@@ -1162,30 +1177,6 @@ function ChatShell({
                 when agent populates the surface. */}
             <SidebarSurfaceRegion sessionId={sessionId ?? agentSessionId} />
           </aside>
-        )}
-
-        {/* Workbench — persistent tabbed pane. Replaces the prior conditional
-            ladder (DocumentPanel ⊕ WorkspaceSurface ⊕ Globe ⊕ Dashboard, only
-            one renders at a time). All four tabs stay mounted so MCP App
-            iframes don't remount on every switch. Only active on ap-orchestrator;
-            other skills fall through to legacy behavior below. */}
-        {isApOrchestrator && (
-          <APWorkbench
-            sessionId={sessionId ?? agentSessionId}
-            onAction={handleAction}
-            globeContext={globeContext}
-            dashboardOpen={dashboardOpen}
-            dashboardInvoices={dashboardInvoices}
-            activeDocTab={
-              openTabs.find((t) => t.id === activeTabId) ?? null
-            }
-            sessionIdUrl={sessionId}
-            userUid={user.uid}
-            onSelectSession={handleSelectSession}
-            onNewSession={handleNewSession}
-            onClearGlobe={() => setGlobeContext(null)}
-            onCloseDashboard={() => setDashboardOpen(false)}
-          />
         )}
 
         {!isApOrchestrator && expandedTab && (
@@ -1351,6 +1342,32 @@ function ChatShell({
             </form>
           </footer>
         </div>
+
+        {/* Workbench — persistent tabbed pane. Replaces the prior conditional
+            ladder (DocumentPanel ⊕ WorkspaceSurface ⊕ Globe ⊕ Dashboard, only
+            one renders at a time). All four tabs stay mounted so MCP App
+            iframes don't remount on every switch. Only active on ap-orchestrator;
+            other skills fall through to legacy behavior. Rendered after the
+            chat column so it sits on the right edge with the chat as the
+            primary conversational column on the left. */}
+        {isApOrchestrator && (
+          <APWorkbench
+            sessionId={sessionId ?? agentSessionId}
+            onAction={handleAction}
+            globeContext={globeContext}
+            dashboardOpen={dashboardOpen}
+            dashboardInvoices={dashboardInvoices}
+            activeDocTab={
+              openTabs.find((t) => t.id === activeTabId) ?? null
+            }
+            sessionIdUrl={sessionId}
+            userUid={user.uid}
+            onSelectSession={handleSelectSession}
+            onNewSession={handleNewSession}
+            onClearGlobe={() => setGlobeContext(null)}
+            onCloseDashboard={() => setDashboardOpen(false)}
+          />
+        )}
       </div>
       <LatencyHUD />
       {/* AUDIT-VIEW M1: persistent right-side inspector panel for the

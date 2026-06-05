@@ -74,7 +74,7 @@ export function Workbench({
   }, [tabs, activeTabId, onActiveTabChange]);
 
   return (
-    <div className={cn("flex min-w-0 flex-1 flex-col overflow-hidden border-r border-border bg-background", className)}>
+    <div className={cn("flex shrink-0 flex-col overflow-hidden border-l border-border bg-background", className)}>
       <header className="flex items-stretch border-b border-border bg-muted/10">
         <div className="flex items-center gap-3 border-r border-border px-4">
           <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">

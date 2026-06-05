@@ -792,6 +792,161 @@ should eliminate.
 
 ---
 
+---
+
+# Update 2026-06-05 (afternoon) — chat-surface polish round 3
+
+A third pass after the round-two polish. Four more frictions surfaced
+while the user reviewed the deployed demo end-to-end. All four are
+template-default issues, not protocol bugs.
+
+## Friction 15 — Primary delivery deserves a domain-shaped card
+
+### Symptom
+
+The Workbench Invoice tab shows "Acme GmbH NEEDS REVIEW" rendered as
+`JsonAsStructuredCard` — the same generic structured-card primitive
+used for audit panes and inline emit_\* echoes. As the *primary
+delivery* of an entire 3-specialist pipeline run, the card reads as
+flat: vendor name and total are typographically equal to every other
+field, status is a small uppercase chip that fights for attention
+with section headings, line items are styled identically to the
+metadata DefinitionList. Reviewers describe the artifact as "basic"
+and "looks like JSON" — accurate, because that's exactly what the
+generic primitive renders.
+
+### Root cause
+
+`JsonAsStructuredCard` is intentionally schema-agnostic: it partitions
+any JSON into scalars / nested objects / object-arrays and renders
+each through `DefinitionList` or a small table. The label-column fix
+from Friction 6 made it *readable*; it didn't make it *distinctive*.
+For audit views and echo cards that's the right trade-off — they
+should be uniform and quiet. For the primary delivery card it's the
+wrong trade-off — sameness undersells the agent's output.
+
+### Fix
+
+Introduce a `<InvoiceHeroCard>` component specialised on invoice-shaped
+payloads (`vendor_name + line_items`). Treatments:
+- Vendor name as the visual anchor in `font-display` at text-3xl.
+- Total as the second anchor in `font-display tabular-nums` at
+  text-[2.5rem] with the currency code rendered smaller in mono.
+- Status chip elevated to text-xs with a status dot, more substantial
+  pill geometry (`px-3 py-1.5 border rounded-md`).
+- Thin status-toned accent stripe (3px) across the top of the card so
+  the verdict registers pre-cognitively before the chip is read.
+- Line items table with a totals footer (Subtotal · Tax · **Total**)
+  visually separated from the body by a thicker `border-t-2` above
+  the Total row.
+- Verdict footer band with a 4px status-toned left accent, the reason
+  text, and mono chips for routing/assignee/SLA/audit citations.
+
+Wire-in is at the `JsonAsStructuredCard` entry point, before
+`buildSections` is called:
+```tsx
+if (isInvoiceShape(data)) {
+  return <InvoiceHeroCard data={data} className={className} compact={compact} />;
+}
+```
+This means **every** render site (Workbench Invoice tab, inline chat
+bubble, audit InputOutputCard) picks up the upgraded card with zero
+prop drilling.
+
+### Template improvement
+
+Ship the `InvoiceHeroCard` as the canonical "primary delivery card"
+example. The principle generalises: when a fork's pipeline has a
+clearly-identifiable primary output (an invoice, a verdict, an
+itinerary, a diagnosis), it deserves a dedicated, domain-shaped card
+— not the generic JSON renderer. The workshop should teach this
+explicitly: *generic structured-card primitive for echoes and audit,
+domain-shaped hero card for the primary delivery.*
+
+---
+
+## Friction 16 — Sidebar steals workbench/chat real estate during a run
+
+### Symptom
+
+Left sidebar (skill info, sessions, GCS bucket browser, my docs,
+upload) defaults to open. After the user imports an invoice and hits
+Send, they no longer need the sidebar — every relevant action lives
+in the chat or workbench from that point on. But the sidebar stays
+expanded, eating ~256px of horizontal space that the workbench's
+hero card and the chat could otherwise use.
+
+### Root cause
+
+`showDocBrowser` defaults to `true` and only ever changes via the
+manual `DocTabsBar` toggle. There's no "user has committed to a run"
+signal that auto-collapses it.
+
+### Fix
+
+Detect the `isFreshChat → active` transition via a `useRef` + effect
+in the chat page, and call `setShowDocBrowser(false)` once per fresh
+chat. Re-opening the sidebar manually during the conversation won't
+be auto-closed again — the gate is bound to the first transition out
+of `isFreshChat`, not to every send. New sessions ("+ New") reset
+the gate.
+
+### Template improvement
+
+The template should ship this behaviour by default. The pattern
+generalises: any sidebar dominated by "pre-conversation" actions
+(imports, picks, uploads) should collapse on first send.
+
+---
+
+## Friction 17 — Chat on the right edge fights the natural reading axis
+
+### Symptom
+
+Default flex order placed the workbench in the middle and the chat
+on the right. Reviewers' eyes consistently landed first on the
+workbench card (visually dense, status chip prominent), then drifted
+right to the chat for context, then back left. The conversational
+column anchoring the *right* edge breaks the left-to-right reading
+pattern users expect from chat surfaces.
+
+### Fix
+
+Reorder the JSX so the AP flex layout is `sidebar | chat | workbench`.
+The workbench's `border-r` flips to `border-l` to keep the divider
+between chat and workbench on the workbench's left edge.
+
+### Template improvement
+
+Make `sidebar | chat | workbench` the default for any skill that has
+a workbench. The single-pane skills (no workbench) are unaffected.
+
+---
+
+## Friction 18 — Filenames truncate with no escape hatch
+
+### Symptom
+
+GCS bucket imports and My-Documents rows render as
+"acme-gmbh-invoi…" — pure CSS ellipsis with no tooltip. Users can't
+tell `acme-gmbh-invoice-2026-042.docx` from
+`acme-gmbh-invoice-2025-099.docx` without clicking Import to find
+out.
+
+### Fix
+
+Add `title={filename}` to the truncated span on every doc-row
+renderer: `GCSFileItem`, `DocListItem`, `DocListView`'s inline list.
+Native browser tooltip; zero JS, no new dependency. Also widen the
+sidebar from `w-64` → `w-72` to give common filenames more room
+before truncating.
+
+### Template improvement
+
+Filename-bearing rows in the template should always carry a `title`
+attribute. The pattern is one line per row; the cost of forgetting
+is "user can't tell what they're importing."
+
 ## Index of recent commits (forks that want to absorb these)
 
 The fixes for Frictions 5–14 ship across these commits on
@@ -810,3 +965,7 @@ cherry-pick:
 | 12 — Inline emit_* card harmonised | `2965c87` (MessageBubble) |
 | 13 — Avatar restyling + user.photoURL threaded | `ca9053f` |
 | 14 — MCP sandbox auto-deploy gap | (template-only — not fixed here) |
+| 15 — InvoiceHeroCard for primary delivery | (round-3 polish, see commits on `dev` after `984d0a5`) |
+| 16 — Sidebar auto-collapse on first send | (round-3 polish) |
+| 17 — Chat-left / workbench-right layout swap | (round-3 polish) |
+| 18 — Filename tooltips + wider sidebar | (round-3 polish) |

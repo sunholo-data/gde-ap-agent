@@ -120,7 +120,9 @@ export function DocListView({ uid, onDocClick }: DocListViewProps) {
                   onClick={() => handleDocClick(doc)}
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-accent"
                 >
-                  <span className="min-w-0 flex-1 truncate">{doc.originalFilename}</span>
+                  <span className="min-w-0 flex-1 truncate" title={doc.originalFilename}>
+                    {doc.originalFilename}
+                  </span>
                 </button>
               ))
             )}

@@ -86,7 +86,9 @@ export function GCSFileItem({ obj, bucket, skillId = "" }: GCSFileItemProps) {
   return (
     <div className="group flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent">
       <span aria-hidden="true">{fileIcon(obj.displayName)}</span>
-      <span className="min-w-0 flex-1 truncate text-foreground">{obj.displayName}</span>
+      <span className="min-w-0 flex-1 truncate text-foreground" title={obj.displayName}>
+        {obj.displayName}
+      </span>
       <span className="shrink-0 text-[10px] text-muted-foreground">{formatBytes(obj.size)}</span>
       {state === "idle" && (
         <button

@@ -121,7 +121,7 @@ export function DocListItem({ doc, onClick, isHighlighted, onMount }: DocListIte
           className={`h-2 w-2 shrink-0 rounded-full ${dot.color}`}
           aria-label={dot.title}
         />
-        <span className="min-w-0 flex-1 truncate text-foreground">
+        <span className="min-w-0 flex-1 truncate text-foreground" title={doc.originalFilename}>
           {doc.originalFilename}
         </span>
         {doc.sourceFormat && (

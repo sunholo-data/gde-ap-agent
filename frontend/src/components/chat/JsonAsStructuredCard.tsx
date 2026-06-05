@@ -22,6 +22,7 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { DefinitionList, type DefinitionItem } from "@/components/shared/DefinitionList";
+import { InvoiceHeroCard, isInvoiceShape } from "@/components/chat/InvoiceHeroCard";
 
 const ADK_TOOL_RESULT_WRAPPER_KEY = "result";
 const NESTED_MAX_DEPTH = 2;
@@ -69,6 +70,16 @@ export function JsonAsStructuredCard({
   }
 
   const data = parsed as Record<string, unknown>;
+
+  // Invoice-shaped payloads get the dedicated hero card — they're the
+  // primary delivery artifact of the AP pipeline and deserve a richer
+  // treatment than the generic structured-card scaffold. Wiring it here
+  // means every render site (chat bubble, Workbench Invoice tab, audit
+  // InputOutputCard) picks it up automatically.
+  if (isInvoiceShape(data)) {
+    return <InvoiceHeroCard data={data} className={className} compact={compact} />;
+  }
+
   const title = inferTitle(data, fallbackTitle);
   const sections = buildSections(data);
 
