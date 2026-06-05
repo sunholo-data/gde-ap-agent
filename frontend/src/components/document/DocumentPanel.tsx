@@ -133,7 +133,7 @@ export function DocumentPanel({ docId }: DocumentPanelProps) {
     <div className="flex h-full flex-col overflow-hidden bg-muted/10">
       <DocumentHeader doc={doc} />
       <DocumentViewer doc={doc} />
-      {doc.summary && <DocumentFooter summary={doc.summary} />}
+      <DocumentFooter summary={doc.summary} parsedMs={doc.parsedMs} />
     </div>
   );
 }

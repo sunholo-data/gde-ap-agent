@@ -27,6 +27,9 @@ export interface DocumentDetail {
   parseError: string | null;
   sourceUrl: string | null;
   parsedAt: string | null;
+  /** Wall-clock parse duration in ms (from AILANG Parse).
+   * Backend writes this as `parsedMs` on the parsed_documents row. */
+  parsedMs: number | null;
   summary: DocSummary | null;
   blocks: Block[];
 }
@@ -58,6 +61,7 @@ function mapDoc(id: string, data: DocumentData): DocumentDetail {
     parseError: (data.parseError as string | null) ?? null,
     sourceUrl: (data.sourceUrl as string | null) ?? null,
     parsedAt: firestoreTimestampToIso(data.parsedAt),
+    parsedMs: typeof data.parsedMs === "number" ? data.parsedMs : null,
     summary,
     blocks: Array.isArray(data.blocks) ? (data.blocks as Block[]) : [],
   };
