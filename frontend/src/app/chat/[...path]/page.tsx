@@ -1025,6 +1025,23 @@ function ChatShell({
     router.replace(qs ? `${pathPrefix}?${qs}` : pathPrefix);
   }, [router, pathPrefix, searchParams]);
 
+  // Bring the user back to the "Start the demo" picker — the empty
+  // state that greets visitors arriving from the homepage. Without
+  // this, the only way to see the picker again is to navigate to the
+  // homepage and re-click the demo link; clearing the URL session +
+  // closing open doc tabs satisfies the SampleInvoicePicker's render
+  // condition (`isApOrchestrator && isFreshChat && openTabs.length === 0`).
+  // Tabs are closed BEFORE the new-session navigation so the React
+  // state settles in one commit cycle and the picker shows immediately.
+  const handleRestartDemo = useCallback(() => {
+    setOpenTabs([]);
+    setActiveTabId(null);
+    setDashboardOpen(false);
+    setDashboardInvoices([]);
+    setEmittedInvoicePayload(null);
+    handleNewSession();
+  }, [handleNewSession]);
+
   // Defensive auto-clear: when ANY mutation site reports a deletion via the
   // sessions-changed bus and that id matches the URL session we're showing,
   // navigate to a fresh chat even if the originating handler missed the
@@ -1385,6 +1402,28 @@ function ChatShell({
                 skillId={skillId}
                 onSampleSelected={handleDocReady}
               />
+            </div>
+          )}
+          {/* Restart-demo affordance — visible whenever the AP demo is
+              past the start state (session active OR a doc tab is open).
+              Click clears tabs + state + the URL session so the
+              SampleInvoicePicker reappears. Avoids the "I have to go
+              back to the homepage to pick another sample" UX trap. */}
+          {isApOrchestrator && !showSamplePicker && (
+            <div className="flex shrink-0 items-center justify-end border-b border-border bg-background/40 px-3 py-1.5">
+              <button
+                type="button"
+                onClick={handleRestartDemo}
+                disabled={isLoading}
+                title="Clear the conversation and return to the sample picker"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border/60 disabled:hover:bg-background disabled:hover:text-muted-foreground"
+              >
+                <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                  <path d="M3 8a5 5 0 0 1 9-3l1.5-1.5M13 8a5 5 0 0 1-9 3L2.5 12.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M11 3.5h2.5V6M5 12.5H2.5V10" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Restart demo
+              </button>
             </div>
           )}
           <ChatMessageList
