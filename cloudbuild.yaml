@@ -29,6 +29,13 @@ substitutions:
   _PLATFORM_OWNER_EMAIL: ''
   # MCP sandbox iframe URL. Leave blank to disable MCP Apps.
   _MCP_SANDBOX_URL: 'https://mcp-sandbox-374404277595.europe-west1.run.app'
+  # MCP sandbox conditional auto-deploy:
+  #  - ALLOWED_HOST_ORIGINS the sandbox accepts as iframe parents
+  #    (comma-separated; validated against document.referrer in sandbox.ts)
+  #  - SERVICE name (matches the existing service in this project)
+  # Terraform can override _MCP_SANDBOX_ALLOWED_ORIGINS per env when test/prod cut.
+  _MCP_SANDBOX_SERVICE: 'mcp-sandbox'
+  _MCP_SANDBOX_ALLOWED_ORIGINS: 'https://aitana-v6-frontend-66pa3y5xnq-ew.a.run.app,https://gde-ap-agent-blqtqfexwa-ew.a.run.app'
   # GCS demo bucket pre-loaded with AP invoice examples for the sidebar browser.
   _AP_DEMO_BUCKET: 'gde-ap-agent-demo-invoices'
 
@@ -38,6 +45,61 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
+  # --- Conditional: redeploy mcp-sandbox if its sources changed ---
+  # Fixes Friction 14 (template-protocols-friction.md) — the sandbox is a
+  # separate Cloud Run service whose container holds the artefact HTML.
+  # Without this step, an artefact-only commit deploys the main service
+  # but leaves the iframe content stale until someone runs
+  # `make deploy-mcp-sandbox` manually.
+  #
+  # Detection: diff the most recent commit for any path under
+  # infrastructure/mcp-sandbox/. The trigger fires on every dev push so
+  # HEAD~1 should always exist; if it doesn't (shallow clone edge case
+  # or first commit) we deploy defensively rather than silently skipping.
+  #
+  # Runs in parallel with the main backend/frontend build (waitFor: ['-'])
+  # so it doesn't add latency to the critical path.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: maybe-deploy-mcp-sandbox
+    waitFor: ['-']
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        CHANGED=""
+        if git rev-parse --quiet --verify HEAD~1 >/dev/null 2>&1; then
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- infrastructure/mcp-sandbox/ || true)
+        else
+          CHANGED="bootstrap"
+        fi
+        if [ -z "$$CHANGED" ]; then
+          echo "No infrastructure/mcp-sandbox/** changes in this commit — skipping sandbox deploy."
+          exit 0
+        fi
+        echo "mcp-sandbox changes detected:"
+        printf '  %s\n' $$CHANGED
+        echo ""
+        cd infrastructure/mcp-sandbox
+        # ^@^ delimiter override so commas inside ALLOWED_HOST_ORIGINS
+        # survive --set-env-vars parsing. See `gcloud topic escaping`.
+        gcloud run deploy ${_MCP_SANDBOX_SERVICE} \
+          --source=. \
+          --project=${_PROJECT_ID} \
+          --region=${_REGION} \
+          --platform=managed \
+          --allow-unauthenticated \
+          --port=8080 \
+          --max-instances=3 \
+          --memory=512Mi \
+          --cpu=1 \
+          "--set-env-vars=^@^ALLOWED_HOST_ORIGINS=${_MCP_SANDBOX_ALLOWED_ORIGINS}" \
+          --quiet
+        URL=$(gcloud run services describe ${_MCP_SANDBOX_SERVICE} \
+          --project=${_PROJECT_ID} --region=${_REGION} \
+          --format='value(status.url)' 2>/dev/null || true)
+        echo "mcp-sandbox deployed: $${URL}"
+
   # --- Firebase rules ---
   - name: '${_ARTIFACT_REGISTRY_REPO_URL}/sunholo-llmops/firebase:${_FIREBASE_TAG}'
     waitFor: ['-']

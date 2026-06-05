@@ -734,19 +734,26 @@ The `mcp-sandbox` service is a separate Cloud Run service with its own
 Only the [scripts/deploy-mcp-sandbox.sh](../../scripts/deploy-mcp-sandbox.sh)
 helper exists, run manually.
 
-### Fix (template)
+### Fix (template) — landed in round 4
 
-Add a Cloud Build trigger that watches `infrastructure/mcp-sandbox/**`
-paths on the dev branch and deploys the sandbox service. Or — simpler
-— have the main backend cloudbuild.yaml detect `git diff` against
-that path and chain the sandbox deploy as a step.
+Chosen path: chain the sandbox deploy into the main `cloudbuild.yaml`.
+A new `maybe-deploy-mcp-sandbox` step at the top of the build runs
+`git diff --name-only HEAD~1 HEAD -- infrastructure/mcp-sandbox/`
+and only deploys when at least one path under that directory changed
+in the latest commit. Runs in parallel with the main backend/frontend
+build (`waitFor: ['-']`) so it adds no critical-path latency. Defaults
+to deploying when `HEAD~1` is unavailable (shallow clone / first
+commit) — safer than silently skipping. Substitutions
+`_MCP_SANDBOX_SERVICE` and `_MCP_SANDBOX_ALLOWED_ORIGINS` are
+terraform-overridable for test/prod cuts.
 
 ### Template improvement
 
-Either path makes the "push a retheme, see it land" loop work like
-every other change. The current "you also need to remember `make
-deploy-mcp-sandbox`" is exactly the kind of foot-gun the template
-should eliminate.
+Ship the conditional step pattern as the template default — it's
+~50 lines of cloudbuild YAML and removes the "you also need to
+remember `make deploy-mcp-sandbox`" foot-gun. The manual script stays
+for forks that want to deploy outside of CI (local debugging,
+emergency redeploys), but the happy path is now zero-touch.
 
 ---
 
@@ -964,7 +971,7 @@ cherry-pick:
 | 11 — DocTab viewMode buttons hidden in AP mode | `123928f` |
 | 12 — Inline emit_* card harmonised | `2965c87` (MessageBubble) |
 | 13 — Avatar restyling + user.photoURL threaded | `ca9053f` |
-| 14 — MCP sandbox auto-deploy gap | (template-only — not fixed here) |
+| 14 — MCP sandbox auto-deploy gap | Fixed in round-4 — see commits after `571f75f`. Root cloudbuild.yaml has a `maybe-deploy-mcp-sandbox` step that conditionally redeploys when `infrastructure/mcp-sandbox/**` paths changed in the latest commit. |
 | 15 — InvoiceHeroCard for primary delivery | (round-3 polish, see commits on `dev` after `984d0a5`) |
 | 16 — Sidebar auto-collapse on first send | (round-3 polish) |
 | 17 — Chat-left / workbench-right layout swap | (round-3 polish) |
