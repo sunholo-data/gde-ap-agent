@@ -11,6 +11,7 @@ Fork of Aitana Platform v6 for the **Google AI Agents Challenge, Track 3** (dead
 | 3 | [Multi-Agent Inspector UX](./multi-agent-inspector-ux.md) | P0 | 2.5 days | Planned |
 | 4 | [Schema-Enforced Structured Extraction](./schema-enforced-extraction.md) | P0 | 1.5 days | Planned |
 | 5 | [Multi-Agent Workflow Pipeline (ADK SequentialAgent)](./implemented/multi-agent-workflow-pipeline.md) | P0 | 2.5 days | ✅ Implemented |
+| 6 | [MCP Apps Interaction Pass](./mcp-apps-interaction-pass.md) | P1 | 1.5 days | Proposed |
 
 ## Timeline
 
@@ -24,6 +25,7 @@ Fork of Aitana Platform v6 for the **Google AI Agents Challenge, Track 3** (dead
 | 2026-06-03 | ✅ Multi-Agent Workflow Pipeline (SequentialAgent refactor + simulated MCP servers — submission centerpiece) |
 | 2026-06-04 | Final testing + submission prep |
 | 2026-06-05 17:00 PT | **Submission deadline** |
+| 2026-06-05+ | MCP Apps Interaction Pass design (post-submission polish) |
 
 ## What ships in v0.1.0
 
