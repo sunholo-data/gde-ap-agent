@@ -36,10 +36,13 @@ interface NodeSpec {
   /** Optional small logo rendered at the top-right of the node — used
    * for AILANG to make the "powered by" relationship visible. */
   logoSrc?: string;
-  /** External / hypothetical node — rendered with a dashed border + a
-   * "HYPOTHETICAL" badge so the reader sees this is outside the live
-   * system, consuming a surface we publish. Today only Gemini Enterprise
-   * uses this; the box hangs off the A2A discovery node. */
+  /** External / hypothetical node — rendered with a dashed primary-
+   * toned border + a faded background so the reader sees this is
+   * outside the live system, consuming a surface we publish. The sub-
+   * line text carries the explicit "Hypothetical · …" prefix so the
+   * signal is both visual and textual without a third "HYPOTHETICAL"
+   * badge competing for attention inside the box. Today only Gemini
+   * Enterprise uses this; the box hangs off the A2A discovery node. */
   external?: boolean;
 }
 
@@ -93,7 +96,10 @@ const NODES: NodeSpec[] = [
     w: 280,
     h: 70,
     title: "Gemini Enterprise",
-    sub: "Hypothetical · managed agent registry",
+    // Compact sub-line so it doesn't crowd the box edges. The Hypothetical
+    // prefix + the dashed border together signal "external consumer" —
+    // no extra badge needed. See `external?: boolean` on NodeSpec.
+    sub: "Hypothetical consumer",
     external: true,
   },
 ];
@@ -371,32 +377,6 @@ export function ArchitectureDiagram() {
                   preserveAspectRatio="xMidYMid meet"
                 />
               )}
-              {/* HYPOTHETICAL badge in the top-right corner of external
-                  nodes — small monospace pill so the reader knows this
-                  isn't live wiring even at a glance, without depending
-                  on reading the sub-line below the title. */}
-              {n.external && (
-                <g>
-                  <rect
-                    x={n.x + n.w - 92}
-                    y={n.y + 8}
-                    width="84"
-                    height="14"
-                    rx="3"
-                    className="fill-primary"
-                    opacity="0.85"
-                  />
-                  <text
-                    x={n.x + n.w - 50}
-                    y={n.y + 18}
-                    textAnchor="middle"
-                    className="fill-primary-foreground font-mono"
-                    style={{ fontSize: "9px", fontWeight: 700, letterSpacing: "0.04em" }}
-                  >
-                    HYPOTHETICAL
-                  </text>
-                </g>
-              )}
               <text
                 x={n.x + n.w / 2}
                 y={n.y + 26}
@@ -410,8 +390,15 @@ export function ArchitectureDiagram() {
                 x={n.x + n.w / 2}
                 y={n.y + 44}
                 textAnchor="middle"
-                className="fill-muted-foreground font-mono"
-                style={{ fontSize: "10px" }}
+                className={
+                  n.external
+                    ? "fill-primary font-mono"
+                    : "fill-muted-foreground font-mono"
+                }
+                style={{
+                  fontSize: "10px",
+                  fontWeight: n.external ? 600 : 400,
+                }}
               >
                 {n.sub}
               </text>
