@@ -47,6 +47,7 @@ import {
 import { A2UISurfaceMount } from "@/components/protocols/A2UISurfaceMount";
 import { InvoiceHeroCard } from "@/components/chat/InvoiceHeroCard";
 import { VendorKgPanel } from "@/components/audit/VendorKgPanel";
+import { SignInButton } from "@/components/SignInButton";
 import { DocumentPanel } from "@/components/document/DocumentPanel";
 import { LatencyHUD } from "@/components/dev/LatencyHUD";
 import { APDashboardPanel, type InvoiceData as DashboardInvoice } from "@/components/workspace/APDashboardPanel";
@@ -514,6 +515,39 @@ function SurfaceSessionLifecycle({ sessionId }: { sessionId: string | null }) {
   return null;
 }
 
+/**
+ * Sign-in gate for /chat/*. Previously we silently `router.replace("/")` on
+ * unauth users, which dumped them at the homepage with no explanation. Now
+ * we stay on the chat URL so post-sign-in they land directly in the chat
+ * they wanted, and surface a clear "sign in to continue" panel.
+ */
+function SignInRequired() {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 text-center">
+      <div className="max-w-md space-y-3">
+        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+          Sign-in required
+        </p>
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+          You need to sign in to open this chat.
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          The AP orchestrator runs per-user — sessions, document history and
+          audit traces are scoped to your account. Sign in with Google to
+          continue; you&apos;ll land straight back here.
+        </p>
+      </div>
+      <SignInButton />
+      <Link
+        href="/"
+        className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
+      >
+        ← Back to homepage
+      </Link>
+    </main>
+  );
+}
+
 export default function ChatPage({
   params,
 }: {
@@ -521,21 +555,20 @@ export default function ChatPage({
 }) {
   const { path } = use(params);
   const { user, loading } = useAuth();
-  const router = useRouter();
   // Wait for auth to hydrate AND the user to be signed in before firing the
   // by-slug fetch. Without `user` in the gate, an unauth visitor would fire
   // a tokenless request, get 401, and see "Skill not found" before the
-  // redirect to / kicks in.
+  // sign-in gate kicks in.
   const { skillId, loading: resolving, notFound } = useSlugResolution(path, !loading && !!user);
-
-  useEffect(() => {
-    if (!loading && !user) router.replace("/");
-  }, [loading, user, router]);
 
   if (loading || resolving) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
   }
-  if (!user) return null;
+  // Sign-in gate: stay on this URL (don't redirect to /) so after the user
+  // signs in, the page hydrates straight into the chat they wanted. Silently
+  // bouncing to the homepage with no explanation was the previous behaviour
+  // and confused first-time visitors.
+  if (!user) return <SignInRequired />;
   if (notFound || !skillId) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
