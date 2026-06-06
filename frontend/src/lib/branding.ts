@@ -82,9 +82,13 @@ export const BRANDING = {
     heroLineA: "Invoices in.",
     heroLineB: "Audit-grade postings out.",
     heroBody:
-      "Drop an invoice. Watch a four-agent ADK pipeline extract it deterministically with AILANG Parse, validate against the vendor master, decide a posting, and surface every step as an inspectable artifact.",
+      "Drop an invoice. Watch a multi-agent ADK pipeline extract it deterministically with AILANG Parse, validate against the vendor master, decide a posting, and surface every step as an inspectable artifact.",
     ctaPrimary: "Open the demo",
     ctaSecondary: "How it works",
+    /** Unlisted YouTube walkthrough — surfaced on the landing page. */
+    videoUrl: "https://www.youtube.com/watch?v=extVYNAX70w",
+    videoEmbedUrl: "https://www.youtube-nocookie.com/embed/extVYNAX70w",
+    videoTitle: "ailang-parse · AP Showcase — 2-minute demo",
     /** Six tech pillars used on landing + /tech. AILANG leads — it's the
      * differentiator (everything else is industry protocols; AILANG is ours).
      * Each pillar carries a canonical spec/docs link surfaced on the landing

@@ -217,10 +217,95 @@
 
 ---
 
+## Video script (2 minutes, ~270 spoken words)
+
+> Format: `[mm:ss–mm:ss]` BEAT — **ACTION** on screen / **VO** spoken.
+> Target ~135 wpm with light pauses on the wow moment. Record screen
+> at 1920×1080. Cold open — no title card, just the deployed app.
+> Captions on (judges may watch muted).
+
+### [0:00–0:10] Hook — the trade-off frame
+
+**ACTION:** Cold open on the deployed app, `ap-orchestrator` selected,
+chat empty.
+**VO:** "Most AP automation forces a choice — deterministic rule
+engines that break, or LLMs that hallucinate vendor data. This is
+what an audit-grade alternative looks like, built on Google ADK."
+
+### [0:10–0:20] What it is — the cost angle
+
+**ACTION:** Cursor sweeps the four Audit chips in the top nav
+(`Orchestrator · Extractor · Validator · Poster`).
+**VO:** "A multi-agent pipeline. No Gemini Pro tokens. No LLM at the
+workflow layer — the routing is code, not prose, so prompt-injection
+can't steer the pipeline."
+
+### [0:20–0:35] Demo start — AG-UI streaming
+
+**ACTION:** Type and send: `"Process this invoice: Vendor: Acme GmbH
+(Germany), INV-2026-042, €8,500, NET 30, GL 5200-OPEX"`. The 4-step
+pipeline visualiser animates Intake → Extract → Validate → Post.
+**VO:** "Drop an invoice in. The pipeline visualiser streams over
+AG-UI as each specialist runs — Flash-class models all the way down."
+
+### [0:35–0:55] Audit panel — A2UI + MCP App inside the audit view
+
+**ACTION:** Audit chips light up live with latency badges. Click the
+**Validator** chip → side panel slides in. Scroll to the embedded
+`ap-vendor-kg` MCP App.
+**VO:** "Each specialist is observable live — input, tool calls,
+structured output. The validator's audit view embeds an MCP App that
+visualises exactly what it grounded against: vendor master record,
+matching PO, prior invoices. AG-UI, A2UI, and MCP Apps in one frame."
+
+### [0:55–1:25] Wow moment — bidirectional MCP Apps loop
+
+**ACTION:** Close audit panel. Click the Workbench **Vendor** tab.
+Hover a citation row with a `LIVE` badge. Click
+`vendor_master:V-1042`. Chat scrolls up — the orchestrator answers
+"V-1042 is Acme GmbH, NET 30 terms, GL 5200…" with citations.
+**VO:** "Now the bidirectional loop. Click any citation inside the
+sandboxed MCP App. The iframe posts `ui/update-model-context`. The
+host turns that into a chat query. The orchestrator answers — without
+ever leaving the visualisation. That's the full MCP Apps protocol,
+not just an embedded widget."
+
+### [1:25–1:45] Analytics + the stack under the hood
+
+**ACTION:** Switch to the **Analytics** tab — aging bar, top-vendors
+bar, GL-code donut, attribution chip pulsing "Updated by Orchestrator
+· just now". Cut to the `/tech` page architecture diagram.
+**VO:** "Same protocol on the analytics dashboard. Under the
+surfaces: ADK `SequentialAgent` for routing, Vertex AI Agent Engine
+for managed sessions and Memory Bank, Vertex AI Search for grounding,
+Cloud Run for compute. Built on our open-source `ai-protocol-platform`
+template."
+
+### [1:45–2:00] Close — the Marketplace path
+
+**ACTION:** Editor with the five SKILL.md files visible side by side
+(`ap-orchestrator`, `ap-pipeline`, `invoice-extractor`,
+`ap-validator`, `ap-poster`).
+**VO:** "The entire system is five declarative `SKILL.md` files —
+around eighty lines of wiring. Fork the template, register with
+Gemini Enterprise via `agents-cli`, deploy on Cloud Run. That's the
+Marketplace path for any vertical agent."
+
+### Production checklist
+
+- [ ] Screen recording at 1920×1080, 30fps. Use the live deploy, not localhost.
+- [ ] Light theme on (parse-blue palette reads better in compressed YouTube than dark navy).
+- [ ] Pre-warm the agent with one practice run so first-token latency doesn't eat the 0:20 beat.
+- [ ] Mouse cursor visible + smoothed (Cleanshot / Loom).
+- [ ] Voice-over recorded separately, normalised to −16 LUFS.
+- [ ] Burn-in captions (judges may watch muted).
+- [ ] Upload to YouTube **Unlisted**, paste link into the Devpost Video asset field.
+
+---
+
 ## Open items before submit
 
-1. **Video** — record + upload (90s screencast of the SUBMISSION.md
-   demo flow). Host on YouTube unlisted.
+1. **Video** — record + upload using the 2-minute script above. Host on YouTube Unlisted.
 2. **Hero image** — screenshot of workbench mid-run:
    - Invoice Hero Card on the Invoice tab (vendor + total + status chip)
    - Vendor Knowledge Graph on the Vendor tab with `LIVE` citation badges

@@ -9,6 +9,8 @@
 ## Live Demo
 
 **URL:** https://gde-ap-agent-blqtqfexwa-ew.a.run.app
+**Video (2 min):** https://www.youtube.com/watch?v=extVYNAX70w
+**Devpost:** https://devpost.team/google-cloud-for-startups/projects/18966
 
 **Demo flow:**
 1. Type (or upload) an invoice into the **AP Orchestrator** chat: e.g. `"Process this invoice: Vendor: Acme GmbH (Germany), INV-2026-042, €8,500, NET 30, GL 5200-OPEX"`

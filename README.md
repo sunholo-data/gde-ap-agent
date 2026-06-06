@@ -6,7 +6,11 @@ extraction) running inside a Google ADK multi-agent AP pipeline. Part of the
 [AILANG](https://ailang.sunholo.com) family. The underlying pipeline is unchanged;
 only the visual identity of the deployed app has been rebranded.
 
-Built for the [Google for Startups AI Agents Challenge, Track 3](./SUBMISSION.md). Live demo: https://gde-ap-agent-blqtqfexwa-ew.a.run.app
+Built for the [Google for Startups AI Agents Challenge, Track 3](./SUBMISSION.md).
+
+- **Live demo:** https://gde-ap-agent-blqtqfexwa-ew.a.run.app
+- **2-minute video:** https://www.youtube.com/watch?v=extVYNAX70w
+- **Devpost submission:** https://devpost.team/google-cloud-for-startups/projects/18966
 
 > Built on the open-source [ai-protocol-platform](https://github.com/sunholo-data/ai-protocol-platform) template (Skills + AG-UI + A2UI + MCP Apps + A2A on Google ADK).
 >
@@ -17,15 +21,19 @@ Built for the [Google for Startups AI Agents Challenge, Track 3](./SUBMISSION.md
 ## AP Agent Pipeline
 
 ```
-ap-orchestrator (Gemini 2.5 Pro)
-    ↓ docparse      — invoice field extraction
-    ↓ ap-validator  — grounded validation vs vendor master + POs
-    ↓ ap-poster     — post clean or escalate exceptions
+ap-orchestrator   (Gemini 3.5 Flash)     — entry agent + human handoff
+    ↓
+ap-pipeline       (ADK SequentialAgent)  — deterministic workflow, no model
+    ↓ invoice-extractor (Gemini 2.5 Flash)        — extraction via ailang-parse
+    ↓ ap-validator      (Gemini 3.1 Flash-Lite)   — grounded validation vs vendor master + POs
+    ↓ ap-poster         (Gemini 3.1 Flash-Lite)   — post clean or escalate exceptions
 ```
+
+**No Gemini Pro tokens anywhere.** The workflow layer has no LLM — `ap-pipeline` walks its sub-agents in Python via ADK's `SequentialAgent`, so the routing is code, not prose, and prompt-injection can't steer the pipeline.
 
 **Visual features**: Parse-blue AP theme · live pipeline step visualizer · A2UI `InvoiceHeroCard` (vendor + total + status, ledger-style line items, verdict band) · MCP App **AP Analytics Dashboard** with live invoice merge · MCP App **Vendor Knowledge Graph** with clickable citations that auto-send chat queries to the agent (bidirectional `ui/update-model-context` channel) · per-specialist **Audit View** with live chips, history, structured-input runs, distinct upstream-input display showing the data handoff between Extract → Validate → Post
 
-**One pipeline, four cooperating agents.** Drop an invoice — the orchestrator delegates extraction, validation, and posting, then returns a single audit-ready decision. Each specialist&apos;s work is observable live via the Audit View chip + side panel.
+**Five declarative `SKILL.md` files, ~80 lines of wiring.** Drop an invoice — the orchestrator transfers to `ap-pipeline`, which walks Extract → Validate → Post in order, then returns a single audit-ready decision. Each specialist&apos;s work is observable live via the Audit View chip + side panel.
 
 See [SUBMISSION.md](./SUBMISSION.md) for full details and live demo URL.
 
@@ -96,9 +104,9 @@ not injected and the deployed service falls back to in-memory sessions
 ADK's artifact service stores in-session uploads (documents, tool
 outputs that need to survive a turn) in a GCS bucket named via
 `ADK_ARTIFACT_BUCKET`. Without it, every artifact read/write fails
-with `404 ... The specified bucket does not exist.` and the docparse
-skill (along with any flow that touches `load_artifacts`) silently
-returns no content.
+with `404 ... The specified bucket does not exist.` and the
+`invoice-extractor` skill (along with any flow that touches
+`load_artifacts`) silently returns no content.
 
 ```bash
 ./scripts/create-artifact-bucket.sh <project-id> <region>
@@ -234,7 +242,7 @@ The backend exposes a self-documenting API:
 
 ```
 platform/
-├── frontend/     # Next.js 14 + React 18 + AG-UI + A2UI + MCP Apps
+├── frontend/     # Next.js 15 + React 19 + AG-UI + A2UI + MCP Apps
 ├── backend/      # FastAPI + Google ADK
 ├── cli/          # `aiplatform` CLI
 ├── docs/         # Design documents

@@ -5,6 +5,7 @@ import { BrandFooter } from "@/components/BrandFooter";
 import { MySkillsButton } from "@/components/MySkillsButton";
 import { SignInButton } from "@/components/SignInButton";
 import { APHero } from "@/components/landing/APHero";
+import { DemoVideo } from "@/components/landing/DemoVideo";
 import { ProtocolStripe } from "@/components/landing/ProtocolStripe";
 import { DemoSteps } from "@/components/landing/DemoSteps";
 import { BRANDING } from "@/lib/branding";
@@ -57,6 +58,7 @@ export default function HomePage() {
       </header>
 
       <APHero />
+      <DemoVideo />
       <ProtocolStripe />
       <DemoSteps />
 
