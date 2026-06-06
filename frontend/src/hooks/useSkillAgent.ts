@@ -273,6 +273,16 @@ export function useSkillAgent(options?: {
     if (agentChanged) {
       setFiredStages(new Set<string>());
       setStageStartTimes(new Map<string, number>());
+      // toolCalls is session-scoped — drives useSpecialistInvocations which
+      // feeds the audit-view InspectorPanel. Leaving prior-session tool
+      // calls in state caused the audit pane to keep showing the previous
+      // document's extractor/validator/poster I/O even after a new doc
+      // started a new session and the MCP apps + chat had moved on.
+      setToolCalls([]);
+      setThinkingContent("");
+      setIsThinking(false);
+      setStageLabel(null);
+      setStalledMs(null);
     }
 
     const sync = (allowReset = false) => {
