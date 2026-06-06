@@ -561,14 +561,20 @@ export default function ChatPage({
   // sign-in gate kicks in.
   const { skillId, loading: resolving, notFound } = useSlugResolution(path, !loading && !!user);
 
+  // Auth gate FIRST — useSlugResolution stays in loading=true while disabled,
+  // so checking the combined "loading || resolving" gate before the auth
+  // gate would render an indefinite "Loading…" for unauth visitors. Auth has
+  // finished hydrating (loading=false) and there's no user → show the
+  // sign-in panel directly. Stays on the chat URL so the page re-renders
+  // into the actual chat once Firebase Auth resolves a user.
+  if (!loading && !user) return <SignInRequired />;
   if (loading || resolving) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
   }
-  // Sign-in gate: stay on this URL (don't redirect to /) so after the user
-  // signs in, the page hydrates straight into the chat they wanted. Silently
-  // bouncing to the homepage with no explanation was the previous behaviour
-  // and confused first-time visitors.
-  if (!user) return <SignInRequired />;
+  // TS narrowing — by here loading=false (from the gate above) and the
+  // !loading && !user branch ruled out null. This is defensive against
+  // a future refactor that reorders the gates.
+  if (!user) return null;
   if (notFound || !skillId) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
