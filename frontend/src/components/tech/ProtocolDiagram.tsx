@@ -37,7 +37,7 @@ const LAYERS: Layer[] = [
     // submission ships no live MCP-tool-server integration. See the
     // L2 note below and SUBMISSION.md §"MCP Usage" lines 90-99.
     protocols: ["A2UI", "MCP Apps"],
-    role: "Declarative agent UI surfaces (A2UI) + sandboxed iframe artifacts (MCP Apps — Vendor Globe, AP Analytics)",
+    role: "Declarative agent UI surfaces (A2UI) + sandboxed iframe artifacts (MCP Apps — Vendor KG, AP Analytics) with bidirectional postMessage",
   },
   {
     num: "L3",

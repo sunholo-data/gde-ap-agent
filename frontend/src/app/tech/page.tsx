@@ -82,9 +82,9 @@ const PILLARS: PillarSection[] = [
     label: "MCP Apps",
     role: "Sandboxed iframe artifacts with postMessage handshake",
     doesInDemo:
-      "Two MCP Apps ride alongside the pipeline: the Vendor Globe (an animated globe.gl visualisation arcing from your invoice's origin) and the AP Analytics Dashboard (aging, vendor mix, GL breakdown — Chart.js, canvas-only, no CDN bloat). Both run on a separate-origin Cloud Run service, talk to the host via the spec's postMessage handshake.",
+      "Two MCP Apps ride alongside the pipeline: the Vendor Knowledge Graph (a Cytoscape-rendered network of vendor, prior invoices, POs and audit citations) and the AP Analytics Dashboard (aging, vendor mix, GL breakdown — Chart.js, canvas-only, no CDN bloat). Both run on a separate-origin Cloud Run service and use the spec's bidirectional postMessage handshake — click a citation row in the KG or a stat tile in the dashboard and the iframe sends ui/update-model-context back to the host, which auto-drafts a follow-up question to the agent. Sandboxed UI primitives the agent can react to, not decorative embeds.",
     whereToSee:
-      "Ask the agent 'show me the vendor on a map' or 'open the AP dashboard' mid-conversation. The artefacts mount into the workspace pane.",
+      "Workbench right pane during a pipeline run — Vendor KG appears under the Vendor tab, the dashboard under Analytics. Click any node or stat to see the round-trip fire a chat message.",
     source: { label: "modelcontextprotocol.io/apps", href: "https://modelcontextprotocol.io" },
   },
   {
@@ -125,8 +125,8 @@ const DEMO_FLOW: { step: string; what: string }[] = [
   { step: "02", what: "Pipeline rail animates Intake → Extract → Validate → Post in real time." },
   { step: "03", what: "Each completed step pushes an inspectable A2UI Card to the workspace pane." },
   { step: "04", what: "Click any specialist chip on the audit view to inspect tools, input, output." },
-  { step: "05", what: "Ask 'show the vendor on a map' — the Vendor Globe MCP App mounts inline." },
-  { step: "06", what: "Ask 'open the AP dashboard' — analytics MCP App embeds with the live invoice." },
+  { step: "05", what: "Click a citation node in the Vendor KG — the iframe round-trips a chat message asking about that prior invoice." },
+  { step: "06", what: "Click a stat tile in the AP Analytics Dashboard — same handshake, agent answers with the matching invoice list." },
   { step: "07", what: "Every decision is traceable to a specific tool call you can re-run standalone." },
 ];
 
@@ -260,7 +260,7 @@ export default function TechPage() {
             <DeployRow
               label="MCP App sandbox"
               value="mcp-sandbox-374404277595.europe-west1.run.app"
-              note="Separate-origin Cloud Run. Vendor Globe + AP Analytics + Vendor KG artefacts."
+              note="Separate-origin Cloud Run. Vendor KG + AP Analytics artefacts, bidirectional postMessage."
             />
             <DeployRow
               label="Agent card (A2A)"
