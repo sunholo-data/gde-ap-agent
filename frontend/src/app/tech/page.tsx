@@ -267,11 +267,6 @@ export default function TechPage() {
               value="/.well-known/agent.json"
               note="Discovery surface for Gemini Enterprise registration."
             />
-            <DeployRow
-              label="OpenAPI"
-              value="/openapi.json"
-              note="Full API surface — sessions, skills, documents, A2UI surface actions."
-            />
           </div>
         </section>
 
