@@ -677,6 +677,249 @@ local tests pass) until the registration HTTP 400 returns.
 
 ---
 
+## §5 (added 2026-06-07) — Strict A2A `message/send` invocation bridge
+
+> Brings the template from "A2A-discovery-compliant" to "A2A-invocation-compliant".
+> Closes the gap that the simulate-a2a-peer.py probe surfaces at Step 4 (HTTP 405).
+> Implementation in `Aitana-Labs/gde-ap-agent` commits abe9bc9 (M1 bridge),
+> 0b2d59e (M2 auth + tests), 9cdc629 (M3 cloudbuild + probes).
+>
+> **Design rationale + tradeoffs**: see
+> `docs/design/forks/gde-ap-agent/v0.1.0/a2a-message-send-bridge.md` — captures
+> all six surface decisions (URL mount, card authoring, skill selection,
+> streaming overlap, sessions, auth) with explicit alternatives. Forks should
+> read that doc before touching this code.
+
+### 5a. The wrinkle that took ~90 min to debug
+
+`google.adk.a2a.utils.agent_to_a2a.to_a2a()` returns a Starlette app whose
+A2A routes are registered via a **lifespan event** — not at construction
+time. When that app is mounted as a sub-app on FastAPI
+(`fastapi_app.mount("/a2a", to_a2a(...))`), **Starlette does not propagate
+lifespan to mounted sub-apps**. The lifespan never fires, the routes never
+register, and every request to `/a2a/*` returns 404. ADK's `to_a2a` works
+as the root app (uvicorn enters its lifespan); it does NOT work as a sub-app
+on FastAPI.
+
+**Fix**: don't use `to_a2a()` directly. Replicate its body synchronously
+using the `a2a-sdk` building blocks ADK itself uses (`A2AStarletteApplication`,
+`DefaultRequestHandler`, `InMemoryTaskStore`, `InMemoryPushNotificationConfigStore`,
+ADK's `A2aAgentExecutor`). All routes register at construction time, mounting
+works as expected.
+
+### 5b. Backend — `backend/protocols/a2a_invocation.py` (new ~200 LOC)
+
+Three responsibilities:
+1. `build_a2a_app(agent, base_url) -> Starlette` — constructs the A2A
+   sub-app synchronously, hands ADK's `A2aAgentExecutor` our pre-built
+   `Runner` (so sessions and observability share the AG-UI surface's
+   storage), passes our hand-built `AgentCard` from `_build_card_model`
+   (so the mounted card and the root discovery card stay byte-identical).
+2. `A2AAuthMiddleware` — Starlette `BaseHTTPMiddleware` that runs
+   `get_current_user` on invocation paths and returns a JSON-RPC 2.0
+   error envelope on auth failure (not an HTML 401, which a strict A2A
+   client cannot parse). Discovery paths under the mount
+   (`/.well-known/agent.json`, `/.well-known/agent-card.json`) skip auth
+   per A2A spec.
+3. Gated by env `A2A_INVOCATION_REQUIRE_AUTH` (default `true`). Forks
+   that integrate with peer-agent routing flows that don't carry Bearer
+   tokens (some Gemini Enterprise modes inject service identity differently)
+   can set `false` and rely on network-level isolation.
+
+Key function signatures (copy verbatim into the template):
+
+```python
+# Synchronous A2A surface construction — the lifespan workaround.
+def build_a2a_app(agent: BaseAgent, base_url: str) -> Starlette:
+    from a2a.server.apps import A2AStarletteApplication
+    from a2a.server.request_handlers import DefaultRequestHandler
+    from a2a.server.tasks import (
+        InMemoryPushNotificationConfigStore,
+        InMemoryTaskStore,
+    )
+    from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
+    from starlette.applications import Starlette
+
+    from protocols.a2a import _build_card_model
+
+    agent_card = _build_card_model(base_url)
+    runner = _build_runner(agent)  # uses get_session_service / memory / artifact singletons
+
+    executor = A2aAgentExecutor(runner=runner)
+    request_handler = DefaultRequestHandler(
+        agent_executor=executor,
+        task_store=InMemoryTaskStore(),
+        push_config_store=InMemoryPushNotificationConfigStore(),
+    )
+    a2a_starlette = A2AStarletteApplication(
+        agent_card=agent_card,
+        http_handler=request_handler,
+    )
+
+    a2a_app = Starlette()
+    a2a_starlette.add_routes_to_app(a2a_app)  # synchronous, NOT via lifespan
+    a2a_app.add_middleware(A2AAuthMiddleware)
+    return a2a_app
+```
+
+The auth middleware returns proper JSON-RPC envelopes:
+
+```python
+class A2AAuthMiddleware(BaseHTTPMiddleware):
+    _UNAUTH_PATHS = ("/.well-known/agent.json", "/.well-known/agent-card.json")
+
+    async def dispatch(self, request, call_next):
+        if not _auth_required():
+            return await call_next(request)
+        if request.url.path in self._UNAUTH_PATHS:
+            return await call_next(request)
+
+        from auth import get_current_user
+        try:
+            request.state.user = await get_current_user(request)
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32000, "message": str(exc.detail)},
+                },
+            )
+        return await call_next(request)
+```
+
+### 5c. Backend — `backend/protocols/a2a.py` card-builder split
+
+Discovery card and ADK-mounted card must agree, so split the existing
+`_build_card` into two variants sharing the same data:
+
+```python
+A2A_INVOCATION_PATH = "/a2a"
+
+def _build_card_dict(base_url: str) -> dict[str, Any]:
+    # ... existing body ...
+    return {
+        # ...
+        "url": f"{base_url.rstrip('/')}{A2A_INVOCATION_PATH}",  # not bare base_url
+        # ...
+    }
+
+def _build_card_model(base_url: str) -> "AgentCard":
+    """ADK AgentCard pydantic model — for to_a2a(agent_card=)."""
+    from a2a.types import AgentCard
+    return AgentCard.model_validate(_build_card_dict(base_url))
+
+# Back-compat alias for callers that still import _build_card
+_build_card = _build_card_dict
+```
+
+The dict variant is what the well-known FastAPI route returns on the
+wire; the model variant is what gets passed to `A2AStarletteApplication`.
+
+### 5d. FastAPI mount (in `backend/fast_api_app.py`)
+
+```python
+if os.environ.get("ENABLE_A2A_INVOCATION", "false").lower() in ("true", "1", "yes"):
+    try:
+        from auth.firebase_auth import User
+        from auth.access_context import AccessContext
+        from adk.agent import create_agent
+        from skills.skill_config import find_by_name
+        from protocols.a2a import A2A_INVOCATION_PATH
+        from protocols.a2a_invocation import build_a2a_app
+
+        _skill = find_by_name("ap-orchestrator")  # or your fork's entry skill
+        if _skill is not None:
+            _system_user = User(uid="a2a-public-peer", email="", domain="")
+            _agent = create_agent(_skill, _system_user, access_context=AccessContext(uid=_system_user.uid))
+            _base_url = os.environ.get("PUBLIC_BASE_URL", "http://localhost:1956")
+            app.mount(A2A_INVOCATION_PATH, build_a2a_app(_agent, _base_url))
+    except Exception:
+        logger.exception("Failed to mount A2A invocation surface — continuing without it")
+```
+
+### 5e. Tests — `backend/tests/api_tests/test_a2a_invocation.py` (new)
+
+Six tests, mix of pure card-shape + middleware-isolation + FastAPI-mount
+integration. The integration test is the one that catches the
+lifespan-on-mount bug:
+
+```python
+def test_build_a2a_app_returns_mountable_starlette_app(monkeypatch):
+    monkeypatch.setenv("A2A_INVOCATION_REQUIRE_AUTH", "false")
+    from google.adk.agents import LlmAgent
+    from protocols.a2a_invocation import build_a2a_app
+
+    agent = LlmAgent(name="probe", model="gemini-2.5-flash", description="...", instruction="...")
+    a2a_app = build_a2a_app(agent, "https://example.com")
+
+    fastapi_app = FastAPI()
+    fastapi_app.mount("/a2a", a2a_app)
+    client = TestClient(fastapi_app)
+
+    resp = client.get("/a2a/.well-known/agent.json")
+    assert resp.status_code == 200  # ← this is the bug check
+    assert resp.json()["url"] == "https://example.com/a2a"
+```
+
+Without the synchronous `add_routes_to_app` call in `build_a2a_app`, this
+returns 404 instead of 200. The other 5 tests cover the card-URL regression
+guard, dict/model byte-equality, JSON-RPC-error-envelope on missing Bearer,
+discovery-paths-skip-auth, and auth-disabled pass-through.
+
+### 5f. Cloud Build deploy (in `backend/cloudbuild.yaml`)
+
+Three env vars to add:
+
+```yaml
+- '--set-env-vars=ENABLE_A2A_INVOCATION=true'
+- '--set-env-vars=PUBLIC_BASE_URL=https://<your-cloud-run-host>'
+- '--set-env-vars=A2A_INVOCATION_REQUIRE_AUTH=true'  # or false depending on peer auth
+```
+
+`PUBLIC_BASE_URL` is what the ADK-mounted card at
+`/a2a/.well-known/agent-card.json` advertises as the `url` field. The
+root `/.well-known/agent.json` is still URL-rewritten by the Next.js
+proxy from the incoming request's origin (per §2 above), so the
+discovery card stays correct regardless. Setting `PUBLIC_BASE_URL`
+keeps the two cards consistent.
+
+---
+
+### Friction 25 — `to_a2a` Starlette app loses lifespan when mounted on FastAPI
+
+**Symptom**
+
+`fastapi_app.mount("/a2a", to_a2a(agent))` doesn't error at boot but
+every request to `/a2a/*` (including `/a2a/.well-known/agent.json`)
+returns 404. ADK's docstring suggests the mount should work.
+
+**Root cause**
+
+`to_a2a` uses a Starlette lifespan event to call `setup_a2a()` which
+creates the `A2AStarletteApplication` and calls `add_routes_to_app(app)`.
+Starlette does NOT propagate lifespan to mounted sub-apps, so the
+lifespan never fires when the app is a sub-mount on FastAPI. The routes
+never register.
+
+**Fix**
+
+Don't use `to_a2a()` directly when mounting. Replicate its setup
+synchronously using the same `a2a-sdk` building blocks
+(`A2AStarletteApplication`, `DefaultRequestHandler`,
+`A2aAgentExecutor`). See §5b above for the code.
+
+**Template improvement**
+
+Either (a) file an ADK issue requesting a synchronous variant of
+`to_a2a`, or (b) ship the synchronous helper as a template-level utility
+that every fork can call. We chose (b) because the synchronous pattern
+is small (~20 lines), composable, and doesn't depend on ADK accepting
+upstream changes.
+
+---
+
 ## Verification
 
 After applying all four changes and deploying:

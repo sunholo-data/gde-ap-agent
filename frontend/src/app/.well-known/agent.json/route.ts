@@ -113,7 +113,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
 
     const card = (await upstream.json()) as Record<string, unknown>;
-    card.url = publicOrigin(req);
+    // Preserve any PATH the backend put on card.url (e.g. `/a2a` — see
+    // protocols.a2a.A2A_INVOCATION_PATH). The rewrite only swaps the
+    // scheme + host; the path tells peers WHICH endpoint on the public
+    // origin handles A2A invocation. Stripping it (the original bug)
+    // breaks every peer doing strict A2A `message/send`.
+    const upstreamUrl = typeof card.url === "string" ? card.url : "";
+    let pathSuffix = "";
+    try {
+      pathSuffix = new URL(upstreamUrl).pathname;
+      if (pathSuffix === "/") pathSuffix = "";
+    } catch {
+      // upstream emitted a non-absolute URL or a string that isn't a URL —
+      // treat as no path and just advertise the public origin
+      pathSuffix = "";
+    }
+    card.url = `${publicOrigin(req)}${pathSuffix}`;
     const rewritten = JSON.stringify(card);
     headers.set("content-type", "application/json");
 
