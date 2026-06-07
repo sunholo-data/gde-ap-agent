@@ -1,0 +1,101 @@
+{
+  "sprint_id": "A2A-INVOKE",
+  "created": "2026-06-07T16:21:26Z",
+  "estimated_duration_days": 0.5,
+  "design_doc": "docs/design/forks/gde-ap-agent/v0.1.0/a2a-message-send-bridge.md",
+  "sprint_plan": "docs/design/forks/gde-ap-agent/v0.1.0/a2a-message-send-bridge-sprint.md",
+  "features": [
+    {
+      "id": "M1",
+      "description": "Bridge plumbing: split _build_card into dict + ADK AgentCard model variants, create backend/protocols/a2a_invocation.py exporting build_a2a_app(agent, runner) -> Starlette via ADK's to_a2a(), mount at /a2a on FastAPI gated by ENABLE_A2A_INVOCATION env, update _build_card_dict to advertise card.url = base + /a2a, smoke-test locally that POST /a2a/v1/messages returns a JSON-RPC Task envelope",
+      "scope": "backend",
+      "estimated_loc": 150,
+      "actual_loc": null,
+      "dependencies": [],
+      "acceptance_criteria": [
+        "/a2a/.well-known/agent.json returns the same card as the root /.well-known/agent.json (shared canonical card source)",
+        "POST /a2a/v1/messages with a valid message/send JSON-RPC body returns HTTP 200 + a Task-shaped JSON response",
+        "Existing 13 A2A discovery tests still pass with no regression",
+        "card.url ends with /a2a when the well-known route is fetched",
+        "cd backend && make lint returns clean (ruff check + ruff format --check)"
+      ],
+      "files_to_create": [
+        "backend/protocols/a2a_invocation.py"
+      ],
+      "files_to_modify": [
+        "backend/protocols/a2a.py",
+        "backend/fast_api_app.py"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    },
+    {
+      "id": "M2",
+      "description": "Auth middleware + tests: Starlette middleware on the /a2a mount that runs the same Firebase ID token verification as /api/skill/{id}/stream and returns a JSON-RPC error envelope on auth failure; four new tests covering happy-path message/send, auth failure (no Bearer -> 401 + JSON-RPC error), sendSubscribe SSE streaming, and a card.url-ends-with-/a2a regression guard; update existing test_a2a.py URL assertions for the new card shape",
+      "scope": "backend",
+      "estimated_loc": 180,
+      "actual_loc": null,
+      "dependencies": [
+        "M1"
+      ],
+      "acceptance_criteria": [
+        "All 4 new tests in tests/api_tests/test_a2a_invocation.py pass",
+        "All 13 existing tests in tests/api_tests/test_a2a.py still pass (URL assertions updated for the new card.url shape)",
+        "Auth failure on /a2a returns a JSON-RPC error envelope, not an HTML page or generic 500",
+        "cd backend && make lint && make test-fast both green"
+      ],
+      "files_to_create": [
+        "backend/tests/api_tests/test_a2a_invocation.py"
+      ],
+      "files_to_modify": [
+        "backend/protocols/a2a_invocation.py",
+        "backend/tests/api_tests/test_a2a.py"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    },
+    {
+      "id": "M3",
+      "description": "Verification against live deploy + upstream brief update: enable ENABLE_A2A_INVOCATION=true in cloudbuild.yaml (dev), push + wait for Cloud Build, re-run verify-a2a.sh and simulate-a2a-peer.py (Step 4 should now show HTTP 200 + JSON-RPC envelope, new Step 5 covers sendSubscribe streaming), re-register with Gemini Enterprise to propagate new card.url, extend docs/learnings/template-pr-a2a-spec-compliance.md with section 5 covering the bridge (ADK source citations, mount pattern, auth middleware, friction-log entry 25)",
+      "scope": "backend",
+      "estimated_loc": 110,
+      "actual_loc": null,
+      "dependencies": [
+        "M2"
+      ],
+      "acceptance_criteria": [
+        "scripts/simulate-a2a-peer.py against live deploy: all 6 steps print check mark (Steps 1-3 unchanged, Step 4 now succeeds, new Step 5 streams events)",
+        "scripts/verify-a2a.sh against live deploy: all green including new invocation probe",
+        "agents-cli register-gemini-enterprise --registration-type a2a succeeds (idempotent re-registration updates the existing entry)",
+        "docs/learnings/template-pr-a2a-spec-compliance.md gains a self-contained section 5 covering the bridge for upstream template adoption"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "scripts/simulate-a2a-peer.py",
+        "scripts/verify-a2a.sh",
+        "docs/learnings/template-pr-a2a-spec-compliance.md",
+        "cloudbuild.yaml"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    }
+  ],
+  "velocity": {
+    "target_loc_per_day": 880,
+    "actual_loc_per_day": null,
+    "estimated_total_loc": 440,
+    "actual_total_loc": null,
+    "estimated_days": 0.5,
+    "actual_days": null
+  },
+  "github_issues": [],
+  "last_session": null,
+  "last_checkpoint": null,
+  "status": "not_started"
+}
