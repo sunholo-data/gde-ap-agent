@@ -100,13 +100,23 @@ fi
 # --- 5. Extensions advertised in body --------------------------------------
 EXT_COUNT=$(jq -r '.capabilities.extensions | length' "$BODY_FILE" 2>/dev/null || echo 0)
 if [[ "$EXT_COUNT" -gt 0 ]]; then
-  EXTS=$(jq -r '.capabilities.extensions | join(", ")' "$BODY_FILE")
-  ok "capabilities.extensions advertises ${EXT_COUNT} extension(s): ${EXTS}"
-  # Spec compliance: a2a-v0.2 should be in the set (this IS an A2A agent).
-  if jq -e '.capabilities.extensions | index("a2a-v0.2")' "$BODY_FILE" >/dev/null; then
-    ok "advertises a2a-v0.2 (canonical A2A extension)"
+  # A2A v0.2 schema: capabilities.extensions[] must be AgentExtension objects
+  # with a `uri` field — Discovery Engine / Gemini Enterprise rejects bare
+  # strings with "unexpected instance type" (caught 2026-06-07).
+  ALL_OBJECTS=$(jq -r '.capabilities.extensions | map(type == "object" and has("uri")) | all' "$BODY_FILE")
+  if [[ "$ALL_OBJECTS" == "true" ]]; then
+    URIS=$(jq -r '.capabilities.extensions | map(.uri) | join(", ")' "$BODY_FILE")
+    ok "capabilities.extensions advertises ${EXT_COUNT} AgentExtension descriptor(s)"
+    info "uris: ${URIS}"
   else
-    fail "capabilities.extensions does not include a2a-v0.2"
+    fail "capabilities.extensions[] entries are not AgentExtension objects with .uri"
+    fail "  → Gemini Enterprise registration will reject with 'unexpected instance type'"
+  fi
+  # Spec compliance: a2a-v0.2 should be among the URIs (this IS an A2A agent).
+  if jq -e '.capabilities.extensions | map(.uri // "") | any(. | endswith("a2a/v0.2") or contains("a2a-v0.2"))' "$BODY_FILE" >/dev/null; then
+    ok "advertises an A2A v0.2 extension descriptor"
+  else
+    fail "capabilities.extensions does not include an A2A v0.2 entry"
   fi
 else
   fail "capabilities.extensions is empty or missing"

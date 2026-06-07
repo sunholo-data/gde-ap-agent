@@ -20,6 +20,20 @@ from db.models import SkillConfig, SkillMetadata
 from db.models.access import AccessControl
 
 
+def _extension_ids(card: dict[str, Any]) -> list[str]:
+    """Extract bare extension IDs from a card's capabilities.extensions.
+
+    A2A v0.2 schema makes these AgentExtension objects ({uri, description,
+    required}); we reverse-lookup each URI in SUPPORTED_EXTENSION_INFO to
+    recover the canonical IDs the rest of the codebase uses. Centralised so
+    a schema bump (v0.3 etc.) only edits this helper.
+    """
+    from protocols.a2a import SUPPORTED_EXTENSION_INFO
+
+    uri_to_id = {uri: ext_id for ext_id, (uri, _) in SUPPORTED_EXTENSION_INFO.items()}
+    return [uri_to_id.get(ext["uri"], ext["uri"]) for ext in card["capabilities"]["extensions"]]
+
+
 def _skill(
     *,
     name: str = "public-skill",
@@ -188,6 +202,12 @@ def test_agent_card_advertises_extensions_on_body(client: TestClient) -> None:
     caps = resp.json()["capabilities"]
     assert "extensions" in caps, "capabilities.extensions missing from card"
     assert isinstance(caps["extensions"], list)
+    # Each extension must be a full AgentExtension descriptor (A2A v0.2 schema
+    # — Discovery Engine / Gemini Enterprise rejects bare strings).
+    for ext in caps["extensions"]:
+        assert isinstance(ext, dict), f"extension entry must be an object, got {type(ext).__name__}"
+        assert "uri" in ext, f"AgentExtension missing required `uri`: {ext!r}"
+    ids = _extension_ids(resp.json())
     # The four canonical A2UI extensions from the integration guide.
     for required in (
         "a2ui-v0.9",
@@ -195,7 +215,7 @@ def test_agent_card_advertises_extensions_on_body(client: TestClient) -> None:
         "a2ui-inline-pattern",
         "a2ui-decoupled-pattern",
     ):
-        assert required in caps["extensions"], f"extension missing: {required}"
+        assert required in ids, f"extension missing: {required}"
 
 
 def test_agent_card_echoes_full_extensions_when_client_sends_none(client: TestClient) -> None:
@@ -206,8 +226,11 @@ def test_agent_card_echoes_full_extensions_when_client_sends_none(client: TestCl
         resp = client.get("/.well-known/agent.json")
     assert resp.status_code == 200
     echoed = [tok.strip() for tok in resp.headers["X-A2A-Extensions"].split(",")]
-    body = resp.json()["capabilities"]["extensions"]
-    assert echoed == body, "header set must match body set when no negotiation occurred"
+    body_ids = _extension_ids(resp.json())
+    # Header carries bare IDs (per the integration guide); body carries
+    # full descriptors (per A2A v0.2 schema). They must reference the
+    # same underlying extension set.
+    assert echoed == body_ids, "header IDs must match body IDs when no negotiation occurred"
     assert resp.headers["Vary"] == "X-A2A-Extensions"
 
 
@@ -222,8 +245,8 @@ def test_agent_card_advertises_adk_workflow_extension(client: TestClient) -> Non
     with patch("protocols.a2a.list_marketplace", return_value=[]):
         resp = client.get("/.well-known/agent.json")
     assert resp.status_code == 200
-    extensions = resp.json()["capabilities"]["extensions"]
-    assert "adk-workflow-v1" in extensions, f"adk-workflow-v1 must be advertised, got {extensions!r}"
+    ids = _extension_ids(resp.json())
+    assert "adk-workflow-v1" in ids, f"adk-workflow-v1 must be advertised, got {ids!r}"
 
 
 def test_agent_card_negotiates_extension_intersection(client: TestClient) -> None:
@@ -241,8 +264,8 @@ def test_agent_card_negotiates_extension_intersection(client: TestClient) -> Non
     # Intersection: only the two we support out of what the client asked for.
     assert echoed == ["a2ui-v0.9", "a2ui-inline-pattern"]
     # Body still advertises the full server set so other clients still see it.
-    body = resp.json()["capabilities"]["extensions"]
-    assert "a2ui-decoupled-pattern" in body, "body must keep advertising full server capabilities"
+    body_ids = _extension_ids(resp.json())
+    assert "a2ui-decoupled-pattern" in body_ids, "body must keep advertising full server capabilities"
 
 
 def test_agent_card_returns_empty_negotiation_when_no_overlap(client: TestClient) -> None:
@@ -296,14 +319,23 @@ def _validate_against_a2a_contract(card: dict[str, Any]) -> list[str]:
             errors.append(f"capabilities missing field: {cap_field}")
         elif not isinstance(caps[cap_field], bool):
             errors.append(f"capabilities.{cap_field}: expected bool, got {type(caps[cap_field]).__name__}")
-    # Optional but spec-recognised: capabilities.extensions (list of strings).
+    # Optional but spec-recognised: capabilities.extensions — A2A v0.2 schema
+    # requires a list of AgentExtension objects each with a `uri` field
+    # (Discovery Engine enforces this — bare strings get
+    # "unexpected instance type" rejections).
     if "extensions" in caps:
         if not isinstance(caps["extensions"], list):
             errors.append("capabilities.extensions: expected list")
         else:
             for i, ext in enumerate(caps["extensions"]):
-                if not isinstance(ext, str):
-                    errors.append(f"capabilities.extensions[{i}]: expected str, got {type(ext).__name__}")
+                if not isinstance(ext, dict):
+                    errors.append(
+                        f"capabilities.extensions[{i}]: expected AgentExtension object, got {type(ext).__name__}"
+                    )
+                elif "uri" not in ext:
+                    errors.append(f"capabilities.extensions[{i}]: AgentExtension missing required `uri`")
+                elif not isinstance(ext["uri"], str):
+                    errors.append(f"capabilities.extensions[{i}].uri: expected str, got {type(ext['uri']).__name__}")
 
     # defaultInputModes / defaultOutputModes: must be non-empty lists of strings.
     for modes_field in ("defaultInputModes", "defaultOutputModes"):

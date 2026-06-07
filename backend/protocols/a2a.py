@@ -60,15 +60,62 @@ _CACHE_TTL = 60.0
 #   (SequentialAgent/ParallelAgent/LoopAgent) where the control flow is
 #   code, not a model. Discovery clients can rely on the named pipeline
 #   skills (ap-pipeline) running their sub_skills in declared order.
-SUPPORTED_EXTENSIONS: tuple[str, ...] = (
-    "a2ui-v0.9",
-    "a2ui-basic-catalog-v0.9",
-    "a2ui-inline-pattern",
-    "a2ui-decoupled-pattern",
-    "a2a-v0.2",
-    "mcp-apps-v1",
-    "adk-workflow-v1",
-)
+# A2A extensions this agent supports. Single source of truth keyed by the
+# extension ID — the header uses just the IDs (per the integration guide),
+# the card body needs full AgentExtension descriptors (per A2A v0.2 schema,
+# enforced by Discovery Engine / Gemini Enterprise — emitting bare strings
+# fails registration with "unexpected instance type" at
+# /capabilities/extensions/N. Real failure 2026-06-07.)
+SUPPORTED_EXTENSION_INFO: dict[str, tuple[str, str]] = {
+    "a2ui-v0.9": (
+        "https://github.com/agentic-protocols/a2ui/blob/main/spec/v0.9.md",
+        "A2UI v0.9 declarative UI surfaces",
+    ),
+    "a2ui-basic-catalog-v0.9": (
+        "https://github.com/agentic-protocols/a2ui/blob/main/spec/basic-catalog-v0.9.md",
+        "A2UI BasicCatalog component set",
+    ),
+    "a2ui-inline-pattern": (
+        "https://github.com/agentic-protocols/a2ui/blob/main/spec/inline-pattern.md",
+        "A2UI inline-rendered surfaces (in-chat)",
+    ),
+    "a2ui-decoupled-pattern": (
+        "https://github.com/agentic-protocols/a2ui/blob/main/spec/decoupled-pattern.md",
+        "A2UI decoupled surfaces (separate pane)",
+    ),
+    "a2a-v0.2": (
+        "https://a2aproject.github.io/A2A/v0.2",
+        "A2A protocol v0.2 (this card complies with this version)",
+    ),
+    "mcp-apps-v1": (
+        "https://modelcontextprotocol.io/specification/draft/server/apps",
+        "MCP Apps v1 sandboxed iframe artefacts",
+    ),
+    "adk-workflow-v1": (
+        "https://google.github.io/adk-docs/agents/workflow-agents/",
+        "ADK workflow agents (SequentialAgent / ParallelAgent / LoopAgent)",
+    ),
+}
+
+# Canonical ID list — derived so any new extension only needs adding to
+# the info dict above (single source of truth, no parallel arrays to
+# drift). Public callers still use this as the iteration order.
+SUPPORTED_EXTENSIONS: tuple[str, ...] = tuple(SUPPORTED_EXTENSION_INFO.keys())
+
+
+def _extension_descriptor(ext_id: str) -> dict[str, Any]:
+    """Wrap a supported extension ID as an A2A AgentExtension object.
+
+    Falls back to a synthetic urn:-style URI if the ID is somehow missing
+    from the info table — defence in depth so a fork adding a new extension
+    without remembering to update SUPPORTED_EXTENSION_INFO still produces a
+    card that passes schema validation rather than crashing the endpoint.
+    """
+    uri, description = SUPPORTED_EXTENSION_INFO.get(
+        ext_id,
+        (f"urn:sunholo:a2a-extension:{ext_id}", ext_id),
+    )
+    return {"uri": uri, "description": description, "required": False}
 
 
 def _parse_client_extensions(header_value: str | None) -> list[str]:
@@ -148,12 +195,16 @@ def _build_card(base_url: str) -> dict[str, Any]:
             "streaming": True,
             "pushNotifications": False,
             "stateTransitionHistory": False,
-            # A2A extensions this agent supports. Mirrored in the
-            # `X-A2A-Extensions` response header so a client that does
-            # capability negotiation by header (per the GE / A2UI
-            # integration guide) and a client that reads the card body
-            # see the same set.
-            "extensions": list(SUPPORTED_EXTENSIONS),
+            # A2A extensions this agent supports, as full AgentExtension
+            # descriptors per A2A v0.2 schema (uri + description + required).
+            # Discovery Engine / Gemini Enterprise rejects bare-string
+            # extension entries — caught 2026-06-07 during a real
+            # `agents-cli register-gemini-enterprise` attempt with:
+            #   "At /capabilities/extensions/0 of \"a2ui-v0.9\" - unexpected
+            #    instance type"
+            # The negotiation HEADER still carries bare IDs (per the
+            # integration guide); only the body needs descriptors.
+            "extensions": [_extension_descriptor(ext) for ext in SUPPORTED_EXTENSIONS],
         },
         "defaultInputModes": ["text"],
         "defaultOutputModes": ["text"],

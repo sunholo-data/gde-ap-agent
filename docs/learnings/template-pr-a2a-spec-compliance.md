@@ -1,36 +1,48 @@
 # Template PR brief — A2A spec compliance for Gemini Enterprise
 
 > **For the template-repo agent on `sunholo-data/ai-protocol-platform`.**
-> Two coupled bugs found while doing a real `agents-cli register-gemini-enterprise`
-> registration against a Discovery Engine app on 2026-06-07. Both are pure
-> A2A spec / proxy-topology bugs with zero AP-specific logic — every fork
-> deploying the template behind a Next.js → FastAPI sidecar topology will hit
-> them when they try to register with Gemini Enterprise.
+> Three coupled bugs found while doing a real `agents-cli
+> register-gemini-enterprise` registration against a Discovery Engine app on
+> 2026-06-07. All three are pure A2A spec / proxy-topology bugs with zero
+> AP-specific logic — every fork deploying the template behind a Next.js →
+> FastAPI sidecar topology will hit them when they try to register with
+> Gemini Enterprise. Each was caught only because we did a REAL registration
+> against a live Discovery Engine app, not because static schema tests caught
+> them — the template's existing tests passed all the way through.
 >
-> Source: `Aitana-Labs/gde-ap-agent` commits `236fdcb` (URL rewrite) and
-> `dbc5856` (protocolVersion + tests + probe).
+> Source: `sunholo-data/gde-ap-agent` commits `236fdcb` (URL rewrite),
+> `dbc5856` (protocolVersion + tests + probe), and (this round)
+> `<next-sha>` (extensions[] descriptor shape).
 >
-> Companion friction-log entries: TODO — add Friction 15 + 16 below the
-> existing 14 in `docs/learnings/template-protocols-friction.md`. Content
-> for those entries is at the bottom of this brief.
+> Companion friction-log entries: TODO — add Friction 22, 23, 24 below the
+> existing entries in `docs/learnings/template-protocols-friction.md`.
+> Content for those entries is at the bottom of this brief.
 
 ## TL;DR
 
-Two changes + one new script + one strengthened test:
+Three changes + one new script + strengthened tests:
 
-1. **Backend** ([`backend/protocols/a2a.py`](#1-backend-protocolsa2apy)) — add
-   `protocolVersion: "0.2.0"` to the agent card body. Discovery Engine
-   rejects the card without it.
-2. **Frontend** ([`frontend/src/app/.well-known/agent.json/route.ts`](#2-frontend-well-known-agent-card-route)) —
+1. **Backend, card body** ([§1](#1-backend-protocolsa2apy)) — TWO related fixes:
+   - Add `protocolVersion: "0.2.0"` to the card root.
+   - Emit `capabilities.extensions` as A2A `AgentExtension` objects
+     (`{uri, description, required}`), NOT bare strings. Header still
+     carries bare IDs.
+2. **Frontend proxy** ([§2](#2-frontend-well-known-agent-card-route)) —
    rewrite the card's `url` field to the public origin before returning it.
-   The backend can't know its public URL when it's a sidecar behind the
+   The backend cannot know its public URL when it's a sidecar behind the
    Next.js ingress; this is the only layer that does.
-3. **New** ([`scripts/verify-a2a.sh`](#3-new-scripts-verify-a2a-sh)) — 11-check
-   spec compliance probe that catches both bugs above + asserts capability
+3. **New script** ([§3](#3-new-scripts-verify-a2a-sh)) — 12-check spec
+   compliance probe that catches all of the above + asserts capability
    negotiation works end-to-end.
-4. **Test** ([`backend/tests/api_tests/test_a2a.py`](#4-backend-test-strengthening)) —
-   require `protocolVersion` in `test_agent_card_returns_minimum_a2a_fields`
-   so the regression can't slip back.
+4. **Strengthened tests** ([§4](#4-backend-test-strengthening)) — require
+   `protocolVersion`, require `AgentExtension` shape, helper for extracting
+   bare IDs out of descriptors so the rest of the suite stays readable.
+
+**Critical insight for the template's test strategy:** Discovery Engine's
+JSON-schema validator is the practical compliance backstop, NOT our own
+test suite. All three bugs sailed past 13 passing pytest cases. The verify
+script in §3 is a "would Discovery Engine accept this" probe and should be
+the gate, not just `pytest` green.
 
 ## Why this matters — the failure mode in production
 
@@ -59,46 +71,145 @@ registration on 2026-06-07.
 
 ## 1. Backend — `backend/protocols/a2a.py`
 
+### 1a. Add `protocolVersion` to the card root
+
 **Where:** inside `_build_card()`, top of the returned dict (immediately
 before `name`).
 
-**Diff:**
+**Failure observed:**
 
-```diff
- def _build_card(base_url: str) -> dict[str, Any]:
-     try:
-         skills = list_marketplace(limit=100)
-     except Exception:
-         logger.exception("a2a._build_card: list_marketplace failed; serving empty skills")
-         skills = []
-     return {
-+        # A2A wire-protocol version this card complies with. Required by
-+        # the Discovery Engine / Gemini Enterprise card validator — a
-+        # missing protocolVersion makes `agents-cli register-gemini-enterprise
-+        # --registration-type a2a` fail with INVALID_ARGUMENT. Matches the
-+        # `a2a-v0.2` value we advertise in `capabilities.extensions`.
-+        "protocolVersion": "0.2.0",
-         "name": os.getenv("A2A_AGENT_NAME", "..."),
-         "description": os.getenv("A2A_AGENT_DESCRIPTION", "..."),
-         "url": base_url,
-         "version": "6.0.0",
-         "capabilities": {
-             "streaming": True,
-             ...
-             "extensions": list(SUPPORTED_EXTENSIONS),
-         },
-         "defaultInputModes": ["text"],
-         "defaultOutputModes": ["text"],
-         "skills": [_skill_to_a2a(s) for s in skills],
-     }
+```
+INVALID_ARGUMENT: required property 'protocolVersion' not found in object
 ```
 
-**Notes for template fork:**
-- The value `"0.2.0"` is the A2A wire protocol version this card complies
-  with. It matches the `a2a-v0.2` token already in
-  `SUPPORTED_EXTENSIONS`. Keep them in sync — if the template ever upgrades
-  to A2A 0.3 or later, both need to move together.
-- This is a top-level field on the card root, NOT inside `capabilities`.
+**Fix:**
+
+```diff
+ return {
++    # A2A wire-protocol version this card complies with. Required by
++    # the Discovery Engine / Gemini Enterprise card validator — a
++    # missing protocolVersion makes `agents-cli register-gemini-enterprise
++    # --registration-type a2a` fail with INVALID_ARGUMENT. Matches the
++    # `a2a-v0.2` value we advertise in `capabilities.extensions`.
++    "protocolVersion": "0.2.0",
+     "name": os.getenv("A2A_AGENT_NAME", "..."),
+     ...
+ }
+```
+
+The value `"0.2.0"` is the A2A wire protocol version this card complies with.
+It matches the `a2a-v0.2` URI we advertise in `capabilities.extensions`. Keep
+them in sync — if the template ever moves to A2A 0.3+, both need to move
+together. This is a top-level field on the card root, NOT inside
+`capabilities`.
+
+### 1b. Emit `capabilities.extensions` as `AgentExtension` objects, not strings
+
+**Failure observed (after fixing 1a):**
+
+```
+INVALID_ARGUMENT: At /capabilities/extensions/0 of "a2ui-v0.9" -
+unexpected instance type
+```
+
+The A2A v0.2 schema defines `capabilities.extensions[]` as an array of
+`AgentExtension` objects, each with at least a `uri` field. The template
+today emits bare strings — discovery clients reading the body get an ID
+list, but Discovery Engine's strict validator rejects the card.
+
+**Fix — collapse the parallel SUPPORTED_EXTENSIONS list into a single
+info table, derive both the bare ID tuple AND a descriptor builder:**
+
+```diff
+-SUPPORTED_EXTENSIONS: tuple[str, ...] = (
+-    "a2ui-v0.9",
+-    "a2ui-basic-catalog-v0.9",
+-    "a2ui-inline-pattern",
+-    "a2ui-decoupled-pattern",
+-    "a2a-v0.2",
+-    "mcp-apps-v1",
+-    "adk-workflow-v1",
+-)
++# A2A extensions this agent supports. Single source of truth keyed by the
++# extension ID — the header uses just the IDs (per the integration guide),
++# the card body needs full AgentExtension descriptors (per A2A v0.2 schema,
++# enforced by Discovery Engine / Gemini Enterprise — emitting bare strings
++# fails registration with "unexpected instance type" at
++# /capabilities/extensions/N. Real failure 2026-06-07.)
++SUPPORTED_EXTENSION_INFO: dict[str, tuple[str, str]] = {
++    "a2ui-v0.9": (
++        "https://github.com/agentic-protocols/a2ui/blob/main/spec/v0.9.md",
++        "A2UI v0.9 declarative UI surfaces",
++    ),
++    "a2ui-basic-catalog-v0.9": (
++        "https://github.com/agentic-protocols/a2ui/blob/main/spec/basic-catalog-v0.9.md",
++        "A2UI BasicCatalog component set",
++    ),
++    "a2ui-inline-pattern": (
++        "https://github.com/agentic-protocols/a2ui/blob/main/spec/inline-pattern.md",
++        "A2UI inline-rendered surfaces (in-chat)",
++    ),
++    "a2ui-decoupled-pattern": (
++        "https://github.com/agentic-protocols/a2ui/blob/main/spec/decoupled-pattern.md",
++        "A2UI decoupled surfaces (separate pane)",
++    ),
++    "a2a-v0.2": (
++        "https://a2aproject.github.io/A2A/v0.2",
++        "A2A protocol v0.2 (this card complies with this version)",
++    ),
++    "mcp-apps-v1": (
++        "https://modelcontextprotocol.io/specification/draft/server/apps",
++        "MCP Apps v1 sandboxed iframe artefacts",
++    ),
++    "adk-workflow-v1": (
++        "https://google.github.io/adk-docs/agents/workflow-agents/",
++        "ADK workflow agents (SequentialAgent / ParallelAgent / LoopAgent)",
++    ),
++}
++
++# Canonical ID list — derived so any new extension only needs adding to
++# the info dict above (single source of truth, no parallel arrays to drift).
++# Public callers (negotiation, header echo) still use this as iteration order.
++SUPPORTED_EXTENSIONS: tuple[str, ...] = tuple(SUPPORTED_EXTENSION_INFO.keys())
++
++
++def _extension_descriptor(ext_id: str) -> dict[str, Any]:
++    """Wrap a supported extension ID as an A2A AgentExtension object.
++
++    Falls back to a synthetic urn:-style URI if the ID is missing from the
++    info table — defence in depth so a fork adding a new extension without
++    updating SUPPORTED_EXTENSION_INFO still produces a card that passes
++    schema validation rather than crashing the endpoint.
++    """
++    uri, description = SUPPORTED_EXTENSION_INFO.get(
++        ext_id, (f"urn:sunholo:a2a-extension:{ext_id}", ext_id),
++    )
++    return {"uri": uri, "description": description, "required": False}
+```
+
+**Then in `_build_card`'s capabilities block, swap the list comprehension:**
+
+```diff
+ "capabilities": {
+     "streaming": True,
+     "pushNotifications": False,
+     "stateTransitionHistory": False,
+-    "extensions": list(SUPPORTED_EXTENSIONS),
++    "extensions": [_extension_descriptor(ext) for ext in SUPPORTED_EXTENSIONS],
+ },
+```
+
+**Forks that already extended `SUPPORTED_EXTENSIONS` need to migrate that
+list into the new info dict.** The `_extension_descriptor` fallback (urn:-)
+keeps them compliant if they forget the URI/description pair, but the
+descriptor will be the bare ID under a urn: scheme — works for Discovery
+Engine but not friendly to a human reading the card. Forks should pick
+canonical URIs for their custom extensions.
+
+**Important: the `X-A2A-Extensions` negotiation header still carries bare
+IDs** (per the integration guide). Only the card body needs descriptors.
+The existing `_parse_client_extensions` / `_negotiate_extensions` functions
+don't change.
 
 ---
 
@@ -274,12 +385,22 @@ fi
 
 EXT_COUNT=$(jq -r '.capabilities.extensions | length' "$BODY_FILE" 2>/dev/null || echo 0)
 if [[ "$EXT_COUNT" -gt 0 ]]; then
-  EXTS=$(jq -r '.capabilities.extensions | join(", ")' "$BODY_FILE")
-  ok "capabilities.extensions advertises ${EXT_COUNT} extension(s): ${EXTS}"
-  if jq -e '.capabilities.extensions | index("a2a-v0.2")' "$BODY_FILE" >/dev/null; then
-    ok "advertises a2a-v0.2 (canonical A2A extension)"
+  # A2A v0.2 schema: capabilities.extensions[] must be AgentExtension objects
+  # with a `uri` field — Discovery Engine / Gemini Enterprise rejects bare
+  # strings with "unexpected instance type" (caught 2026-06-07).
+  ALL_OBJECTS=$(jq -r '.capabilities.extensions | map(type == "object" and has("uri")) | all' "$BODY_FILE")
+  if [[ "$ALL_OBJECTS" == "true" ]]; then
+    URIS=$(jq -r '.capabilities.extensions | map(.uri) | join(", ")' "$BODY_FILE")
+    ok "capabilities.extensions advertises ${EXT_COUNT} AgentExtension descriptor(s)"
+    info "uris: ${URIS}"
   else
-    fail "capabilities.extensions does not include a2a-v0.2"
+    fail "capabilities.extensions[] entries are not AgentExtension objects with .uri"
+    fail "  → Gemini Enterprise registration will reject with 'unexpected instance type'"
+  fi
+  if jq -e '.capabilities.extensions | map(.uri // "") | any(. | endswith("a2a/v0.2") or contains("a2a-v0.2"))' "$BODY_FILE" >/dev/null; then
+    ok "advertises an A2A v0.2 extension descriptor"
+  else
+    fail "capabilities.extensions does not include an A2A v0.2 entry"
   fi
 else
   fail "capabilities.extensions is empty or missing"
@@ -318,18 +439,35 @@ verify-a2a:
 
 **File:** `backend/tests/api_tests/test_a2a.py`
 
-**Update `test_agent_card_returns_minimum_a2a_fields`:**
+### 4a. Add a `_extension_ids` helper (top of file, after imports)
+
+The old assertions assumed extensions were bare strings. After §1b they're
+`AgentExtension` objects. Add a helper that recovers the bare IDs via
+reverse-lookup in `SUPPORTED_EXTENSION_INFO`, then convert every old
+`assert "ext-id" in caps["extensions"]` to use it. Centralising means
+the helper is the only thing that touches the schema directly — a v0.3
+shape change edits one place.
+
+```python
+def _extension_ids(card: dict[str, Any]) -> list[str]:
+    """Extract bare extension IDs from a card's capabilities.extensions.
+
+    A2A v0.2 schema makes these AgentExtension objects ({uri, description,
+    required}); we reverse-lookup each URI in SUPPORTED_EXTENSION_INFO to
+    recover the canonical IDs the rest of the codebase uses. Centralised so
+    a schema bump (v0.3 etc.) only edits this helper.
+    """
+    from protocols.a2a import SUPPORTED_EXTENSION_INFO
+
+    uri_to_id = {uri: ext_id for ext_id, (uri, _) in SUPPORTED_EXTENSION_INFO.items()}
+    return [uri_to_id.get(ext["uri"], ext["uri"]) for ext in card["capabilities"]["extensions"]]
+```
+
+### 4b. Strengthen `test_agent_card_returns_minimum_a2a_fields`
 
 ```diff
- def test_agent_card_returns_minimum_a2a_fields(client: TestClient) -> None:
-     with patch("protocols.a2a.list_marketplace", return_value=[]):
-         resp = client.get("/.well-known/agent.json")
-     assert resp.status_code == 200
-     card = resp.json()
--    # A2A minimum fields.
 -    for field in ("name", "description", "url", "version", "capabilities", "skills"):
-+    # A2A minimum fields. protocolVersion is required by Discovery Engine /
-+    # Gemini Enterprise validation — a missing one makes
++    # protocolVersion required by Discovery Engine — missing one makes
 +    # `agents-cli register-gemini-enterprise --registration-type a2a` fail
 +    # with INVALID_ARGUMENT (real failure 2026-06-07).
 +    for field in (
@@ -345,8 +483,84 @@ verify-a2a:
      assert isinstance(card["skills"], list)
      assert isinstance(card["capabilities"], dict)
      assert card["capabilities"]["streaming"] is True
-+    # Match the value we advertise in capabilities.extensions (a2a-v0.2).
 +    assert card["protocolVersion"] == "0.2.0"
+```
+
+### 4c. Reshape `test_agent_card_advertises_extensions_on_body`
+
+Assert each entry is an `AgentExtension` object (`{uri, ...}`), then use the
+helper for the membership checks:
+
+```diff
+     assert "extensions" in caps, "capabilities.extensions missing from card"
+     assert isinstance(caps["extensions"], list)
+-    # The four canonical A2UI extensions from the integration guide.
+-    for required in (
+-        "a2ui-v0.9",
+-        ...
+-    ):
+-        assert required in caps["extensions"], f"extension missing: {required}"
++    # Each entry must be a full AgentExtension descriptor (A2A v0.2 schema —
++    # Discovery Engine rejects bare strings).
++    for ext in caps["extensions"]:
++        assert isinstance(ext, dict), f"extension entry must be an object, got {type(ext).__name__}"
++        assert "uri" in ext, f"AgentExtension missing required `uri`: {ext!r}"
++    ids = _extension_ids(resp.json())
++    for required in (
++        "a2ui-v0.9",
++        "a2ui-basic-catalog-v0.9",
++        "a2ui-inline-pattern",
++        "a2ui-decoupled-pattern",
++    ):
++        assert required in ids, f"extension missing: {required}"
+```
+
+### 4d. Update header/body parity, adk-workflow, intersection tests
+
+All three tests assumed `caps["extensions"]` was a list of strings. Swap to
+the helper:
+
+```diff
+-    body = resp.json()["capabilities"]["extensions"]
+-    assert echoed == body, "header set must match body set when no negotiation occurred"
++    body_ids = _extension_ids(resp.json())
++    assert echoed == body_ids, "header IDs must match body IDs when no negotiation occurred"
+
+-    extensions = resp.json()["capabilities"]["extensions"]
+-    assert "adk-workflow-v1" in extensions, ...
++    ids = _extension_ids(resp.json())
++    assert "adk-workflow-v1" in ids, ...
+
+-    body = resp.json()["capabilities"]["extensions"]
+-    assert "a2ui-decoupled-pattern" in body, ...
++    body_ids = _extension_ids(resp.json())
++    assert "a2ui-decoupled-pattern" in body_ids, ...
+```
+
+### 4e. Reshape the schema validator (in `_assert_card_matches_a2a_schema`)
+
+The validator's `extensions` block treats entries as strings. Update to
+require object-with-`uri`:
+
+```diff
+-    # Optional but spec-recognised: capabilities.extensions (list of strings).
++    # Optional but spec-recognised: capabilities.extensions — A2A v0.2 schema
++    # requires a list of AgentExtension objects each with a `uri` field
++    # (Discovery Engine enforces this — bare strings get
++    # "unexpected instance type" rejections).
+     if "extensions" in caps:
+         if not isinstance(caps["extensions"], list):
+             errors.append("capabilities.extensions: expected list")
+         else:
+             for i, ext in enumerate(caps["extensions"]):
+-                if not isinstance(ext, str):
+-                    errors.append(f"capabilities.extensions[{i}]: expected str, got {type(ext).__name__}")
++                if not isinstance(ext, dict):
++                    errors.append(f"capabilities.extensions[{i}]: expected AgentExtension object, got {type(ext).__name__}")
++                elif "uri" not in ext:
++                    errors.append(f"capabilities.extensions[{i}]: AgentExtension missing required `uri`")
++                elif not isinstance(ext["uri"], str):
++                    errors.append(f"capabilities.extensions[{i}].uri: expected str, got {type(ext['uri']).__name__}")
 ```
 
 Run: `cd backend && uv run pytest tests/api_tests/test_a2a.py -x -q` — 13
@@ -356,7 +570,7 @@ tests must still pass.
 
 ## Friction-log entries (paste into `docs/learnings/template-protocols-friction.md`)
 
-Append these as Friction 22 and 23 (or whatever number is next in the
+Append these as Friction 22, 23, and 24 (or whatever number is next in the
 template's friction log).
 
 ### Friction 22 — A2A card `url` leaks localhost behind a Next.js proxy
@@ -417,6 +631,49 @@ Bake this into the template. Add a backend test asserting it, and add a
 `verify-a2a.sh` script (section 3) that catches this class of regression at
 the integration level so the template doesn't have to wait for a Gemini
 Enterprise round-trip to discover it next time.
+
+---
+
+### Friction 24 — A2A card `capabilities.extensions` must be `AgentExtension` objects, not strings
+
+**Symptom**
+
+`agents-cli register-gemini-enterprise --registration-type a2a` rejects the
+card (after fixing Friction 23) with:
+
+```
+INVALID_ARGUMENT: At /capabilities/extensions/0 of "a2ui-v0.9" -
+unexpected instance type
+```
+
+**Root cause**
+
+A2A spec v0.2 defines `capabilities.extensions[]` as an array of
+`AgentExtension` objects, each with `uri` (required), `description`
+(optional), `required` (optional). The template emits bare string IDs —
+permissive A2A clients tolerate it, but Discovery Engine's strict schema
+validator rejects the card before any agent ever runs.
+
+The `X-A2A-Extensions` negotiation header still uses bare IDs (the
+integration guide is explicit about this); only the card body needs
+descriptors.
+
+**Fix**
+
+Replace the single `SUPPORTED_EXTENSIONS` tuple with a `SUPPORTED_EXTENSION_INFO`
+dict keyed by ID, valued as `(uri, description)` tuples. Derive
+`SUPPORTED_EXTENSIONS = tuple(SUPPORTED_EXTENSION_INFO.keys())` so the
+single source of truth fans out to both the header (bare IDs) and the
+body (descriptors via `_extension_descriptor`). See §1b above.
+
+**Template improvement**
+
+Ship the info-dict pattern with canonical URIs for every extension the
+template advertises. Add a backend test asserting `AgentExtension` shape
+plus the new `verify-a2a.sh` check that fails fast on bare-string emission.
+Critical: do this BEFORE the next fork's first Gemini Enterprise
+registration attempt — the failure mode is silent (discovery looks fine,
+local tests pass) until the registration HTTP 400 returns.
 
 ---
 
