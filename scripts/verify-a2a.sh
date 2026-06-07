@@ -138,6 +138,58 @@ else
   echo "$SKILL_NAMES" | sed 's/^/         - /'
 fi
 
+# --- 7. Invocation surface reachable + JSON-RPC envelope on auth fail ------
+# The strict A2A invocation bridge is mounted at card.url. We probe with NO
+# Bearer token to assert two things at once:
+#   (a) the surface exists at all (404/405 = bridge not deployed)
+#   (b) auth failure returns a JSON-RPC error envelope, not an HTML 401
+# (a strict A2A client would choke on an HTML page). When auth is disabled
+# server-side, the probe instead expects 400 (no method body) — still
+# proves the bridge is up.
+ADVERTISED_URL=$(jq -r '.url' "$BODY_FILE")
+INVOKE_BODY="$(mktemp)"
+trap 'rm -f "$HEADERS_FILE" "$BODY_FILE" "$INVOKE_BODY"' EXIT
+INVOKE_STATUS=$(curl -s -o "$INVOKE_BODY" -w "%{http_code}" \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"jsonrpc":"2.0","id":"probe","method":"message/send","params":{"message":{"role":"user","parts":[{"kind":"text","text":"probe"}],"messageId":"probe-msg"}}}' \
+  "$ADVERTISED_URL")
+
+case "$INVOKE_STATUS" in
+  200)
+    # Bridge up AND auth disabled. Body must be JSON-RPC envelope.
+    if jq -e '.jsonrpc == "2.0"' "$INVOKE_BODY" >/dev/null 2>&1; then
+      ok "invocation surface at ${ADVERTISED_URL} returns valid JSON-RPC 2.0 envelope"
+    else
+      fail "invocation surface returns 200 but body is not JSON-RPC: $(head -c 120 "$INVOKE_BODY")"
+    fi
+    ;;
+  401|403)
+    # Bridge up, auth required. JSON-RPC envelope expected even on auth fail.
+    if jq -e '.jsonrpc == "2.0" and has("error")' "$INVOKE_BODY" >/dev/null 2>&1; then
+      ok "invocation surface up at ${ADVERTISED_URL}; auth gate returns JSON-RPC error envelope"
+    else
+      fail "invocation surface returns ${INVOKE_STATUS} but body is not a JSON-RPC error: $(head -c 120 "$INVOKE_BODY")"
+    fi
+    ;;
+  400)
+    # Bridge up; body shape rejected by ADK (unexpected fields). Still JSON-RPC.
+    if jq -e '.jsonrpc == "2.0"' "$INVOKE_BODY" >/dev/null 2>&1; then
+      ok "invocation surface up at ${ADVERTISED_URL}; returns JSON-RPC parse/validation error"
+    else
+      fail "invocation surface returns 400 but body is not JSON-RPC: $(head -c 120 "$INVOKE_BODY")"
+    fi
+    ;;
+  404|405)
+    fail "invocation surface NOT deployed: HTTP ${INVOKE_STATUS} from POST ${ADVERTISED_URL}"
+    fail "  → Set ENABLE_A2A_INVOCATION=true in cloudbuild.yaml and re-deploy"
+    ;;
+  *)
+    fail "invocation surface unexpected status: HTTP ${INVOKE_STATUS} from POST ${ADVERTISED_URL}"
+    info "body: $(head -c 200 "$INVOKE_BODY")"
+    ;;
+esac
+
 # --- Summary ----------------------------------------------------------------
 echo
 if [[ "$FAILED" -eq 0 ]]; then

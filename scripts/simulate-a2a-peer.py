@@ -183,19 +183,32 @@ def simulate(ap_url: str) -> int:
     out("→", "method=message/send (A2A v0.2 JSON-RPC)")
     status, _, body = http_post(card["url"], json.dumps(rpc))
     if status == 200:
-        out("✓", f"HTTP 200 — strict A2A invocation works: {body[:200]}")
+        out("✓", "HTTP 200 — strict A2A invocation works")
+        # Body is a JSON-RPC envelope; show the result shape without
+        # dumping the whole payload (sessions can be large).
+        try:
+            parsed = json.loads(body)
+            if "result" in parsed:
+                result = parsed["result"]
+                kind = result.get("kind") or result.get("type") or "(no kind)"
+                out("✓", f"result kind: {kind}")
+                if "id" in result:
+                    out("✓", f"task id: {result['id']}")
+            elif "error" in parsed:
+                out("⚠", f"JSON-RPC error: {parsed['error']}")
+        except json.JSONDecodeError:
+            out("⚠", f"non-JSON body: {body[:200]}")
+    elif status == 401:
+        out("⚠", "HTTP 401 — invocation requires Bearer auth (the bridge is mounted")
+        out("⚠", "  but A2A_INVOCATION_REQUIRE_AUTH=true). Peers need an ID token.")
     elif status in (404, 405, 501):
         out(
             "⚠",
-            f"HTTP {status} — agent does not implement strict A2A `message/send` JSON-RPC",
+            f"HTTP {status} — the A2A invocation bridge is not deployed.",
         )
         out(
             "⚠",
-            "  honest truth: card.url is the public origin, but the agent's invocation",
-        )
-        out(
-            "⚠",
-            "  surface is AG-UI streaming at /api/skill/<id>/stream, not JSON-RPC.",
+            "  Set ENABLE_A2A_INVOCATION=true in cloudbuild.yaml and re-deploy.",
         )
     else:
         snippet = body[:200].replace("\n", " ")
@@ -208,14 +221,19 @@ def simulate(ap_url: str) -> int:
     out("✓", "Negotiate UI / protocol extensions via X-A2A-Extensions")
     out("✓", "Learn the canonical public URL for further interaction")
     out("✓", "Be registered as a tool in a Gemini Enterprise workspace (proven)")
-    out("⚠", "Strict A2A `message/send` JSON-RPC invocation: NOT implemented today")
+    if status == 200:
+        out("✓", "Strict A2A `message/send` JSON-RPC invocation: WORKING")
+    elif status == 401:
+        out("✓", "Strict A2A `message/send` mounted; gated by Bearer auth")
+    else:
+        out("⚠", f"Strict A2A `message/send` JSON-RPC invocation: HTTP {status}")
     out(
         "ℹ",
-        "Next layer for strict-spec interop: add a backend /a2a/message/send bridge",
+        "Bridge mounted via ADK A2aAgentExecutor + a2a-sdk A2AStarletteApplication;",
     )
     out(
         "ℹ",
-        "  that translates JSON-RPC payloads into AG-UI stream calls. ~1-2h of work.",
+        "  same Runner / session storage as the AG-UI surface at /api/skill/{id}/stream.",
     )
 
     # Step 6 — What Gemini Enterprise does with this card

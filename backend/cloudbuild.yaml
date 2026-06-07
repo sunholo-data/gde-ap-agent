@@ -89,6 +89,21 @@ steps:
       - '--set-env-vars=ADMIN_SEED_ALLOWED_SAS=${_ADMIN_SEED_ALLOWED_SAS}'
       - '--set-env-vars=DATASTORE_LOCATION=eu'
       - '--set-env-vars=EXTRACTION_MODEL=gemini-3.5-flash'
+      # A2A invocation bridge — mount ADK to_a2a Starlette adapter at /a2a so
+      # peers can POST strict A2A v0.2 message/send. Discovery (the agent
+      # card at /.well-known/agent.json) stays available either way; this
+      # flag only controls whether the strict-spec invocation surface lights
+      # up. See backend/protocols/a2a_invocation.py + the A2A-INVOKE sprint.
+      - '--set-env-vars=ENABLE_A2A_INVOCATION=true'
+      # PUBLIC_BASE_URL: the URL the OUTSIDE world reaches this backend by.
+      # The card built by backend/protocols/a2a._build_card_dict uses this
+      # to advertise `<base>/a2a` as the JSON-RPC endpoint. Without it the
+      # mounted /a2a/.well-known/agent.json card (served by ADK direct from
+      # Cloud Run, NOT proxied via Next.js) would still say localhost:1956.
+      # The frontend's /.well-known/agent.json route rewrites the dict-shape
+      # card with the request origin, so the discovery card stays correct
+      # in both cases; this just makes the ADK-mounted card consistent.
+      - '--set-env-vars=PUBLIC_BASE_URL=https://gde-ap-agent-blqtqfexwa-ew.a.run.app'
 
   # --- Post-deploy smoke: standalone backend is IAM-protected, so use an
   # identity token from the Cloud Build SA. Cloud Build SA needs run.invoker
