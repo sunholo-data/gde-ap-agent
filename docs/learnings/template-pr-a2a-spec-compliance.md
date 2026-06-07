@@ -868,14 +868,21 @@ returns 404 instead of 200. The other 5 tests cover the card-URL regression
 guard, dict/model byte-equality, JSON-RPC-error-envelope on missing Bearer,
 discovery-paths-skip-auth, and auth-disabled pass-through.
 
-### 5f. Cloud Build deploy (in `backend/cloudbuild.yaml`)
+### 5f. Cloud Build deploy
 
-Three env vars to add:
+**Important — which cloudbuild.yaml**: in a sidecar-pattern fork (one
+Cloud Run service running Next.js + FastAPI together in one container),
+all env vars go in the **root** `cloudbuild.yaml`. The
+`backend/cloudbuild.yaml` from the upstream template deploys a separate
+backend service that doesn't exist in a sidecar deploy — see Friction 26.
+
+Three env vars to add to the root `cloudbuild.yaml`'s `--set-env-vars`
+list:
 
 ```yaml
-- '--set-env-vars=ENABLE_A2A_INVOCATION=true'
-- '--set-env-vars=PUBLIC_BASE_URL=https://<your-cloud-run-host>'
-- '--set-env-vars=A2A_INVOCATION_REQUIRE_AUTH=true'  # or false depending on peer auth
+--set-env-vars=ENABLE_A2A_INVOCATION=true \
+--set-env-vars=PUBLIC_BASE_URL=https://<your-cloud-run-host> \
+--set-env-vars=A2A_INVOCATION_REQUIRE_AUTH=true  # or false depending on peer auth
 ```
 
 `PUBLIC_BASE_URL` is what the ADK-mounted card at
@@ -885,9 +892,140 @@ proxy from the incoming request's origin (per §2 above), so the
 discovery card stays correct regardless. Setting `PUBLIC_BASE_URL`
 keeps the two cards consistent.
 
+### 5g. Next.js ingress proxy for `/a2a/*` (CRITICAL)
+
+This was the second silent-failure in M3 — env vars set, FastAPI mount
+healthy, but every peer probe got HTTP 404 because **Next.js owns the
+public ingress and `/a2a/*` was falling through to its catch-all**.
+The bridge code never gets to run.
+
+Fix in `frontend/next.config.mjs`:
+
+```js
+async rewrites() {
+  const backend = process.env.BACKEND_URL ?? 'http://127.0.0.1:1956'
+  return [
+    { source: '/a2a',         destination: `${backend}/a2a/` },
+    { source: '/a2a/:path*',  destination: `${backend}/a2a/:path*` },
+  ]
+}
+```
+
+Rewrites are streaming-safe (so `message/sendSubscribe` SSE flows
+through untouched) and pure passthrough (no header rewriting needed —
+auth, content-type, accept all preserved).
+
+The bare `/a2a` rewrite catches peers who stripped the trailing slash
+off `card.url`; the `:path*` rewrite catches `/a2a/.well-known/*`,
+`/a2a/tasks/*`, etc. See Friction 25.
+
 ---
 
-### Friction 25 — `to_a2a` Starlette app loses lifespan when mounted on FastAPI
+### Friction 25 — Next.js owns the ingress; `/a2a/*` falls through to its catch-all 404
+
+**Symptom**
+
+After mounting the A2A surface at `/a2a` on FastAPI, deploying with
+`ENABLE_A2A_INVOCATION=true`, AND verifying the env var IS set on the
+running Cloud Run revision, every POST to `https://<host>/a2a` still
+returns HTTP 404. Logs show no error; the FastAPI mount is healthy
+in-process. Confirm with `curl -i` and you see `x-nextjs-cache: HIT`
+plus an HTML response — that's Next.js's 404 page, not FastAPI's.
+
+**Root cause**
+
+The fork (and the upstream template, when deployed sidecar-style)
+runs Next.js on the public ingress + FastAPI as a sidecar at
+`127.0.0.1:1956`. Next.js routes everything; only the paths it
+explicitly handles (`/api/proxy/*` catch-all, `/.well-known/agent.json`
+route handler) reach FastAPI. **A new path on FastAPI is invisible
+from the outside until Next.js is taught to proxy it.** The bridge code
+is mounted, the env vars are right, the FastAPI surface is up — Next
+just never delegates.
+
+**Fix**
+
+Add Next.js rewrites for the `/a2a` path tree in `frontend/next.config.mjs`:
+
+```js
+async rewrites() {
+  const backend = process.env.BACKEND_URL ?? 'http://127.0.0.1:1956'
+  return [
+    { source: '/a2a',         destination: `${backend}/a2a/` },
+    { source: '/a2a/:path*',  destination: `${backend}/a2a/:path*` },
+  ]
+}
+```
+
+Rewrites are pure passthrough — streaming-safe (so `message/sendSubscribe`
+SSE flows through), no header rewriting, no body parsing. The bare
+`/a2a` rewrite handles peers who normalised the trailing slash off
+card.url; the `:path*` rewrite catches `/a2a/.well-known/agent-card.json`
++ `/a2a/tasks/...` etc.
+
+**Template improvement**
+
+Ship the rewrite as part of the template's `next.config.mjs`. Document
+in the deployment guide: **any new FastAPI path mounted under a
+non-`/api/proxy` prefix needs a Next.js rewrite to be reachable from
+the outside.** This is the second time this footgun has bit (first was
+`/.well-known/agent.json` itself, which has its own route handler).
+
+---
+
+### Friction 26 — Dual `cloudbuild.yaml` in fork-style deploys deploys to nothing
+
+**Symptom**
+
+You edit `backend/cloudbuild.yaml` to add an env var (e.g.
+`ENABLE_A2A_INVOCATION=true`). Push, wait for Cloud Build SUCCESS, deploy
+lands cleanly. But the env var doesn't appear on the running service —
+`gcloud run services describe gde-ap-agent --format json | jq` shows the
+old env. You re-check the cloudbuild diff, looks fine. You re-deploy
+manually, same result.
+
+**Root cause**
+
+The upstream template ships TWO cloudbuild files for a two-service deploy
+pattern (separate frontend + backend Cloud Run services):
+  - `cloudbuild.yaml` → deploys the FRONTEND service (and historically the
+    only file an "everything-in-one" sidecar fork needs)
+  - `backend/cloudbuild.yaml` → deploys the BACKEND service (e.g.
+    `aitana-v6-backend`) — needed only when the deploy is two services
+
+A fork that switched to a **single-service sidecar pattern** (one Cloud
+Run service running Next.js + FastAPI as sidecars in the same container,
+deployed by the root `cloudbuild.yaml`) keeps `backend/cloudbuild.yaml`
+around as fork-residue. It's still triggered by upstream-managed
+triggers (`trigger-aitana-dev-aitana-v6-backend` etc.), but it deploys
+to a service that doesn't exist in the fork's GCP project. The builds
+succeed (because nothing meaningful runs) or fail silently.
+
+**Fix**
+
+For sidecar-pattern forks:
+  1. Delete `backend/cloudbuild.yaml`
+  2. Ask whoever manages the upstream triggers (terraform in
+     multivac-deploy-aitana or similar) to disable
+     `trigger-*-aitana-v6-backend`
+  3. Put ALL env-var / secret additions in the root `cloudbuild.yaml`
+
+**Template improvement**
+
+The template's README / deployment guide should make the two patterns
+(sidecar vs two-service) explicit, with checklists for each:
+
+  | Pattern | Which cloudbuild.yaml | Service count | Env vars go in |
+  | --- | --- | --- | --- |
+  | Sidecar (single service) | root `cloudbuild.yaml` ONLY | 1 | root cloudbuild.yaml |
+  | Two-service (template default) | root + `backend/cloudbuild.yaml` | 2 | service-specific cloudbuild.yaml |
+
+This footgun cost ~30 min of confused debugging during A2A-INVOKE M3.
+Worth a clear paragraph in the deploy doc.
+
+---
+
+### Friction 27 — `to_a2a` Starlette app loses lifespan when mounted on FastAPI
 
 **Symptom**
 

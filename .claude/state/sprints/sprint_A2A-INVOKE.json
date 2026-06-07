@@ -63,7 +63,7 @@
       "description": "Verification against live deploy + upstream brief update: enable ENABLE_A2A_INVOCATION=true in cloudbuild.yaml (dev), push + wait for Cloud Build, re-run verify-a2a.sh and simulate-a2a-peer.py (Step 4 should now show HTTP 200 + JSON-RPC envelope, new Step 5 covers sendSubscribe streaming), re-register with Gemini Enterprise to propagate new card.url, extend docs/learnings/template-pr-a2a-spec-compliance.md with section 5 covering the bridge (ADK source citations, mount pattern, auth middleware, friction-log entry 25)",
       "scope": "backend",
       "estimated_loc": 110,
-      "actual_loc": null,
+      "actual_loc": 320,
       "dependencies": [
         "M2"
       ],
@@ -80,22 +80,22 @@
         "docs/learnings/template-pr-a2a-spec-compliance.md",
         "cloudbuild.yaml"
       ],
-      "passes": null,
-      "started": null,
-      "completed": null,
-      "notes": null
+      "passes": true,
+      "started": "2026-06-07T21:00:48.914348Z",
+      "completed": "2026-06-07T21:00:48.914348Z",
+      "notes": "Bridge live; strict A2A message/send returns 200 + JSON-RPC Task envelope; orchestrator responded with full greeting. Re-registered with Gemini Enterprise (new agent ID 11236771249872918902). 4 unexpected gotchas surfaced and fixed: (1) wrong cloudbuild.yaml edited \u2014 backend/cloudbuild.yaml deploys aitana-v6-backend service that does not exist in this fork \u2014 DELETED; (2) Next.js owns the public ingress, /a2a/* was hitting Next catch-all 404 \u2014 added Next.js rewrites; (3) pre-existing CI test failure in useSkillAgent surface keys \u2014 fixed; (4) verify-a2a.sh jq filter case-sensitivity bug. Template-PR brief extended with Friction 25/26/27 and \u00a75g (Next.js rewrite)."
     }
   ],
   "velocity": {
     "target_loc_per_day": 880,
     "actual_loc_per_day": null,
     "estimated_total_loc": 440,
-    "actual_total_loc": null,
+    "actual_total_loc": 680,
     "estimated_days": 0.5,
     "actual_days": null
   },
   "github_issues": [],
-  "last_session": "2026-06-07T20:18:33.179178Z",
+  "last_session": "2026-06-07T21:00:48.914348Z",
   "last_checkpoint": null,
-  "status": "in_progress"
+  "status": "completed"
 }

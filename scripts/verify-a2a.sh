@@ -119,7 +119,7 @@ if [[ "$EXT_COUNT" -gt 0 ]]; then
     fail "  → Gemini Enterprise registration will reject with 'unexpected instance type'"
   fi
   # Spec compliance: a2a-v0.2 should be among the URIs (this IS an A2A agent).
-  if jq -e '.capabilities.extensions | map(.uri // "") | any(. | endswith("a2a/v0.2") or contains("a2a-v0.2"))' "$BODY_FILE" >/dev/null; then
+  if jq -e '.capabilities.extensions | map(.uri // "" | ascii_downcase) | any(. | endswith("a2a/v0.2") or contains("a2a-v0.2"))' "$BODY_FILE" >/dev/null; then
     ok "advertises an A2A v0.2 extension descriptor"
   else
     fail "capabilities.extensions does not include an A2A v0.2 entry"
