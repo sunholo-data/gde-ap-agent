@@ -61,7 +61,11 @@ fi
 
 # --- 2. Capability negotiation headers -------------------------------------
 NEGOTIATED=$(grep -i '^x-a2a-extensions:' "$HEADERS_FILE" | head -1 | sed 's/^[^:]*: *//' | tr -d '\r')
-VARY=$(grep -i '^vary:' "$HEADERS_FILE" | sed 's/^[^:]*: *//' | tr -d '\r')
+# Combine all Vary lines into one comma-joined string — RFC 7234 says
+# multiple Vary headers are equivalent to a single comma-joined Vary, and
+# Next.js framework adds its own Vary entries alongside ours, so a strict
+# "single line" check would give a false negative on the deployed app.
+VARY=$(grep -i '^vary:' "$HEADERS_FILE" | sed 's/^[^:]*: *//' | tr -d '\r' | paste -sd, -)
 
 if [[ -n "$NEGOTIATED" ]]; then
   ok "X-A2A-Extensions echoed on response: ${NEGOTIATED}"
@@ -70,9 +74,11 @@ else
 fi
 
 if echo "$VARY" | grep -qi "X-A2A-Extensions"; then
-  ok "Vary advertises X-A2A-Extensions (cache-correctness)"
+  ok "Vary advertises X-A2A-Extensions (cache-correctness across all Vary lines)"
+  info "vary: ${VARY}"
 else
   fail "Vary does NOT include X-A2A-Extensions — caches will serve the wrong card to differently-capable clients"
+  info "vary (combined): ${VARY:-(empty)}"
 fi
 
 # --- 3. Required A2A spec fields -------------------------------------------

@@ -116,6 +116,25 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     card.url = publicOrigin(req);
     const rewritten = JSON.stringify(card);
     headers.set("content-type", "application/json");
+
+    // Vary: ensure X-A2A-Extensions is in OUR Vary header so caches between
+    // us and an A2A peer key responses by capability set. Next.js's
+    // framework wrapper appends its own Vary entries (rsc / next-router-*)
+    // for React-Server-Components routing — on the wire that produces two
+    // Vary headers, which RFC 7234 caches merge correctly but older
+    // intermediaries can mishandle. By asserting Vary ourselves we
+    // guarantee the cache-key-relevant token is in a single canonical line
+    // we control; Next's separate line stays for its own routing concerns.
+    const existingVary = headers.get("vary") ?? "";
+    headers.set(
+      "vary",
+      existingVary.toLowerCase().includes("x-a2a-extensions")
+        ? existingVary
+        : existingVary
+          ? `${existingVary}, X-A2A-Extensions`
+          : "X-A2A-Extensions",
+    );
+
     return new NextResponse(rewritten, { status: upstream.status, headers });
   } catch (err) {
     return NextResponse.json(

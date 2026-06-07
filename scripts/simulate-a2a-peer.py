@@ -56,13 +56,25 @@ def out(arrow: str, text: str) -> None:
 # --- HTTP helpers (stdlib only) ---------------------------------------------
 
 
+def _flatten_headers(msg: object) -> dict[str, str]:
+    """Combine multi-valued headers (e.g. duplicate `Vary`) into a single
+    comma-joined string per name. `dict(HTTPMessage)` keeps only the last
+    value, which makes a Vary like `[rsc..., X-A2A-Extensions]` appear as
+    just one of them — exactly the false negative this helper avoids.
+    """
+    out: dict[str, list[str]] = {}
+    for key, value in msg.items():  # type: ignore[attr-defined]
+        out.setdefault(key.lower(), []).append(value)
+    return {k: ", ".join(v) for k, v in out.items()}
+
+
 def http_get(url: str, headers: dict[str, str] | None = None) -> tuple[int, dict[str, str], str]:
     req = Request(url, headers=headers or {})
     try:
         with urlopen(req, timeout=15) as resp:
-            return resp.status, dict(resp.headers), resp.read().decode()
+            return resp.status, _flatten_headers(resp.headers), resp.read().decode()
     except HTTPError as e:
-        return e.code, dict(e.headers), e.read().decode()
+        return e.code, _flatten_headers(e.headers), e.read().decode()
 
 
 def http_post(
@@ -76,9 +88,9 @@ def http_post(
     )
     try:
         with urlopen(req, timeout=15) as resp:
-            return resp.status, dict(resp.headers), resp.read().decode()
+            return resp.status, _flatten_headers(resp.headers), resp.read().decode()
     except HTTPError as e:
-        return e.code, dict(e.headers), e.read().decode()
+        return e.code, _flatten_headers(e.headers), e.read().decode()
 
 
 # --- simulation -------------------------------------------------------------
