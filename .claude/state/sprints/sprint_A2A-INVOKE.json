@@ -36,7 +36,7 @@
       "description": "Auth middleware + tests: Starlette middleware on the /a2a mount that runs the same Firebase ID token verification as /api/skill/{id}/stream and returns a JSON-RPC error envelope on auth failure; four new tests covering happy-path message/send, auth failure (no Bearer -> 401 + JSON-RPC error), sendSubscribe SSE streaming, and a card.url-ends-with-/a2a regression guard; update existing test_a2a.py URL assertions for the new card shape",
       "scope": "backend",
       "estimated_loc": 180,
-      "actual_loc": null,
+      "actual_loc": 200,
       "dependencies": [
         "M1"
       ],
@@ -53,10 +53,10 @@
         "backend/protocols/a2a_invocation.py",
         "backend/tests/api_tests/test_a2a.py"
       ],
-      "passes": null,
-      "started": null,
-      "completed": null,
-      "notes": null
+      "passes": true,
+      "started": "2026-06-07T20:18:33.179178Z",
+      "completed": "2026-06-07T20:18:33.179178Z",
+      "notes": "A2AAuthMiddleware on the /a2a sub-app with A2A_INVOCATION_REQUIRE_AUTH gate; 6 new tests (4 in spec + 2 added: dict/model parity + FastAPI mount integration); test_a2a.py untouched (URL assertions already loose). Discovered to_a2a registers routes via Starlette lifespan that does NOT propagate when mounted as a FastAPI sub-app \u2014 rewrote build_a2a_app to call a2a-sdk A2AStarletteApplication + DefaultRequestHandler + A2aAgentExecutor synchronously, sidestepping the lifespan dependency entirely. All 1477 backend tests pass."
     },
     {
       "id": "M3",
@@ -95,7 +95,7 @@
     "actual_days": null
   },
   "github_issues": [],
-  "last_session": "2026-06-07T16:43:41.704011Z",
+  "last_session": "2026-06-07T20:18:33.179178Z",
   "last_checkpoint": null,
   "status": "in_progress"
 }
