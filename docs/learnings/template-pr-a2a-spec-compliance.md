@@ -919,6 +919,37 @@ The bare `/a2a` rewrite catches peers who stripped the trailing slash
 off `card.url`; the `:path*` rewrite catches `/a2a/.well-known/*`,
 `/a2a/tasks/*`, etc. See Friction 25.
 
+### 5h. Advertise an `iconUrl` on the card (pure polish)
+
+Gemini Enterprise and most A2A peer UIs show a default placeholder icon
+when the card omits `iconUrl` (`agents-cli` injects
+`https://fonts.gstatic.com/.../smart_toy/default/24px.svg` as the
+fallback — recognisably the "we didn't set one" icon). Set it once in
+`_build_card_dict` to ship the fork's own brand asset:
+
+```python
+**(
+    {"iconUrl": f"{base_url.rstrip('/')}{os.getenv('A2A_AGENT_ICON_PATH', '/images/logo/my-brand.svg')}"}
+    if not base_url.startswith("http://localhost")
+    and not base_url.startswith("http://127.0.0.1")
+    else {}
+),
+```
+
+Why the env-var override + localhost guard:
+- `A2A_AGENT_ICON_PATH` lets a fork swap its logo via env without
+  touching protocol code — matches the existing `A2A_AGENT_NAME` /
+  `A2A_AGENT_DESCRIPTION` pattern
+- The localhost guard omits `iconUrl` entirely during local dev /
+  pre-`PUBLIC_BASE_URL` boot so the card never advertises an
+  unreachable icon URL (which would render as a broken-image glyph in
+  the Discovery Engine UI)
+
+Templates default the path to a generic upstream brand SVG that the
+fork is expected to swap. Asset must be publicly fetchable on the
+same Cloud Run host (`/images/logo/*.svg` is served by Next.js's
+`public/` directory).
+
 ---
 
 ### Friction 25 — Next.js owns the ingress; `/a2a/*` falls through to its catch-all 404
