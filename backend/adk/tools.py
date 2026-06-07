@@ -27,6 +27,7 @@ from google.adk.tools import FunctionTool, ToolContext
 from db.firestore import query_documents
 from tools.ap_pipeline_emit import EMIT_TOOLS
 from tools.documents.context import build_document_context
+from tools.org_documents import list_org_documents, read_org_document
 from tools.url_processing import url_processing
 from tools.workshop_docs import search_workshop_docs
 
@@ -164,6 +165,13 @@ TOOL_REGISTRY: dict[str, Callable[[dict], FunctionTool]] = {
     "get_document_content": lambda _config: FunctionTool(get_document_content),
     "url_processing": lambda _config: FunctionTool(url_processing),
     "search_workshop_docs": lambda _config: FunctionTool(search_workshop_docs),
+    # Org-scoped GCS bucket tools — surface documents from the deploy's
+    # bound bucket (A2A_AGENT_DOCUMENTS_BUCKET env var). Both return
+    # graceful empty / failure responses when no bucket is bound, so
+    # an unconfigured deploy doesn't 500 the agent. See A2A-FILES sprint
+    # M2 and backend/protocols/a2a_org_bucket.py.
+    "list_org_documents": lambda _config: FunctionTool(list_org_documents),
+    "read_org_document": lambda _config: FunctionTool(read_org_document),
     # Function-as-schema emit tools for the AP pipeline specialists.
     # Each specialist calls its emit_* tool exactly once at end of turn;
     # the typed parameters ARE the schema (Gemini's function-calling

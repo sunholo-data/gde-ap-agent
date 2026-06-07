@@ -38,7 +38,7 @@
       "description": "Scenario B \u2014 org-scoped GCS bucket bound to each A2A agent registration via Discovery Engine metadata.gcs_documents_bucket. New module backend/protocols/a2a_org_bucket.py with get_bound_bucket (Discovery Engine GET with 60s LRU cache), list_documents_in_bucket (GCS LIST), read_document_from_bucket (GCS GET + ailang-parse + doc:{id}.json artifact), and _assert_bucket_matches_registration tenant-isolation guard. New backend/tools/org_documents.py with two FunctionTool wrappers (list_org_documents and read_org_document) that read agent_resource_name from state[a2a:agent_resource_name] (set by M1's interceptor). Add both tools + an instruction paragraph to ap-orchestrator SKILL.md. Six tests covering binding lookup, empty-on-no-binding, artifact load, caching, cross-tenant isolation, IAM-missing graceful degradation. Manual step: PATCH the live dev agent record's metadata.gcs_documents_bucket = gs://gde-ap-agent-demo-invoices/.",
       "scope": "backend",
       "estimated_loc": 380,
-      "actual_loc": null,
+      "actual_loc": 360,
       "dependencies": [
         "M1"
       ],
@@ -58,10 +58,10 @@
       "files_to_modify": [
         "backend/skills/templates/ap-orchestrator/SKILL.md"
       ],
-      "passes": null,
-      "started": null,
-      "completed": null,
-      "notes": null
+      "passes": true,
+      "started": "2026-06-07T22:44:35.482840Z",
+      "completed": "2026-06-07T22:44:35.482840Z",
+      "notes": "PIVOTED design: Discovery Engine REJECTED custom metadata field (INVALID_ARGUMENT on PATCH metadata.gcs_documents_bucket \u2014 pre-flight curl confirmed). Pivoted to per-deploy env var A2A_AGENT_DOCUMENTS_BUCKET. v1 is single-tenant per deploy; multi-tenant identification via headers/RequestContext is a follow-up sprint. Same external tool contract (list_org_documents + read_org_document return graceful defaults when unbound), simpler implementation, no Firestore dependency. 8 tests pass: env handling, GCS error degradation, list limit, metadata shape, tool-layer graceful failures. ap-orchestrator SKILL.md gained both tools + an instruction paragraph telling it to check list_org_documents first when users ask about existing documents."
     },
     {
       "id": "M3",
@@ -106,7 +106,7 @@
     "actual_days": null
   },
   "github_issues": [],
-  "last_session": "2026-06-07T22:38:14.639141Z",
+  "last_session": "2026-06-07T22:44:35.482840Z",
   "last_checkpoint": null,
   "status": "in_progress"
 }

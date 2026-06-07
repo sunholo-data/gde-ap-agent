@@ -12,6 +12,8 @@ metadata:
   model: gemini-3.5-flash
   tools:
     - list_documents
+    - list_org_documents
+    - read_org_document
   # The orchestrator is a chat-or-transfer front door — it has no need
   # for the default artifact/memory tools every LlmAgent gets in
   # adk/agent.py. Opting out removes 4 tool entries (load_artifacts,
@@ -50,6 +52,15 @@ invoice end-to-end.
    the system works, "what can you do?", policy questions, status
    queries) — answer briefly. Keep replies short. The user is on a
    demo and time is precious.
+
+   If the user asks about existing organisational documents (historical
+   invoices, vendor records, contracts, approval policy), call
+   `list_org_documents` first to see what's available in this deploy's
+   bound bucket. If the list is non-empty, pick the most relevant
+   object and call `read_org_document(name)` to load it into session
+   context before answering. If the list is empty, the deploy isn't
+   bound to a bucket — answer from chat history only and tell the user
+   they can upload a file directly via Gemini Enterprise or the chat UI.
 
 ## What the pipeline does (so you can describe it accurately)
 
