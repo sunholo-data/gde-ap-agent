@@ -233,7 +233,10 @@ steps:
           --set-env-vars=PLATFORM_OWNER_EMAIL=${_PLATFORM_OWNER_EMAIL} \
           --set-env-vars=AP_DEMO_BUCKET=${_AP_DEMO_BUCKET} \
           --set-env-vars=DATASTORE_LOCATION=eu \
-          --set-env-vars=EXTRACTION_MODEL=gemini-3.5-flash
+          --set-env-vars=EXTRACTION_MODEL=gemini-3.5-flash \
+          --set-env-vars=ENABLE_A2A_INVOCATION=true \
+          --set-env-vars=A2A_INVOCATION_REQUIRE_AUTH=false \
+          --set-env-vars=PUBLIC_BASE_URL=https://gde-ap-agent-blqtqfexwa-ew.a.run.app
 
   # --- Post-deploy smoke: fail the build if any critical endpoint is not 200 ---
   # Per CLAUDE.md: no feature lands with manual-only verification. This step
