@@ -71,6 +71,29 @@ function filterResponseHeaders(headers: Headers): Headers {
   return out;
 }
 
+/**
+ * Public-host the agent card claims it lives at.
+ *
+ * The FastAPI backend has no idea what URL the outside world reaches it
+ * by — it sits as a sidecar behind this Next.js ingress. Left untouched,
+ * the card advertises `http://localhost:1956` (the backend's PUBLIC_BASE_URL
+ * fallback), which means a peer A2A agent or Gemini Enterprise can discover
+ * the card but cannot actually invoke any skill on it. This route is the
+ * one layer that knows the real public URL, so it rewrites the `url` field
+ * to match the incoming request's origin.
+ *
+ * Cloud Run terminates TLS at the GFE and forwards via `X-Forwarded-Proto`;
+ * NextRequest.nextUrl already accounts for that, so `req.nextUrl.origin`
+ * is the right authority to advertise.
+ */
+function publicOrigin(req: NextRequest): string {
+  // Prefer forwarded headers (Cloud Run GFE always sets these) over
+  // req.nextUrl.origin so we never accidentally advertise an internal host.
+  const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(":", "");
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host;
+  return `${proto}://${host}`;
+}
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const url = `${BACKEND_URL}/.well-known/agent.json`;
   try {
@@ -79,11 +102,21 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       headers: filterRequestHeaders(req.headers),
       cache: "no-store",
     });
-    const body = await upstream.arrayBuffer();
-    return new NextResponse(body, {
-      status: upstream.status,
-      headers: filterResponseHeaders(upstream.headers),
-    });
+    const headers = filterResponseHeaders(upstream.headers);
+    const contentType = upstream.headers.get("content-type") ?? "";
+
+    // Pass non-JSON or non-2xx responses through untouched so error bodies
+    // are not silently rewritten into something they aren't.
+    if (!contentType.includes("application/json") || !upstream.ok) {
+      const passthrough = await upstream.arrayBuffer();
+      return new NextResponse(passthrough, { status: upstream.status, headers });
+    }
+
+    const card = (await upstream.json()) as Record<string, unknown>;
+    card.url = publicOrigin(req);
+    const rewritten = JSON.stringify(card);
+    headers.set("content-type", "application/json");
+    return new NextResponse(rewritten, { status: upstream.status, headers });
   } catch (err) {
     return NextResponse.json(
       { error: "backend_unreachable", message: String(err) },
