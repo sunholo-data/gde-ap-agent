@@ -1051,6 +1051,34 @@ curl -s -X DELETE -H "Authorization: Bearer $TOKEN" -H "X-Goog-User-Project: <pr
 Until `agents-cli` fixes the dedupe path, do this after every
 re-registration when you've changed any card field.
 
+**Bonus bug — `card.iconUrl` doesn't propagate to the Discovery
+Engine record's `icon.uri`**
+
+`agents-cli register-gemini-enterprise` correctly stores the card's
+`iconUrl` field inside the embedded `a2aAgentDefinition.jsonAgentCard`,
+BUT does NOT set the agent record's top-level `icon.uri` — that
+defaults to the `smart_toy` placeholder which is what the GE UI
+actually renders. So your nice logo (from §5h) lives in the JSON but
+the workspace UI still shows the default robot until you patch the
+Discovery Engine record directly:
+
+```bash
+TOKEN=$(gcloud auth print-access-token)
+ICON_URL="https://<your-fork-host>/images/logo/<your-logo>.svg"
+curl -s -X PATCH \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Goog-User-Project: <project>" \
+  -H "Content-Type: application/json" \
+  -d "{\"icon\": {\"uri\": \"${ICON_URL}\"}}" \
+  "https://discoveryengine.googleapis.com/v1alpha/projects/<num>/locations/global/collections/default_collection/engines/<engine-id>/assistants/default_assistant/agents/<agent-id>?updateMask=icon"
+```
+
+This is the same flow as the duplicate-cleanup: `agents-cli`
+registers the card body correctly, but doesn't carry through to the
+host record. Combined workaround: after every `register-gemini-enterprise`
+call, list + delete duplicates + PATCH icon.uri to the URL the card
+already advertises.
+
 **Template improvement**
 
 Either fix the `agents-cli` dedupe (root-cause), or document the
