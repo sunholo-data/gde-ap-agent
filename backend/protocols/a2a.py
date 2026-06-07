@@ -163,6 +163,39 @@ def _skill_to_a2a(skill: SkillConfig) -> dict[str, Any]:
     }
 
 
+# Default `defaultInputModes` advertised on the card — the document MIME
+# types the A2A file-extraction interceptor (protocols.a2a_file_extraction)
+# is configured to accept. Keep these two lists in sync, OR override both via
+# `A2A_AGENT_INPUT_MIME_TYPES` (a comma-separated env var) when a fork wants
+# a narrower set.
+_DEFAULT_INPUT_MIME_TYPES: tuple[str, ...] = (
+    "text",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.oasis.opendocument.presentation",
+    "message/rfc822",
+    "text/csv",
+    "text/plain",
+)
+
+
+def _resolve_input_mime_types() -> list[str]:
+    """Return the configured `defaultInputModes` list for the card.
+
+    Reads `A2A_AGENT_INPUT_MIME_TYPES` (comma-separated). Falls back to
+    `_DEFAULT_INPUT_MIME_TYPES`. A fork that wants the v1 "text-only"
+    behaviour can set `A2A_AGENT_INPUT_MIME_TYPES=text`.
+    """
+    override = os.environ.get("A2A_AGENT_INPUT_MIME_TYPES", "")
+    if override:
+        return [m.strip() for m in override.split(",") if m.strip()]
+    return list(_DEFAULT_INPUT_MIME_TYPES)
+
+
 # A2A JSON-RPC invocation surface mount point. The card's `url` field must
 # point HERE so peers know where to POST `message/send` requests. The
 # discovery card itself stays at `/.well-known/agent.json` (root); only the
@@ -242,7 +275,14 @@ def _build_card_dict(base_url: str) -> dict[str, Any]:
             # integration guide); only the body needs descriptors.
             "extensions": [_extension_descriptor(ext) for ext in SUPPORTED_EXTENSIONS],
         },
-        "defaultInputModes": ["text"],
+        # Modes peers may attach. Extended from ["text"] to advertise
+        # document MIME types so Gemini Enterprise / other A2A peers send
+        # FileParts when the user uploads (instead of silently stripping
+        # to a text description — caught in production 2026-06-07 22:06).
+        # The list is overridable via A2A_AGENT_INPUT_MIME_TYPES env so a
+        # fork can narrow it. Output stays text-only in v1 (no file
+        # responses from the agent).
+        "defaultInputModes": _resolve_input_mime_types(),
         "defaultOutputModes": ["text"],
         "skills": [_skill_to_a2a(s) for s in skills],
     }

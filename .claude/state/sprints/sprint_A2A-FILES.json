@@ -7,10 +7,10 @@
   "features": [
     {
       "id": "M1",
-      "description": "Scenario A — file extraction via ADK ExecuteInterceptor. New module backend/protocols/a2a_file_extraction.py with FileExtractionInterceptor.before_agent that walks RequestContext.message.parts, extracts FileParts, dispatches FileWithBytes (base64-decode + GCS upload to ADK_ARTIFACT_BUCKET) vs FileWithUri (URI scheme allowlist + lazy fetch registration), mints document_ids, injects into session state. Also stashes agent_resource_name into state for M2 to read. Wire interceptor via A2aAgentExecutorConfig(execute_interceptors=[...]). Extend defaultInputModes from ['text'] to canonical document MIME list with A2A_AGENT_INPUT_MIME_TYPES env override. Six tests in test_a2a_file_input.py covering: bytes extraction, URI registration, oversized rejection, MIME rejection, scheme rejection, text-only regression guard.",
+      "description": "Scenario A \u2014 file extraction via ADK ExecuteInterceptor. New module backend/protocols/a2a_file_extraction.py with FileExtractionInterceptor.before_agent that walks RequestContext.message.parts, extracts FileParts, dispatches FileWithBytes (base64-decode + GCS upload to ADK_ARTIFACT_BUCKET) vs FileWithUri (URI scheme allowlist + lazy fetch registration), mints document_ids, injects into session state. Also stashes agent_resource_name into state for M2 to read. Wire interceptor via A2aAgentExecutorConfig(execute_interceptors=[...]). Extend defaultInputModes from ['text'] to canonical document MIME list with A2A_AGENT_INPUT_MIME_TYPES env override. Six tests in test_a2a_file_input.py covering: bytes extraction, URI registration, oversized rejection, MIME rejection, scheme rejection, text-only regression guard.",
       "scope": "backend",
       "estimated_loc": 450,
-      "actual_loc": null,
+      "actual_loc": 440,
       "dependencies": [],
       "acceptance_criteria": [
         "All 6 new tests in tests/api_tests/test_a2a_file_input.py pass",
@@ -28,14 +28,14 @@
         "backend/protocols/a2a.py",
         "backend/tests/api_tests/test_a2a.py"
       ],
-      "passes": null,
-      "started": null,
-      "completed": null,
-      "notes": null
+      "passes": true,
+      "started": "2026-06-07T22:38:14.639141Z",
+      "completed": "2026-06-07T22:38:14.639141Z",
+      "notes": "FileExtractionInterceptor via ADK ExecuteInterceptor.before_agent (much cleaner than subclassing). Walks FileParts, validates MIME + size + URI scheme, writes doc:{id}.json artifact + injects state[\"document_ids\"], strips FileParts so ADK native converter does not double-inject. Card defaultInputModes extended from [text] to 11 MIMEs. 7 tests pass (6 specified + 1 flag-off no-op). Bonus discovery: ADK already converts FilePart to multimodal Gemini Part natively, so the actual GE failure was the defaultInputModes gate stopping peers from sending files at all. Stripping is critical to avoid double-injection. ENABLE_A2A_FILE_INPUT flag default off so deploy is clean-rollback."
     },
     {
       "id": "M2",
-      "description": "Scenario B — org-scoped GCS bucket bound to each A2A agent registration via Discovery Engine metadata.gcs_documents_bucket. New module backend/protocols/a2a_org_bucket.py with get_bound_bucket (Discovery Engine GET with 60s LRU cache), list_documents_in_bucket (GCS LIST), read_document_from_bucket (GCS GET + ailang-parse + doc:{id}.json artifact), and _assert_bucket_matches_registration tenant-isolation guard. New backend/tools/org_documents.py with two FunctionTool wrappers (list_org_documents and read_org_document) that read agent_resource_name from state[a2a:agent_resource_name] (set by M1's interceptor). Add both tools + an instruction paragraph to ap-orchestrator SKILL.md. Six tests covering binding lookup, empty-on-no-binding, artifact load, caching, cross-tenant isolation, IAM-missing graceful degradation. Manual step: PATCH the live dev agent record's metadata.gcs_documents_bucket = gs://gde-ap-agent-demo-invoices/.",
+      "description": "Scenario B \u2014 org-scoped GCS bucket bound to each A2A agent registration via Discovery Engine metadata.gcs_documents_bucket. New module backend/protocols/a2a_org_bucket.py with get_bound_bucket (Discovery Engine GET with 60s LRU cache), list_documents_in_bucket (GCS LIST), read_document_from_bucket (GCS GET + ailang-parse + doc:{id}.json artifact), and _assert_bucket_matches_registration tenant-isolation guard. New backend/tools/org_documents.py with two FunctionTool wrappers (list_org_documents and read_org_document) that read agent_resource_name from state[a2a:agent_resource_name] (set by M1's interceptor). Add both tools + an instruction paragraph to ap-orchestrator SKILL.md. Six tests covering binding lookup, empty-on-no-binding, artifact load, caching, cross-tenant isolation, IAM-missing graceful degradation. Manual step: PATCH the live dev agent record's metadata.gcs_documents_bucket = gs://gde-ap-agent-demo-invoices/.",
       "scope": "backend",
       "estimated_loc": 380,
       "actual_loc": null,
@@ -65,7 +65,7 @@
     },
     {
       "id": "M3",
-      "description": "Probes + CLI + deploy + verify. Extend scripts/simulate-a2a-peer.py with Step 7 (Scenario A: base64-encode acme-gmbh-invoice-2026-042.docx and POST as FilePart) and Step 8 (Scenario B: text-only ask about existing bucket contents). Extend scripts/verify-a2a.sh to assert defaultInputModes includes non-text MIME and to probe FilePart acceptance. Add aiplatform a2a invoke and aiplatform a2a bucket bind/show Click subcommands with httpx calls and unit tests. Push to dev, wait for Cloud Build, re-run probes against live deploy. Re-register with Gemini Enterprise (handle Friction 28 duplicates + icon PATCH). Manual GE tests: file upload propagates to doc-loader; text-only bucket query references real bucket content. Update template-PR brief with §6 covering both scenarios for upstream.",
+      "description": "Probes + CLI + deploy + verify. Extend scripts/simulate-a2a-peer.py with Step 7 (Scenario A: base64-encode acme-gmbh-invoice-2026-042.docx and POST as FilePart) and Step 8 (Scenario B: text-only ask about existing bucket contents). Extend scripts/verify-a2a.sh to assert defaultInputModes includes non-text MIME and to probe FilePart acceptance. Add aiplatform a2a invoke and aiplatform a2a bucket bind/show Click subcommands with httpx calls and unit tests. Push to dev, wait for Cloud Build, re-run probes against live deploy. Re-register with Gemini Enterprise (handle Friction 28 duplicates + icon PATCH). Manual GE tests: file upload propagates to doc-loader; text-only bucket query references real bucket content. Update template-PR brief with \u00a76 covering both scenarios for upstream.",
       "scope": "backend",
       "estimated_loc": 310,
       "actual_loc": null,
@@ -106,7 +106,7 @@
     "actual_days": null
   },
   "github_issues": [],
-  "last_session": null,
+  "last_session": "2026-06-07T22:38:14.639141Z",
   "last_checkpoint": null,
-  "status": "not_started"
+  "status": "in_progress"
 }

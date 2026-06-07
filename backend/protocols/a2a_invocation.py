@@ -230,7 +230,23 @@ def build_a2a_app(
     # public API on the `a2a-sdk` package; the experimental layer is
     # only ADK's `A2aAgentExecutor` (the actual agent-runner glue),
     # which we still use.
-    executor = A2aAgentExecutor(runner=runner)
+    #
+    # FileExtractionInterceptor: pulls A2A FileParts off the incoming
+    # message and injects them into session state as document_ids the
+    # existing `make_document_loader` callback understands. Gated by
+    # `ENABLE_A2A_FILE_INPUT` env var (default off — flag-off behaviour
+    # is byte-identical to no interceptor). See A2A-FILES sprint.
+    from google.adk.a2a.executor.config import A2aAgentExecutorConfig
+
+    from .a2a_file_extraction import make_file_extraction_interceptor
+
+    file_interceptor = make_file_extraction_interceptor(
+        runner,
+        app_name=APP_NAME,
+        user_id="a2a-public-peer",
+    )
+    executor_config = A2aAgentExecutorConfig(execute_interceptors=[file_interceptor])
+    executor = A2aAgentExecutor(runner=runner, config=executor_config)
     request_handler = DefaultRequestHandler(
         agent_executor=executor,
         task_store=InMemoryTaskStore(),
