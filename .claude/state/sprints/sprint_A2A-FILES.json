@@ -1,0 +1,112 @@
+{
+  "sprint_id": "A2A-FILES",
+  "created": "2026-06-07T22:26:17Z",
+  "estimated_duration_days": 1.0,
+  "design_doc": "docs/design/forks/gde-ap-agent/v0.1.0/a2a-file-input.md",
+  "sprint_plan": "docs/design/forks/gde-ap-agent/v0.1.0/a2a-file-input-sprint.md",
+  "features": [
+    {
+      "id": "M1",
+      "description": "Scenario A — file extraction via ADK ExecuteInterceptor. New module backend/protocols/a2a_file_extraction.py with FileExtractionInterceptor.before_agent that walks RequestContext.message.parts, extracts FileParts, dispatches FileWithBytes (base64-decode + GCS upload to ADK_ARTIFACT_BUCKET) vs FileWithUri (URI scheme allowlist + lazy fetch registration), mints document_ids, injects into session state. Also stashes agent_resource_name into state for M2 to read. Wire interceptor via A2aAgentExecutorConfig(execute_interceptors=[...]). Extend defaultInputModes from ['text'] to canonical document MIME list with A2A_AGENT_INPUT_MIME_TYPES env override. Six tests in test_a2a_file_input.py covering: bytes extraction, URI registration, oversized rejection, MIME rejection, scheme rejection, text-only regression guard.",
+      "scope": "backend",
+      "estimated_loc": 450,
+      "actual_loc": null,
+      "dependencies": [],
+      "acceptance_criteria": [
+        "All 6 new tests in tests/api_tests/test_a2a_file_input.py pass",
+        "All 19 existing a2a tests still pass with no regression",
+        "Local curl smoke (POST with embedded FilePart) returns 200 + Task envelope; Cloud Run log shows doc loader: turn start with populated document_ids",
+        "Card defaultInputModes advertises at least application/pdf and application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "cd backend && make lint && make test-fast both green"
+      ],
+      "files_to_create": [
+        "backend/protocols/a2a_file_extraction.py",
+        "backend/tests/api_tests/test_a2a_file_input.py"
+      ],
+      "files_to_modify": [
+        "backend/protocols/a2a_invocation.py",
+        "backend/protocols/a2a.py",
+        "backend/tests/api_tests/test_a2a.py"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    },
+    {
+      "id": "M2",
+      "description": "Scenario B — org-scoped GCS bucket bound to each A2A agent registration via Discovery Engine metadata.gcs_documents_bucket. New module backend/protocols/a2a_org_bucket.py with get_bound_bucket (Discovery Engine GET with 60s LRU cache), list_documents_in_bucket (GCS LIST), read_document_from_bucket (GCS GET + ailang-parse + doc:{id}.json artifact), and _assert_bucket_matches_registration tenant-isolation guard. New backend/tools/org_documents.py with two FunctionTool wrappers (list_org_documents and read_org_document) that read agent_resource_name from state[a2a:agent_resource_name] (set by M1's interceptor). Add both tools + an instruction paragraph to ap-orchestrator SKILL.md. Six tests covering binding lookup, empty-on-no-binding, artifact load, caching, cross-tenant isolation, IAM-missing graceful degradation. Manual step: PATCH the live dev agent record's metadata.gcs_documents_bucket = gs://gde-ap-agent-demo-invoices/.",
+      "scope": "backend",
+      "estimated_loc": 380,
+      "actual_loc": null,
+      "dependencies": [
+        "M1"
+      ],
+      "acceptance_criteria": [
+        "All 6 new tests in tests/api_tests/test_a2a_org_bucket.py pass",
+        "All 6 M1 tests still pass; all 19 pre-existing a2a tests still pass",
+        "list_org_documents returns [] when called on an unbound registration (no 500)",
+        "Cross-tenant isolation test confirms agent A cannot read bucket bound to agent B",
+        "cd backend && make lint && make test-fast both green",
+        "Live dev agent record has metadata.gcs_documents_bucket set to gs://gde-ap-agent-demo-invoices/"
+      ],
+      "files_to_create": [
+        "backend/protocols/a2a_org_bucket.py",
+        "backend/tools/org_documents.py",
+        "backend/tests/api_tests/test_a2a_org_bucket.py"
+      ],
+      "files_to_modify": [
+        "backend/skills/templates/ap-orchestrator/SKILL.md"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    },
+    {
+      "id": "M3",
+      "description": "Probes + CLI + deploy + verify. Extend scripts/simulate-a2a-peer.py with Step 7 (Scenario A: base64-encode acme-gmbh-invoice-2026-042.docx and POST as FilePart) and Step 8 (Scenario B: text-only ask about existing bucket contents). Extend scripts/verify-a2a.sh to assert defaultInputModes includes non-text MIME and to probe FilePart acceptance. Add aiplatform a2a invoke and aiplatform a2a bucket bind/show Click subcommands with httpx calls and unit tests. Push to dev, wait for Cloud Build, re-run probes against live deploy. Re-register with Gemini Enterprise (handle Friction 28 duplicates + icon PATCH). Manual GE tests: file upload propagates to doc-loader; text-only bucket query references real bucket content. Update template-PR brief with §6 covering both scenarios for upstream.",
+      "scope": "backend",
+      "estimated_loc": 310,
+      "actual_loc": null,
+      "dependencies": [
+        "M2"
+      ],
+      "acceptance_criteria": [
+        "scripts/simulate-a2a-peer.py against live deploy: Steps 1-8 all print check marks",
+        "scripts/verify-a2a.sh against live deploy: all green including new FilePart probe",
+        "aiplatform a2a invoke --file works end-to-end against live deploy",
+        "aiplatform a2a bucket show returns the live binding for the dev agent record",
+        "Real GE file upload triggers doc-loader: Cloud Run logs show populated document_ids",
+        "Real GE bucket query response references real bucket content (manual verification)",
+        "docs/learnings/template-pr-a2a-spec-compliance.md gains section 6 covering Scenarios A + B"
+      ],
+      "files_to_create": [
+        "cli/aiplatform/a2a.py",
+        "cli/tests/test_a2a_cli.py"
+      ],
+      "files_to_modify": [
+        "scripts/simulate-a2a-peer.py",
+        "scripts/verify-a2a.sh",
+        "docs/learnings/template-pr-a2a-spec-compliance.md",
+        "cloudbuild.yaml"
+      ],
+      "passes": null,
+      "started": null,
+      "completed": null,
+      "notes": null
+    }
+  ],
+  "velocity": {
+    "target_loc_per_day": 1140,
+    "actual_loc_per_day": null,
+    "estimated_total_loc": 1140,
+    "actual_total_loc": null,
+    "estimated_days": 1.0,
+    "actual_days": null
+  },
+  "github_issues": [],
+  "last_session": null,
+  "last_checkpoint": null,
+  "status": "not_started"
+}
