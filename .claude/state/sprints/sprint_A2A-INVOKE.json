@@ -10,7 +10,7 @@
       "description": "Bridge plumbing: split _build_card into dict + ADK AgentCard model variants, create backend/protocols/a2a_invocation.py exporting build_a2a_app(agent, runner) -> Starlette via ADK's to_a2a(), mount at /a2a on FastAPI gated by ENABLE_A2A_INVOCATION env, update _build_card_dict to advertise card.url = base + /a2a, smoke-test locally that POST /a2a/v1/messages returns a JSON-RPC Task envelope",
       "scope": "backend",
       "estimated_loc": 150,
-      "actual_loc": null,
+      "actual_loc": 160,
       "dependencies": [],
       "acceptance_criteria": [
         "/a2a/.well-known/agent.json returns the same card as the root /.well-known/agent.json (shared canonical card source)",
@@ -26,10 +26,10 @@
         "backend/protocols/a2a.py",
         "backend/fast_api_app.py"
       ],
-      "passes": null,
-      "started": null,
-      "completed": null,
-      "notes": null
+      "passes": true,
+      "started": "2026-06-07T16:43:41.704011Z",
+      "completed": "2026-06-07T16:43:41.704011Z",
+      "notes": "Card split into _build_card_dict + _build_card_model; new module backend/protocols/a2a_invocation.py wires to_a2a with our Runner; mount in fast_api_app.py gated by ENABLE_A2A_INVOCATION env. All 1471 backend tests pass; lint clean. Smoke-tested at import time. Discovered that ADK to_a2a registers routes via lifespan (not at construction) and that A2AStarletteApplication mounts at relative /, /.well-known/agent.json, /.well-known/agent-card.json \u2014 relevant for M2 test fixtures."
     },
     {
       "id": "M2",
@@ -95,7 +95,7 @@
     "actual_days": null
   },
   "github_issues": [],
-  "last_session": null,
+  "last_session": "2026-06-07T16:43:41.704011Z",
   "last_checkpoint": null,
-  "status": "not_started"
+  "status": "in_progress"
 }

@@ -11,8 +11,12 @@ Unauthenticated discovery endpoint that advertises this platform's
 semantics: if a skill is listed in the public marketplace, it's listed
 here too; everything else stays invisible.
 
-Not a full A2A task-handler — that's a follow-up. This is the discovery
-surface, cached for 60s so crawlers don't hammer Firestore.
+Pairs with `protocols.a2a_invocation` which mounts ADK's `to_a2a()`
+Starlette adapter at `/a2a` to handle JSON-RPC `message/send` etc.
+The card produced here advertises `url = <base>/a2a` so peers know
+where to POST. The dict-shaped card is what we serve on the wire;
+the AgentCard-shaped card is what we hand to ADK via `to_a2a(agent_card=)`
+so the same canonical source of truth feeds both surfaces.
 
 See https://github.com/google/a2a for the protocol.
 """
@@ -159,8 +163,23 @@ def _skill_to_a2a(skill: SkillConfig) -> dict[str, Any]:
     }
 
 
-def _build_card(base_url: str) -> dict[str, Any]:
+# A2A JSON-RPC invocation surface mount point. The card's `url` field must
+# point HERE so peers know where to POST `message/send` requests. The
+# discovery card itself stays at `/.well-known/agent.json` (root); only the
+# `url` field changes. Keep in sync with the `app.mount("/a2a", ...)` call
+# in fast_api_app.py.
+A2A_INVOCATION_PATH = "/a2a"
+
+
+def _build_card_dict(base_url: str) -> dict[str, Any]:
     """Generate the A2A card from the current public skill set.
+
+    Returns the wire-shape dict served at `/.well-known/agent.json`. The
+    `url` field advertises the A2A JSON-RPC invocation endpoint at
+    `<base>/a2a` (where ADK's `to_a2a()` is mounted — see
+    `protocols.a2a_invocation`); the discovery card itself remains at the
+    root well-known path. Peers GET the card from one URL and POST
+    `message/send` to the other.
 
     If Firestore is unreachable or the composite marketplace index
     hasn't built yet, we serve an empty skills[] rather than 500-ing
@@ -169,7 +188,7 @@ def _build_card(base_url: str) -> dict[str, Any]:
     try:
         skills = list_marketplace(limit=100)
     except Exception:
-        logger.exception("a2a._build_card: list_marketplace failed; serving empty skills")
+        logger.exception("a2a._build_card_dict: list_marketplace failed; serving empty skills")
         skills = []
     return {
         # A2A wire-protocol version this card complies with. Required by
@@ -189,7 +208,9 @@ def _build_card(base_url: str) -> dict[str, Any]:
             "A2A_AGENT_DESCRIPTION",
             "Open-source AI protocol platform — Skills + AG-UI + A2UI + MCP Apps + A2A on Google ADK.",
         ),
-        "url": base_url,
+        # NOT base_url. Peers use `url` to POST invocations, and ADK's
+        # `to_a2a()` mount handles those at /a2a — see A2A_INVOCATION_PATH.
+        "url": f"{base_url.rstrip('/')}{A2A_INVOCATION_PATH}",
         "version": "6.0.0",
         "capabilities": {
             "streaming": True,
@@ -212,6 +233,31 @@ def _build_card(base_url: str) -> dict[str, Any]:
     }
 
 
+def _build_card_model(base_url: str) -> Any:
+    """Generate the A2A card as ADK's `AgentCard` pydantic model.
+
+    This is what we pass to `to_a2a(agent_card=...)` so the mounted
+    A2A surface advertises the SAME card as `/.well-known/agent.json` —
+    no drift between what peers discover at the well-known path and what
+    ADK's auto-built card would produce. Pydantic does the wire validation
+    for free; if our dict's shape is wrong we find out at construction
+    time, not at a peer's first request.
+
+    Import deferred to call time because `a2a.types` is part of the
+    `a2a-sdk` dep that ships with `google-adk`; keeping the import local
+    avoids loading the whole A2A SDK when only the discovery card is
+    needed (the `/.well-known/agent.json` path stays light).
+    """
+    from a2a.types import AgentCard
+
+    return AgentCard.model_validate(_build_card_dict(base_url))
+
+
+# Backwards-compatible alias for callers that still import `_build_card`.
+# The wire shape (dict) is the original contract; the model variant is new.
+_build_card = _build_card_dict
+
+
 # --- Cache ---
 # lru_cache on a timestamped key: mod the timestamp to _CACHE_TTL so the
 # key rotates once per TTL window, giving us time-bounded caching without
@@ -227,7 +273,7 @@ def _cached_card(base_url: str, bucket: int) -> dict[str, Any]:
     # `bucket` is part of the cache key only — it forces cache invalidation
     # when the 60s window rolls over. It isn't used inside the body.
     del bucket
-    return _build_card(base_url)
+    return _build_card_dict(base_url)
 
 
 def invalidate_cache() -> None:

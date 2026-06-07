@@ -281,6 +281,67 @@ app.include_router(iframe_context_router)
 app.include_router(a2ui_surface_action_router)
 
 # ----------------------------------------------------------------------------
+# A2A invocation surface — mount ADK's to_a2a() Starlette adapter at /a2a
+# ----------------------------------------------------------------------------
+# Discovery (the agent card) is served by `protocols.a2a` at the root
+# `/.well-known/agent.json`. Invocation (strict A2A v0.2 JSON-RPC
+# `message/send`, `tasks/get`, `message/sendSubscribe`) is served HERE
+# by ADK's pre-built A2A Starlette app, mounted at `/a2a`. The discovery
+# card advertises `url = <base>/a2a` so peers POST to the right place.
+#
+# Feature-flagged: ENABLE_A2A_INVOCATION=true to mount. When false, the
+# rest of the app and the discovery card are unchanged — clean rollback.
+# Gated because `to_a2a` is `@a2a_experimental` in google-adk; we want
+# the option to disable instantly on an ADK breakage.
+#
+# Skipped silently in LOCAL_MODE — local dev doesn't need the cross-agent
+# invocation surface, and the ADK lifespan setup pulls Vertex SDKs the
+# local stub doesn't have.
+if os.environ.get("ENABLE_A2A_INVOCATION", "false").lower() in ("true", "1", "yes") and not is_local_mode():
+    try:
+        from auth.access_context import AccessContext
+        from auth.firebase_auth import User
+        from protocols.a2a import A2A_INVOCATION_PATH
+        from protocols.a2a_invocation import build_a2a_app
+        from skills.skill_config import find_by_name
+
+        _a2a_skill = find_by_name("ap-orchestrator")
+        if _a2a_skill is None:
+            _log.warning(
+                "ENABLE_A2A_INVOCATION=true but ap-orchestrator skill not "
+                "found in Firestore — skipping /a2a mount. Seed the skill or "
+                "set ENABLE_A2A_INVOCATION=false to silence this warning."
+            )
+        else:
+            # System user for boot-time agent construction. Real per-request
+            # auth happens in the M2 middleware; this user only feeds the
+            # `before_tool_callback` permission enforcer at agent-build time,
+            # which we want to be permissive for the public A2A entry point
+            # (the orchestrator's downstream tools have their own gating).
+            from adk.agent import create_agent
+
+            _a2a_system_user = User(uid="a2a-public-peer", email="", domain="")
+            _a2a_agent = create_agent(
+                _a2a_skill,
+                _a2a_system_user,
+                access_context=AccessContext(uid=_a2a_system_user.uid),
+            )
+            _a2a_base_url = os.environ.get("PUBLIC_BASE_URL", "http://localhost:1956")
+            app.mount(A2A_INVOCATION_PATH, build_a2a_app(_a2a_agent, _a2a_base_url))
+            _log.info(
+                "Mounted A2A invocation surface at %s for agent=%s",
+                A2A_INVOCATION_PATH,
+                _a2a_agent.name,
+            )
+    except Exception:
+        # Don't kill the whole app for an A2A surface error — discovery
+        # still works, AG-UI still works, only strict JSON-RPC invocation
+        # is unavailable. Logs surface the root cause.
+        _log.exception("Failed to mount A2A invocation surface — continuing without it")
+else:
+    _log.info("A2A invocation surface disabled (ENABLE_A2A_INVOCATION not set or LOCAL_MODE)")
+
+# ----------------------------------------------------------------------------
 # Channel framework (v6.1.0 sprint 1.6 M1)
 # ----------------------------------------------------------------------------
 # Channels self-register via `ChannelRegistry.register(...)`. `mount_webhooks`
