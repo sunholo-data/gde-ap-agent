@@ -76,7 +76,11 @@ else
 fi
 
 # --- 3. Required A2A spec fields -------------------------------------------
-for field in name description url version capabilities skills; do
+# protocolVersion is required by Discovery Engine / Gemini Enterprise — a
+# missing one makes `agents-cli register-gemini-enterprise --registration-type
+# a2a` fail with INVALID_ARGUMENT (caught in real Gemini Enterprise registration
+# 2026-06-07, see a2a.py:_build_card).
+for field in protocolVersion name description url version capabilities skills; do
   if jq -e ".${field}" "$BODY_FILE" >/dev/null 2>&1; then
     ok "card has required field: ${field}"
   else

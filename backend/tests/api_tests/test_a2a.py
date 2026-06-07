@@ -59,12 +59,25 @@ def test_agent_card_returns_minimum_a2a_fields(client: TestClient) -> None:
         resp = client.get("/.well-known/agent.json")
     assert resp.status_code == 200
     card = resp.json()
-    # A2A minimum fields.
-    for field in ("name", "description", "url", "version", "capabilities", "skills"):
+    # A2A minimum fields. protocolVersion is required by Discovery Engine /
+    # Gemini Enterprise validation — a missing one makes
+    # `agents-cli register-gemini-enterprise --registration-type a2a` fail
+    # with INVALID_ARGUMENT (real failure 2026-06-07).
+    for field in (
+        "protocolVersion",
+        "name",
+        "description",
+        "url",
+        "version",
+        "capabilities",
+        "skills",
+    ):
         assert field in card, f"card missing field: {field}"
     assert isinstance(card["skills"], list)
     assert isinstance(card["capabilities"], dict)
     assert card["capabilities"]["streaming"] is True
+    # Match the value we advertise in capabilities.extensions (a2a-v0.2).
+    assert card["protocolVersion"] == "0.2.0"
 
 
 def test_agent_card_skills_entries_have_required_fields(client: TestClient) -> None:

@@ -125,6 +125,12 @@ def _build_card(base_url: str) -> dict[str, Any]:
         logger.exception("a2a._build_card: list_marketplace failed; serving empty skills")
         skills = []
     return {
+        # A2A wire-protocol version this card complies with. Required by
+        # the Discovery Engine / Gemini Enterprise card validator — a
+        # missing protocolVersion makes `agents-cli register-gemini-enterprise
+        # --registration-type a2a` fail with INVALID_ARGUMENT. Matches the
+        # `a2a-v0.2` value we advertise in `capabilities.extensions`.
+        "protocolVersion": "0.2.0",
         # User-visible card identity. Downstream forks override via the
         # A2A_AGENT_NAME / A2A_AGENT_DESCRIPTION env vars (default:
         # upstream Sunholo branding). Mirrors the frontend BRANDING
