@@ -973,6 +973,64 @@ the outside.** This is the second time this footgun has bit (first was
 
 ---
 
+### Friction 28 — `agents-cli register-gemini-enterprise` creates duplicates instead of updating
+
+**Symptom**
+
+You re-register an existing Gemini Enterprise A2A agent after changing
+its `card.url` (or any other card field). The CLI prints
+"✅ Successfully registered" with a brand-new agent resource name. The
+old registration is NOT updated — it stays in the Agentspace with the
+OLD `card.url`, returning 404 on every peer invocation. You now have
+two agents with the same display name pointing at the same fork, one
+broken.
+
+**Root cause**
+
+The `agents-cli-publish` skill docs explicitly say: *"Agent already
+registered — The command automatically updates the existing
+registration — this is not an error."* But that path didn't fire in
+practice. Hypothesis: the dedupe match key is probably the agent's
+auto-generated numeric ID, not the display name; second registrations
+get a fresh ID and look like new agents to the CLI.
+
+Repro: register with display name X and card URL A → agent ID 1.
+Register again with same display name X but card URL B → agent ID 2.
+Both visible in the Discovery Engine `assistants/default_assistant/agents`
+list.
+
+**Workaround (manual cleanup)**
+
+List the duplicates:
+
+```bash
+TOKEN=$(gcloud auth print-access-token)
+curl -s -H "Authorization: Bearer $TOKEN" -H "X-Goog-User-Project: <project>" \
+  "https://discoveryengine.googleapis.com/v1alpha/projects/<num>/locations/global/collections/default_collection/engines/<engine-id>/assistants/default_assistant/agents" \
+  | jq -r '.agents[] | "\(.displayName): \(.name | split("/") | last)"'
+```
+
+Delete the stale ones:
+
+```bash
+curl -s -X DELETE -H "Authorization: Bearer $TOKEN" -H "X-Goog-User-Project: <project>" \
+  "https://discoveryengine.googleapis.com/v1alpha/projects/<num>/.../agents/<stale-agent-id>"
+```
+
+Until `agents-cli` fixes the dedupe path, do this after every
+re-registration when you've changed any card field.
+
+**Template improvement**
+
+Either fix the `agents-cli` dedupe (root-cause), or document the
+workaround in the deploy guide so forks don't end up with stale
+agents in their workspace silently breaking peer invocation. We hit
+this twice during M3 — once after the `protocolVersion` fix landed
+and once after the `card.url` → `/a2a` change. Two duplicates in a
+single sprint suggests this is a regular footgun.
+
+---
+
 ### Friction 26 — Dual `cloudbuild.yaml` in fork-style deploys deploys to nothing
 
 **Symptom**
