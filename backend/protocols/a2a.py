@@ -208,6 +208,21 @@ def _build_card_dict(base_url: str) -> dict[str, Any]:
             "A2A_AGENT_DESCRIPTION",
             "Open-source AI protocol platform — Skills + AG-UI + A2UI + MCP Apps + A2A on Google ADK.",
         ),
+        # Agent card icon shown in Gemini Enterprise + any A2A peer UI.
+        # Defaults to the deployed app's `/images/logo/<file>.svg` so the
+        # icon updates whenever the fork swaps its logo asset. Forks
+        # override the path via the A2A_AGENT_ICON_PATH env var (e.g.
+        # `/images/logo/my-brand.svg`); the full URL is composed against
+        # the public base. If no public base is known yet (LOCAL_MODE,
+        # first boot before PUBLIC_BASE_URL is set) we omit the field
+        # rather than advertise a localhost icon URL.
+        **(
+            {
+                "iconUrl": f"{base_url.rstrip('/')}{os.getenv('A2A_AGENT_ICON_PATH', '/images/logo/ailang-parse-logo.svg')}"
+            }
+            if not base_url.startswith("http://localhost") and not base_url.startswith("http://127.0.0.1")
+            else {}
+        ),
         # NOT base_url. Peers use `url` to POST invocations, and ADK's
         # `to_a2a()` mount handles those at /a2a — see A2A_INVOCATION_PATH.
         "url": f"{base_url.rstrip('/')}{A2A_INVOCATION_PATH}",
