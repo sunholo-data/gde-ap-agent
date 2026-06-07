@@ -139,6 +139,7 @@ describe("useSkillAgent — core", () => {
       "sendMessage",
       "sessionId",
       "stageLabel",
+      "stageStartTimes",
       "stalledMs",
       "stop",
       "thinkingContent",
