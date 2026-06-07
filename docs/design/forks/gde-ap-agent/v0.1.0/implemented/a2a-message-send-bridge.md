@@ -1,6 +1,6 @@
 # A2A `message/send` bridge
 
-**Status**: Planned
+**Status**: Implemented
 **Priority**: P1 (Medium) — closes the only remaining gap in the Track 3 "discover AND coordinate" criterion
 **Estimated**: ~0.5 day implementation + tests + verification
 **Scope**: Backend
@@ -9,7 +9,7 @@
 - `google-adk` package already installed (verified `google.adk.a2a.utils.agent_to_a2a.to_a2a`)
 - `agents-cli register-gemini-enterprise` registration already proven against `multivac-internal-dev` Agentspace app
 **Created**: 2026-06-07
-**Last Updated**: 2026-06-07
+**Last Updated**: 2026-06-07 (implemented)
 **Upstream-bound**: Yes — every fork on the `ai-protocol-platform` template hits the same six surface decisions. This doc doubles as the upstream PR brief.
 
 ## Problem Statement
