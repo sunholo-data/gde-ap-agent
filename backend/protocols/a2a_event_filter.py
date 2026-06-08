@@ -4,47 +4,71 @@ Mounted via `A2aAgentExecutorConfig(execute_interceptors=[...])` on the
 A2A executor in `protocols.a2a_invocation`. Runs as an `after_event`
 hook on every A2A event the executor produces.
 
-Why we need this:
+Why we need this
+----------------
 
-  The AP pipeline is wired as a SequentialAgent (`ap-pipeline`) of three
-  LlmAgent specialists: `invoice-extractor`, `ap-validator`, `ap-poster`.
-  Each specialist emits ADK events as it processes its turn — including
-  intent-narration text events like "Reading the parsed invoice and
-  extracting vendor, line items, and totals." These are Gemini's
-  "thinking out loud" preamble before tool calls.
+The AP pipeline is wired as a SequentialAgent (`ap-pipeline`) of three
+LlmAgent specialists: `invoice-extractor`, `ap-validator`, `ap-poster`.
+Each specialist emits ADK events as it processes its turn — including
+intent-narration text events like "Reading the parsed invoice and
+extracting vendor, line items, and totals." These are Gemini's
+"thinking out loud" preamble before tool calls.
 
-  ADK's `convert_event_to_a2a_events` projects every ADK event into the
-  A2A event queue. Peers (Gemini Enterprise) receive the stream of
-  text-bearing TaskStatusUpdateEvents and concatenate them into the
-  chat bubble — producing a wall of specialist narration plus the
-  final verdict from `ap-poster`. The narration is internal-monologue
-  noise; the peer should only see the verdict.
+ADK's new-version event converter (`convert_event_to_a2a_events_impl`
+in `google.adk.a2a.converters.from_adk_event`, used when
+`force_new_version=True`) projects every ADK event with content into a
+`TaskArtifactUpdateEvent` whose artifact carries the parts. Peers
+(Gemini Enterprise) receive the stream of TaskArtifactUpdateEvents and
+render their text parts in the chat bubble — producing a wall of
+specialist narration plus the final verdict from `ap-poster`. The
+narration is internal-monologue noise; the peer should only see the
+verdict.
 
-What this interceptor does:
+Two non-obvious wire-shape facts established the design through three
+buggy iterations:
 
-  Returns None for every text-bearing TaskStatusUpdateEvent whose ADK
-  source event was authored by `invoice-extractor` or `ap-validator`.
-  ADK's executor treats None as "drop this event" — it never reaches
-  the peer's SSE stream.
+1. **Visible text rides on TaskArtifactUpdateEvents, not status updates.**
+   The new converter only emits TaskStatusUpdateEvents for actions
+   without parts. All narrative/verdict content goes via artifact
+   updates. Caught 2026-06-08T18:33 — the first filter dropped zero
+   events because it only inspected status events.
 
-  Keeps:
-    - All events from `ap-orchestrator`, `ap-pipeline`, `ap-poster`,
-      and the special `"user"` author
-    - All TaskArtifactUpdateEvents regardless of author — these are
-      tool call/result artifacts attached to the task for audit, not
-      chat content
-    - All TaskStatusUpdateEvents without text content (state
-      transitions like submitted/working/completed)
+2. **Runtime author names are UUID-derived.** ADK's LlmAgent name
+   validator requires `^[a-zA-Z_][a-zA-Z0-9_]*$`, and
+   `_safe_agent_name(skill_id)` in `backend/adk/agent.py` substitutes
+   `-` → `_`. With Firestore-backed skills, the skill_id is a UUID
+   string — so the actual ADK agent name is `s_<uuid_with_underscores>`,
+   not the SKILL.md `name` field. Hardcoding `"invoice-extractor"` or
+   `"invoice_extractor"` in the drop-set never matches. Caught
+   2026-06-08T18:33 — second iteration still dropped zero events.
 
-  Drops:
-    - TaskStatusUpdateEvents whose `status.message.parts` contains at
-      least one text part AND whose source ADK event was authored by
-      `invoice-extractor` or `ap-validator`
+What this interceptor does
+--------------------------
+
+At startup, walks the agent tree from `runner.agent` and finds every
+`SequentialAgent`. For each one, captures the names of `sub_agents[:-1]`
+— the intermediate specialists. The LAST `sub_agent[-1]` is the
+terminal specialist whose output IS the user-facing answer (e.g.
+`ap-poster`'s verdict); never filter it.
+
+At runtime, for every A2A event passing through the executor's after_event
+hook, drops events whose:
+  - source ADK event's `author` is in the captured intermediates set, AND
+  - A2A event carries visible text content (either in a
+    TaskArtifactUpdateEvent's `artifact.parts` or a TaskStatusUpdateEvent's
+    `status.message.parts`)
+
+Keeps:
+  - All events from the root agent and from the terminal specialist of
+    any SequentialAgent
+  - All events without text content (state transitions, function_call
+    DataParts, function_response DataParts, file Parts)
 
 Configuration:
-  None. v1 hard-codes the AP-pipeline specialist names. Forks with
-  different pipelines can copy the pattern and adjust
-  `_INTERMEDIATE_SPECIALIST_AUTHORS`.
+  None. Topology is derived from the runner's agent tree at interceptor
+  build time. Forks with different pipelines work automatically as long
+  as their intermediate-vs-terminal split is expressed as a
+  SequentialAgent.
 
 Failure mode:
   Fail-open. Any exception inside `_after_event` returns the event
@@ -56,117 +80,154 @@ Failure mode:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    pass
+
+def _walk_for_intermediates(agent: Any, seen: set[int] | None = None) -> set[str]:
+    """Walk an agent tree depth-first, collecting names of sub-agents that
+    sit at non-terminal positions inside any SequentialAgent.
+
+    For a `SequentialAgent` with `sub_agents=[a, b, c]`, returns `{a.name, b.name}`
+    (c is terminal — keep). Recurses into each sub-agent. Cycle-safe via
+    `id()` membership in `seen`.
+    """
+    from google.adk.agents import SequentialAgent
+
+    if seen is None:
+        seen = set()
+    if id(agent) in seen:
+        return set()
+    seen.add(id(agent))
+
+    intermediates: set[str] = set()
+    sub_agents = getattr(agent, "sub_agents", None) or []
+
+    if isinstance(agent, SequentialAgent) and len(sub_agents) >= 2:
+        for sub in sub_agents[:-1]:
+            name = getattr(sub, "name", None)
+            if name:
+                intermediates.add(name)
+
+    for sub in sub_agents:
+        intermediates |= _walk_for_intermediates(sub, seen)
+
+    return intermediates
 
 
-# Skill names of sub-agents whose text-bearing events should NOT reach
-# the A2A peer. Source of truth: `backend/adk/agent.py:305`
-# (`_AP_SPECIALIST_STAGE_LABELS`). `ap-poster` is intentionally absent —
-# it emits the final verdict and must be preserved.
-#
-# We include BOTH kebab and underscored forms because ADK's LlmAgent
-# name validator requires `^[a-zA-Z_][a-zA-Z0-9_]*$` and
-# `_safe_agent_name()` in `backend/adk/agent.py` substitutes `-` → `_`.
-# At runtime, `event.author` carries the ADK-validated form (e.g.
-# `invoice_extractor`), but tests and external probes often use the
-# canonical SKILL.md name (`invoice-extractor`). Accepting both makes
-# the filter robust to either source. Caught live 2026-06-08T15:59 —
-# first deploy of this filter dropped 0 events because the kebab form
-# never matched the underscored runtime author.
-_INTERMEDIATE_SPECIALIST_AUTHORS: frozenset[str] = frozenset(
-    {
-        "invoice-extractor",
-        "invoice_extractor",
-        "ap-validator",
-        "ap_validator",
-    }
-)
+def derive_intermediate_authors(root_agent: Any) -> frozenset[str]:
+    """Public entry point for the topology walk.
+
+    Returns a frozenset of agent names whose text-bearing events should
+    be filtered from the peer-bound A2A stream. Caller logs the result
+    at interceptor build time so production has direct evidence of what
+    was captured.
+    """
+    return frozenset(_walk_for_intermediates(root_agent))
 
 
 def _event_has_visible_text(a2a_event: Any) -> bool:
-    """Return True iff the A2A event is a text-bearing TaskStatusUpdateEvent.
+    """True iff the event carries at least one TextPart in its content.
 
-    Only text-bearing TaskStatusUpdateEvents surface as visible content
-    in the peer's chat bubble. Artifact updates and state-only updates
-    are out-of-band signals and should never be filtered.
+    Inspects both event shapes the new ADK converter can produce:
+      - TaskArtifactUpdateEvent: text rides in `artifact.parts`
+      - TaskStatusUpdateEvent: text rides in `status.message.parts`
+
+    Returns False for events with no text-bearing parts (state-only
+    status events, function_call/function_response DataParts, file
+    parts, code-execution artifacts).
     """
-    from a2a.types import TaskStatusUpdateEvent
+    from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 
-    if not isinstance(a2a_event, TaskStatusUpdateEvent):
+    if isinstance(a2a_event, TaskArtifactUpdateEvent):
+        artifact = getattr(a2a_event, "artifact", None)
+        parts = getattr(artifact, "parts", None) or []
+    elif isinstance(a2a_event, TaskStatusUpdateEvent):
+        status = getattr(a2a_event, "status", None)
+        msg = getattr(status, "message", None)
+        parts = getattr(msg, "parts", None) or []
+    else:
         return False
-    status = getattr(a2a_event, "status", None)
-    if status is None:
-        return False
-    msg = getattr(status, "message", None)
-    if msg is None:
-        return False
-    parts = getattr(msg, "parts", None) or []
+
     for part in parts:
-        # Pydantic Part has .root which is one of TextPart | FilePart | DataPart
         root = getattr(part, "root", part)
-        kind = getattr(root, "kind", None)
-        if kind == "text":
+        if getattr(root, "kind", None) == "text":
             return True
     return False
 
 
-def _should_drop(a2a_event: Any, adk_event: Any) -> bool:
-    """Decide whether to filter this event out of the peer-bound stream."""
-    if not _event_has_visible_text(a2a_event):
-        return False
-    author = getattr(adk_event, "author", None)
-    if not author:
-        return False
-    return author in _INTERMEDIATE_SPECIALIST_AUTHORS
-
-
 def _extract_text_preview(a2a_event: Any) -> str:
-    """Best-effort short preview of the dropped text for logging."""
+    """Best-effort short preview of dropped text for logging."""
+    from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+
     try:
-        msg = a2a_event.status.message
-        for part in msg.parts:
+        if isinstance(a2a_event, TaskArtifactUpdateEvent):
+            parts = a2a_event.artifact.parts
+        elif isinstance(a2a_event, TaskStatusUpdateEvent):
+            parts = a2a_event.status.message.parts
+        else:
+            return ""
+        for part in parts:
             root = getattr(part, "root", part)
             text = getattr(root, "text", None)
             if text:
-                return text[:80]
+                return text[:120]
     except Exception:
         return ""
     return ""
 
 
-async def _after_event(executor_context: Any, a2a_event: Any, adk_event: Any) -> Any:
-    """Filter intermediate specialist narration before it reaches the peer.
+def make_event_filter_interceptor(intermediate_authors: Iterable[str]) -> Any:
+    """Return an ExecuteInterceptor that filters text events from intermediate authors.
 
-    Returns the event unchanged unless it matches the drop rule, in which
-    case returns None (ADK's executor drops the event from the queue).
-    On any exception, returns the event unchanged (fail-open).
+    Args:
+        intermediate_authors: agent names whose visible-text events should
+            be filtered. Typically derived from `derive_intermediate_authors(
+            runner.agent)`.
+
+    The interceptor sets only `after_event`. Composes cleanly with the
+    file-extraction interceptor (which only sets `before_agent`).
     """
-    # Observation log: every event passing through the filter emits one
-    # line capturing author + visible-text flag. Cardinality is bounded
-    # (~20 events per pipeline turn), kept as a permanent debugging
-    # surface for forks: without it, you can't tell what author strings
-    # are flowing or whether the kept/dropped balance matches design.
-    try:
-        author_seen = getattr(adk_event, "author", "?")
-        has_text = _event_has_visible_text(a2a_event)
-        evt_type = type(a2a_event).__name__
-        logger.warning(
-            "a2a event filter: seen author=%s evt=%s text=%s",
-            author_seen,
-            evt_type,
-            has_text,
-        )
-    except Exception:
-        pass
+    from google.adk.a2a.executor.config import ExecuteInterceptor
 
-    try:
-        if _should_drop(a2a_event, adk_event):
-            author = getattr(adk_event, "author", "?")
+    authors_set = frozenset(intermediate_authors)
+    if authors_set:
+        logger.warning(
+            "a2a event filter: armed with %d intermediate author(s): %s",
+            len(authors_set),
+            sorted(authors_set),
+        )
+    else:
+        logger.warning("a2a event filter: armed with NO intermediate authors — no events will be filtered")
+
+    async def _after_event(executor_context: Any, a2a_event: Any, adk_event: Any) -> Any:
+        # Observation log: every event passing through the filter emits
+        # one line capturing author + visible-text flag + event type.
+        # Cardinality is bounded (~20 lines per pipeline turn), kept as
+        # a permanent debugging surface for forks: without it, you can't
+        # tell what author strings are flowing or whether the kept/dropped
+        # balance matches design.
+        try:
+            author_seen = getattr(adk_event, "author", "?")
+            has_text = _event_has_visible_text(a2a_event)
+            evt_type = type(a2a_event).__name__
+            logger.warning(
+                "a2a event filter: seen author=%s evt=%s text=%s",
+                author_seen,
+                evt_type,
+                has_text,
+            )
+        except Exception:
+            pass
+
+        try:
+            if not _event_has_visible_text(a2a_event):
+                return a2a_event
+            author = getattr(adk_event, "author", None)
+            if not author or author not in authors_set:
+                return a2a_event
             preview = _extract_text_preview(a2a_event)
             logger.warning(
                 "a2a event filter: dropped author=%s text=%r",
@@ -174,17 +235,8 @@ async def _after_event(executor_context: Any, a2a_event: Any, adk_event: Any) ->
                 preview,
             )
             return None
-    except Exception as exc:
-        logger.warning("a2a event filter: exception in filter (fail-open): %s", exc)
-    return a2a_event
-
-
-def make_event_filter_interceptor() -> Any:
-    """Return an ExecuteInterceptor that filters intermediate AP specialist text events.
-
-    Composes cleanly with the file-extraction interceptor: this one only
-    sets `after_event`, the other only sets `before_agent`.
-    """
-    from google.adk.a2a.executor.config import ExecuteInterceptor
+        except Exception as exc:
+            logger.warning("a2a event filter: exception in filter (fail-open): %s", exc)
+        return a2a_event
 
     return ExecuteInterceptor(after_event=_after_event)

@@ -1,17 +1,24 @@
 """Tests for the A2A event filter interceptor.
 
-Eight tests covering the contract `protocols.a2a_event_filter` establishes:
-  - Text events from invoice-extractor are dropped
-  - Text events from ap-validator are dropped
-  - Text events from ap-poster pass through (it emits the verdict)
-  - Text events from ap-orchestrator pass through (root agent)
-  - TaskArtifactUpdateEvents pass through regardless of author (audit trail)
-  - TaskStatusUpdateEvents without text (state-only) pass through
-  - Exceptions in the filter fail open (event returns unchanged)
-  - The drop emits a structured WARNING log line
+The filter v3 covers two real-world wire shapes the new ADK executor
+produces (the v1 + v2 designs got both wrong):
 
-The filter is pure-functional — no I/O, no async runner, no session
-service — so tests construct synthetic A2A + ADK events directly.
+  - Visible text content rides on TaskArtifactUpdateEvents, NOT status
+    updates (caught live 2026-06-08T18:33 — first deploy dropped zero
+    events because it only inspected status events)
+  - Runtime author names are UUID-derived via _safe_agent_name(skill_id),
+    not the SKILL.md `name` field (caught same turn — second deploy still
+    dropped zero events because the drop-set used kebab/underscored
+    `invoice-extractor` literals that never matched)
+
+Resolved by deriving the intermediate-author set from the agent
+topology at interceptor build time: any SequentialAgent's
+non-terminal sub-agents are intermediate. The terminal sub-agent
+(e.g. ap-poster) and the root LlmAgent's own events pass through.
+
+Tests use synthetic A2A events + a stubbed ADK event carrying only an
+`author` attribute (filter only reads .author). No real Runner, no
+session, no agent loop.
 """
 
 from __future__ import annotations
@@ -23,14 +30,16 @@ from typing import Any
 
 import pytest
 
+INTERMEDIATES = frozenset({"invoice_extractor", "ap_validator"})
 
-def _text_status_event(text: str, *, task_id: str = "t1", context_id: str = "c1") -> Any:
-    """Build a TaskStatusUpdateEvent carrying a single text part."""
+
+def _text_status_event(text: str) -> Any:
+    """TaskStatusUpdateEvent carrying a TextPart."""
     from a2a.types import Message, Part, Role, TaskState, TaskStatus, TaskStatusUpdateEvent, TextPart
 
     return TaskStatusUpdateEvent(
-        task_id=task_id,
-        context_id=context_id,
+        task_id="t1",
+        context_id="c1",
         final=False,
         status=TaskStatus(
             state=TaskState.working,
@@ -43,138 +52,208 @@ def _text_status_event(text: str, *, task_id: str = "t1", context_id: str = "c1"
     )
 
 
-def _state_only_status_event(*, task_id: str = "t1", context_id: str = "c1") -> Any:
-    """Build a TaskStatusUpdateEvent with no message (pure state transition)."""
+def _state_only_status_event() -> Any:
+    """TaskStatusUpdateEvent with no message — pure state transition."""
     from a2a.types import TaskState, TaskStatus, TaskStatusUpdateEvent
 
-    return TaskStatusUpdateEvent(
-        task_id=task_id,
-        context_id=context_id,
-        final=False,
-        status=TaskStatus(state=TaskState.working),
-    )
+    return TaskStatusUpdateEvent(task_id="t1", context_id="c1", final=False, status=TaskStatus(state=TaskState.working))
 
 
-def _artifact_update_event(*, task_id: str = "t1", context_id: str = "c1") -> Any:
-    """Build a TaskArtifactUpdateEvent (tool result / audit artifact)."""
+def _text_artifact_event(text: str) -> Any:
+    """TaskArtifactUpdateEvent carrying a TextPart — this is what the new
+    ADK executor produces for visible narrative content."""
     from a2a.types import Artifact, Part, TaskArtifactUpdateEvent, TextPart
 
     return TaskArtifactUpdateEvent(
-        task_id=task_id,
-        context_id=context_id,
-        last_chunk=False,
+        task_id="t1",
+        context_id="c1",
+        last_chunk=True,
         artifact=Artifact(
             artifact_id=str(uuid.uuid4()),
-            parts=[Part(root=TextPart(text="tool_result_blob"))],
+            parts=[Part(root=TextPart(text=text))],
+        ),
+    )
+
+
+def _data_artifact_event() -> Any:
+    """TaskArtifactUpdateEvent carrying a DataPart (function_call shape).
+
+    This is the audit-trail event — tool calls, tool results. Must pass
+    through regardless of author so judges/auditors can verify the
+    pipeline's tool invocations.
+    """
+    from a2a.types import Artifact, DataPart, Part, TaskArtifactUpdateEvent
+
+    return TaskArtifactUpdateEvent(
+        task_id="t1",
+        context_id="c1",
+        last_chunk=True,
+        artifact=Artifact(
+            artifact_id=str(uuid.uuid4()),
+            parts=[Part(root=DataPart(data={"name": "tool_x", "args": {}}))],
         ),
     )
 
 
 class _FakeAdkEvent:
-    """Minimal stand-in for google.adk.events.Event.
-
-    The filter only reads `.author`. Real ADK Events have many more
-    fields; the filter doesn't care about them.
-    """
+    """Minimal stand-in for google.adk.events.Event — filter only reads .author."""
 
     def __init__(self, author: str | None) -> None:
         self.author = author
 
 
-def test_drops_text_event_from_invoice_extractor() -> None:
-    from protocols.a2a_event_filter import _after_event
+def _filter():
+    """Build a fresh interceptor with the AP-pipeline drop-set."""
+    from protocols.a2a_event_filter import make_event_filter_interceptor
 
-    a2a_evt = _text_status_event("Reading the parsed invoice and extracting...")
-    adk_evt = _FakeAdkEvent(author="invoice-extractor")
-
-    result = asyncio.run(_after_event(executor_context=None, a2a_event=a2a_evt, adk_event=adk_evt))
-    assert result is None, "invoice-extractor text events must be dropped"
+    return make_event_filter_interceptor(INTERMEDIATES)
 
 
-def test_drops_text_event_from_ap_validator() -> None:
-    from protocols.a2a_event_filter import _after_event
-
-    a2a_evt = _text_status_event("Validating the extracted invoice against vendor master...")
-    adk_evt = _FakeAdkEvent(author="ap-validator")
-
-    result = asyncio.run(_after_event(executor_context=None, a2a_event=a2a_evt, adk_event=adk_evt))
-    assert result is None, "ap-validator text events must be dropped"
+# ---------------------------------------------------------------------------
+# Status-update event filtering
+# ---------------------------------------------------------------------------
 
 
-def test_keeps_text_event_from_ap_poster() -> None:
-    """ap-poster is the terminal specialist — its verdict text MUST flow through."""
-    from protocols.a2a_event_filter import _after_event
+def test_drops_text_status_event_from_invoice_extractor() -> None:
+    interceptor = _filter()
+    a2a_evt = _text_status_event("Reading the parsed invoice...")
+    adk_evt = _FakeAdkEvent(author="invoice_extractor")
 
+    result = asyncio.run(interceptor.after_event(None, a2a_evt, adk_evt))
+    assert result is None
+
+
+def test_keeps_text_status_event_from_ap_poster() -> None:
+    interceptor = _filter()
     a2a_evt = _text_status_event("Verdict is needs_review — routing to finance...")
-    adk_evt = _FakeAdkEvent(author="ap-poster")
+    adk_evt = _FakeAdkEvent(author="ap_poster")
 
-    result = asyncio.run(_after_event(executor_context=None, a2a_event=a2a_evt, adk_event=adk_evt))
-    assert result is a2a_evt, "ap-poster text events must pass through unchanged"
-
-
-def test_keeps_text_event_from_ap_orchestrator() -> None:
-    """The root orchestrator must always be forwarded."""
-    from protocols.a2a_event_filter import _after_event
-
-    a2a_evt = _text_status_event("orchestrator wrap-up text")
-    adk_evt = _FakeAdkEvent(author="ap-orchestrator")
-
-    result = asyncio.run(_after_event(executor_context=None, a2a_event=a2a_evt, adk_event=adk_evt))
+    result = asyncio.run(interceptor.after_event(None, a2a_evt, adk_evt))
     assert result is a2a_evt
 
 
-def test_keeps_artifact_update_event_regardless_of_author() -> None:
-    """Tool calls / results are audit signals. NEVER filter them."""
-    from protocols.a2a_event_filter import _after_event
-
-    a2a_evt = _artifact_update_event()
-    # Even authored by an "intermediate" specialist, artifact events pass through
-    adk_evt = _FakeAdkEvent(author="invoice-extractor")
-
-    result = asyncio.run(_after_event(executor_context=None, a2a_event=a2a_evt, adk_event=adk_evt))
-    assert result is a2a_evt, "artifact events must pass through unconditionally"
-
-
-def test_keeps_state_only_event_without_text() -> None:
-    """State transitions (working / submitted / completed) without text must pass."""
-    from protocols.a2a_event_filter import _after_event
-
+def test_keeps_state_only_event_regardless_of_author() -> None:
+    interceptor = _filter()
     a2a_evt = _state_only_status_event()
-    # Even authored by an intermediate specialist — state-only events aren't visible content
-    adk_evt = _FakeAdkEvent(author="invoice-extractor")
+    adk_evt = _FakeAdkEvent(author="invoice_extractor")
 
-    result = asyncio.run(_after_event(executor_context=None, a2a_event=a2a_evt, adk_event=adk_evt))
+    result = asyncio.run(interceptor.after_event(None, a2a_evt, adk_evt))
     assert result is a2a_evt
+
+
+# ---------------------------------------------------------------------------
+# Artifact-update event filtering (this is where visible text actually lives)
+# ---------------------------------------------------------------------------
+
+
+def test_drops_text_artifact_event_from_intermediate() -> None:
+    """Visible narrative text rides on TaskArtifactUpdateEvents in the new
+    ADK executor — this is the load-bearing case the filter must handle."""
+    interceptor = _filter()
+    a2a_evt = _text_artifact_event("Validating the extracted invoice...")
+    adk_evt = _FakeAdkEvent(author="ap_validator")
+
+    result = asyncio.run(interceptor.after_event(None, a2a_evt, adk_evt))
+    assert result is None
+
+
+def test_keeps_text_artifact_event_from_ap_poster() -> None:
+    interceptor = _filter()
+    a2a_evt = _text_artifact_event("Verdict is approved...")
+    adk_evt = _FakeAdkEvent(author="ap_poster")
+
+    result = asyncio.run(interceptor.after_event(None, a2a_evt, adk_evt))
+    assert result is a2a_evt
+
+
+def test_keeps_data_artifact_regardless_of_author() -> None:
+    """Tool call / function response artifacts must pass through for audit."""
+    interceptor = _filter()
+    a2a_evt = _data_artifact_event()
+    adk_evt = _FakeAdkEvent(author="invoice_extractor")
+
+    result = asyncio.run(interceptor.after_event(None, a2a_evt, adk_evt))
+    assert result is a2a_evt
+
+
+# ---------------------------------------------------------------------------
+# Topology derivation
+# ---------------------------------------------------------------------------
+
+
+def test_derives_intermediates_from_sequential_agent() -> None:
+    """Walking an LlmAgent → SequentialAgent → [Extract, Validate, Post]
+    tree yields {Extract.name, Validate.name} — Post is terminal."""
+    from google.adk.agents import LlmAgent, SequentialAgent
+
+    from protocols.a2a_event_filter import derive_intermediate_authors
+
+    extract = LlmAgent(name="invoice_extractor", model="gemini-2.5-flash", instruction="x")
+    validate = LlmAgent(name="ap_validator", model="gemini-2.5-flash", instruction="x")
+    poster = LlmAgent(name="ap_poster", model="gemini-2.5-flash", instruction="x")
+    pipeline = SequentialAgent(name="ap_pipeline", sub_agents=[extract, validate, poster])
+    root = LlmAgent(name="ap_orchestrator", model="gemini-2.5-flash", instruction="x", sub_agents=[pipeline])
+
+    result = derive_intermediate_authors(root)
+    assert result == frozenset({"invoice_extractor", "ap_validator"})
+
+
+def test_derives_empty_set_when_no_sequential_agent() -> None:
+    """A pure LlmAgent with no SequentialAgent sub-tree contributes no intermediates."""
+    from google.adk.agents import LlmAgent
+
+    from protocols.a2a_event_filter import derive_intermediate_authors
+
+    agent = LlmAgent(name="solo", model="gemini-2.5-flash", instruction="x")
+    assert derive_intermediate_authors(agent) == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# Robustness
+# ---------------------------------------------------------------------------
 
 
 def test_fail_open_on_exception() -> None:
-    """If the filter explodes on a malformed event, return the event unchanged."""
-    from protocols.a2a_event_filter import _after_event
+    """A malformed event whose attribute access throws is returned unchanged."""
+    interceptor = _filter()
 
     class _Broken:
         @property
+        def artifact(self) -> Any:
+            raise RuntimeError("decode error")
+
+        @property
         def status(self) -> Any:
-            raise RuntimeError("simulated decode error")
+            raise RuntimeError("decode error")
 
     broken = _Broken()
-    adk_evt = _FakeAdkEvent(author="invoice-extractor")
+    adk_evt = _FakeAdkEvent(author="invoice_extractor")
 
-    result = asyncio.run(_after_event(executor_context=None, a2a_event=broken, adk_event=adk_evt))
-    assert result is broken, "fail-open: malformed event passes through unchanged"
+    result = asyncio.run(interceptor.after_event(None, broken, adk_evt))
+    assert result is broken
+
+
+def test_empty_drop_set_keeps_every_event() -> None:
+    """If no intermediates were detected, the filter is a passthrough."""
+    from protocols.a2a_event_filter import make_event_filter_interceptor
+
+    interceptor = make_event_filter_interceptor(frozenset())
+    a2a_evt = _text_artifact_event("anything")
+    adk_evt = _FakeAdkEvent(author="invoice_extractor")
+
+    result = asyncio.run(interceptor.after_event(None, a2a_evt, adk_evt))
+    assert result is a2a_evt
 
 
 def test_logs_warning_on_drop(caplog: pytest.LogCaptureFixture) -> None:
-    """Each drop emits one structured WARNING line so the count is observable."""
-    from protocols.a2a_event_filter import _after_event
-
-    a2a_evt = _text_status_event("Validating the extracted invoice...")
-    adk_evt = _FakeAdkEvent(author="ap-validator")
+    interceptor = _filter()
+    a2a_evt = _text_artifact_event("Validating the extracted invoice INV-2026-042...")
+    adk_evt = _FakeAdkEvent(author="ap_validator")
 
     with caplog.at_level(logging.WARNING, logger="protocols.a2a_event_filter"):
-        asyncio.run(_after_event(executor_context=None, a2a_event=a2a_evt, adk_event=adk_evt))
+        asyncio.run(interceptor.after_event(None, a2a_evt, adk_evt))
 
     drop_records = [r for r in caplog.records if "a2a event filter: dropped" in r.getMessage()]
-    assert len(drop_records) == 1, f"expected 1 drop log line, got {len(drop_records)}: {caplog.records!r}"
-    msg = drop_records[0].getMessage()
-    assert "author=ap-validator" in msg
-    assert "Validating" in msg, "log line must include a text preview for debugging"
+    assert len(drop_records) == 1
+    assert "author=ap_validator" in drop_records[0].getMessage()
+    assert "Validating" in drop_records[0].getMessage()

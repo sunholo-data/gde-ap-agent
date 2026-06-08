@@ -340,11 +340,16 @@ def build_a2a_app(
     # Second interceptor: filter intermediate AP specialist (invoice-extractor,
     # ap-validator) text events from the peer-bound A2A wire. Their "thinking
     # out loud" narration was concatenating into the GE chat bubble alongside
-    # ap-poster's actual verdict. See docs/design/forks/gde-ap-agent/v0.1.0/
-    # a2a-event-filtering.md for the design and trade-offs.
-    from protocols.a2a_event_filter import make_event_filter_interceptor
+    # ap-poster's actual verdict. The drop-set is derived from the agent
+    # topology at startup — any SequentialAgent's non-terminal sub-agents
+    # are treated as intermediate. Robust to UUID-derived ADK agent names
+    # (which is what _safe_agent_name() produces for Firestore-backed skills).
+    # See docs/design/forks/gde-ap-agent/v0.1.0/a2a-event-filtering.md for the
+    # design and trade-offs.
+    from protocols.a2a_event_filter import derive_intermediate_authors, make_event_filter_interceptor
 
-    event_filter = make_event_filter_interceptor()
+    intermediates = derive_intermediate_authors(runner.agent)
+    event_filter = make_event_filter_interceptor(intermediates)
     executor_config = A2aAgentExecutorConfig(execute_interceptors=[file_interceptor, event_filter])
     # `force_new_version=True` is REQUIRED for interceptors to actually fire.
     # ADK's A2aAgentExecutor has two impl paths: NEW (with interceptors) and
