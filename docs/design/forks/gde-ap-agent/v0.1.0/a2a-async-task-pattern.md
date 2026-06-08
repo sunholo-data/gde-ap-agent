@@ -1,8 +1,17 @@
 # A2A async task pattern — return early on `message/send`, SSE on `message/stream`
 
-**Status**: Planned
+**Status**: Planned (M1 observation complete — see "M1 finding" below)
 **Priority**: P0 (High) — the GE experience is timeout-bound until this lands; any pipeline >60s is broken from the peer side regardless of how good the backend is
-**Estimated**: ~1.0 day across 3 milestones (M1 ~1h observation, M2 ~0.5d async send, M3 ~0.5d SSE — conditional on M1 finding)
+**Estimated**: ~0.5 day remaining (M3 SSE verification; M2 deprioritized per M1 finding)
+
+## M1 finding (2026-06-08, empirical)
+
+GE uses **`message/sendSubscribe`** (SSE streaming), not `message/send`. Confirmed by deploying the observation middleware as a `BaseHTTPMiddleware` subclass: the middleware crashed `sse_starlette.sse.__call__ → _listen_for_disconnect → receive_or_disconnect` with `RuntimeError: Unexpected message received: http.request`. The fact that `sse_starlette` was the layer that broke is itself proof of the streaming code path being exercised — the unary `message/send` handler does not go through `sse_starlette`. The middleware was rolled back in `434b246` to unblock GE.
+
+**Priority flip:** M3 (SSE verification) is now P0 and mandatory. M2 (async send + tasks/get polling) is P2 and optional — GE does not poll, so returning early on `message/send` is a peer-compatibility nicety rather than a fix for the live problem. M2 still has value for non-GE peers (curl-style integrators, the in-house template); ship it only if a concrete peer needs it.
+
+**Re-instrumentation for future visibility:** The observation middleware idea is sound; the implementation is not. Future iterations must either be (a) pure-ASGI middleware that does NOT subclass `BaseHTTPMiddleware`, or (b) instrument inside the `A2aAgentExecutor.execute` entry point (no middleware, no body re-injection, no SSE interference).
+
 **Scope**: Backend
 **Dependencies**:
 - [A2A `message/send` bridge (implemented)](./implemented/a2a-message-send-bridge.md)
@@ -403,14 +412,53 @@ peer / GE
 - [ ] Deploy; live verification via `verify-a2a.sh` + simulate script against the deployed agent
 - [ ] Gemini Enterprise upload test: full pipeline runs cleanly; GE renders the final response without `ECONNRESET`
 
-### M3 — SSE verification on `message/stream` (~0.5 day, conditional on M1)
+### M3 — SSE verification on `message/sendSubscribe` (~0.5 day, NOW P0)
 
-- [ ] Unit test capturing chunked-response timing on `message/stream` (~80 LOC)
-- [ ] If buffering observed, add `ExecuteInterceptor.after_event` flush handler (~50 LOC)
-- [ ] CLI `aiplatform a2a stream <url>` for manual streaming inspection (~50 LOC)
-- [ ] Update `scripts/simulate-a2a-peer.py` Step 5 to consume the stream properly (we currently treat sendSubscribe as a single response) (~30 LOC)
-- [ ] If M1 says GE supports `message/stream`: real GE test
-- [ ] Extend `docs/learnings/template-pr-a2a-spec-compliance.md` with §8 covering the async pattern + the streaming pattern + the trade-offs
+**Audit of ADK's SSE event flow** (read `google.adk.a2a.executor.a2a_agent_executor.A2aAgentExecutor.execute` directly via the ADK MCP):
+
+```
+new task → enqueue TaskStatusUpdateEvent(state=submitted)
+        → session prep
+        → enqueue TaskStatusUpdateEvent(state=working, metadata={app_name, user_id, session_id})
+        → async for adk_event in runner.run_async():           # ★ idle gap risk here
+              for a2a_event in convert_event_to_a2a_events(adk_event):
+                  task_result_aggregator.process_event(a2a_event)
+                  await event_queue.enqueue_event(a2a_event)
+        → enqueue TaskArtifactUpdateEvent(last_chunk=True)
+        → enqueue TaskStatusUpdateEvent(state=completed, final=True)
+```
+
+**Three load-bearing findings:**
+
+1. **Events flow per-ADK-event.** A `SequentialAgent` like `ap-pipeline` emits an ADK event for each sub-agent's start/end + each tool call response, so under normal flow the SSE stream gets a write every 1-10s.
+2. **No heartbeats during silent agent steps.** If a single tool call takes >25s (e.g. a slow MCP grounding fetch against Vertex AI Search), nothing flows on the wire. Whichever idle timeout is between us and GE will fire.
+3. **`cancel()` is a TODO in ADK.** `A2aAgentExecutor.cancel` raises `NotImplementedError`. That's fine for M3 (GE isn't going to cancel mid-stream) but is a known gap for M2 if we ever ship it.
+
+**M3 design — two phases:**
+
+**Phase A — Verify (1-2h):**
+- [ ] Local SSE smoke test: hit `POST /a2a/ method=message/sendSubscribe` with a short LlmAgent; assert ≥3 distinct `TaskStatusUpdateEvent` / `TaskArtifactUpdateEvent` events arrive on the SSE stream with `\n\n` boundaries (~50 LOC pytest)
+- [ ] Live GE upload test against the redeployed agent (no middleware); confirm GE receives a coherent response and no `RuntimeError`
+- [ ] Capture event timing in Cloud Logging (the existing `task_id` correlation in ADK's event converter is enough; no observation middleware needed) — confirm event-to-event gaps stay under whatever GE/proxy idle ceiling is (target <25s)
+
+**Phase B — Keepalive (only if Phase A shows gaps >25s, ~30min):**
+
+`a2a-python`'s `JSONRPCApplication._build_response` constructs the `EventSourceResponse` without a `ping=` parameter (verified by reading `a2a/server/apps/jsonrpc/jsonrpc_app.py:559`). `sse_starlette.EventSourceResponse` accepts `ping: int` — seconds between SSE-comment pings that keep the TCP connection alive during idle periods. Setting `ping=15` makes a wire-level write happen every 15s, well under any reasonable proxy/Cloud Run idle timeout.
+
+Implementation (one-shot, ~20 LOC):
+- [ ] Subclass `JSONRPCApplication` (or monkey-patch in `protocols/a2a_invocation.py` after the executor is built) so that `_build_response` injects `ping=15` whenever `EventSourceResponse` is constructed
+- [ ] Single unit test: stub the handler to yield one event after a 30s sleep; assert the SSE response wire shows at least 1 `:ping` comment line before the data event
+
+**Why this beats a full heartbeat-event sidecar:**
+- A `TaskStatusUpdateEvent(state=working, heartbeat=true)` would be a semantic event the peer's UI might render as "still working" — desirable for some peers but ambiguous for GE (we don't know if GE handles a flood of working events gracefully). SSE comment pings are spec-defined as ignorable, so no peer-side rendering risk.
+- Cheaper: 20 LOC + 1 test vs 80 LOC + 2 tests + a sidecar asyncio task that has to coordinate with the event queue.
+- Heartbeat events would also pollute the TaskStore's event log, making `tasks/get` polling noisier. Comments don't touch the store.
+
+The peer-side "still working" indicator can be derived from the initial `TaskStatusUpdateEvent(state=working)` ADK already emits before agent run, plus the wire-level keepalive — peers in idle render-the-spinner state until the next semantic event lands.
+
+**Out of M3 scope:**
+- A pure-ASGI replacement for `A2AObservationMiddleware` — separate work; cite in the future-work section
+- Per-event heartbeats with `metadata.heartbeat=true` for richer peer UIs — defer until we have a peer that actually wants them
 
 ## Migration & Rollout
 
