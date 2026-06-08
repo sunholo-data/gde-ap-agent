@@ -148,6 +148,98 @@ def _auth_required() -> bool:
     )
 
 
+class A2AObservationMiddleware(BaseHTTPMiddleware):
+    """Log per-request signal for the A2A surface — M1 of the async-task
+    sprint (`docs/design/forks/gde-ap-agent/v0.1.0/a2a-async-task-pattern.md`).
+
+    Captures method (sendSubscribe vs send vs tasks/get vs tasks/cancel),
+    User-Agent, message_id, task_id, parts count, duration. Goal: learn
+    what Gemini Enterprise actually does — does it poll `tasks/get` after
+    a `send` response with `state: working`? Does it ever call
+    `message/stream`? Without this data we'd be guessing.
+
+    Designed to be CHEAP: peeks at the JSON-RPC body (~few KB max),
+    structured logging, no extra middleware allocations. Disable via
+    `A2A_LOG_OBSERVATIONS=false` if it ever becomes noise.
+    """
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if not _observations_enabled():
+            return await call_next(request)
+
+        # Discovery paths are GETs without a JSON-RPC body — log lightly.
+        if request.method == "GET":
+            ua = request.headers.get("user-agent", "?")
+            logger.info("a2a obs: GET path=%s ua=%s", request.url.path, ua)
+            return await call_next(request)
+
+        # POST: peek the body for the JSON-RPC method + task_id.
+        # Starlette consumes the body stream, so we read + replace it so
+        # the downstream handler still sees the original bytes.
+        try:
+            body_bytes = await request.body()
+        except Exception:
+            return await call_next(request)
+
+        # Build a parsed view; tolerant of malformed bodies.
+        rpc_method = "?"
+        message_id = "?"
+        task_id = "?"
+        parts_summary = "?"
+        try:
+            import json as _json
+
+            payload = _json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+            rpc_method = payload.get("method", "?")
+            params = payload.get("params") or {}
+            msg = params.get("message") or {}
+            message_id = msg.get("messageId") or msg.get("message_id") or "?"
+            task_id = params.get("id") or params.get("taskId") or msg.get("taskId") or "?"
+            parts = msg.get("parts") or []
+            parts_summary = (
+                ",".join(p.get("kind") if isinstance(p, dict) else getattr(p, "kind", "?") for p in parts) or "(none)"
+            )
+        except Exception:
+            # Don't break the request because logging parsing failed.
+            pass
+
+        ua = request.headers.get("user-agent", "?")
+        peer_addr = request.client.host if request.client else "?"
+        logger.info(
+            "a2a obs: POST path=%s method=%s message_id=%s task_id=%s parts=%s ua=%r peer=%s",
+            request.url.path,
+            rpc_method,
+            message_id,
+            task_id,
+            parts_summary,
+            ua,
+            peer_addr,
+        )
+
+        # Re-inject the consumed body so call_next sees it.
+        # Starlette's `_receive` channel is the only way to put bytes back
+        # in front of the downstream handler.
+        async def _receive() -> dict[str, object]:
+            return {"type": "http.request", "body": body_bytes, "more_body": False}
+
+        # Starlette-internal but stable; documented pattern for body re-injection
+        request._receive = _receive
+
+        return await call_next(request)
+
+
+def _observations_enabled() -> bool:
+    return os.environ.get("A2A_LOG_OBSERVATIONS", "true").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+
+
 def _build_runner(agent: BaseAgent) -> Runner:
     """Construct a Runner with our singleton backing services.
 
@@ -274,6 +366,15 @@ def build_a2a_app(
     # (`/`, `/.well-known/agent.json`, etc.) — the FastAPI mount strips the
     # `/a2a` prefix before delegating.
     a2a_app.add_middleware(A2AAuthMiddleware)
+    # Observation middleware: log JSON-RPC method, message_id, task_id,
+    # User-Agent on every request. Cheap; tells us what GE actually does
+    # (does it poll tasks/get? does it call message/stream?). Add AFTER
+    # auth in the call chain so auth-rejected calls don't log noise; but
+    # because Starlette middleware execution is LIFO, the LAST-added
+    # middleware runs FIRST — so we add observation AFTER auth here, and
+    # at runtime observation runs first, capturing everything including
+    # auth-rejected hits. Documented in a2a-async-task-pattern.md M1.
+    a2a_app.add_middleware(A2AObservationMiddleware)
     return a2a_app
 
 
