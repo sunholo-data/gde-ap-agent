@@ -244,7 +244,12 @@ async def _save_inline_bytes_as_artifact(
     blocks, parsed_ms, parse_err = _parse_bytes_to_blocks(decoded, mime_type, display_name)
     if blocks:
         data = json.dumps(blocks).encode("utf-8")
-        logger.info(
+        # WARNING-level: load-bearing observability. The project has no
+        # central logging config; root logger defaults to WARNING so
+        # logger.info() is invisible in stackdriver. Until the broader
+        # logging setup is fixed, the parse-status log line must be at
+        # WARNING so deploys can be proven from logs alone.
+        logger.warning(
             "AILANG Parse (A2A): parsed %s in %dms (%d blocks)",
             display_name or "file",
             parsed_ms,
@@ -258,14 +263,15 @@ async def _save_inline_bytes_as_artifact(
             "bytesBase64": base64.b64encode(decoded).decode("ascii"),
         }
         data = json.dumps([envelope]).encode("utf-8")
-        # Only log when parse was actually attempted (skipped cases are
-        # the common path for non-deterministic MIMEs and would be noisy)
-        if parse_err and not parse_err.startswith(("no suffix mapping", "suffix")):
-            logger.info(
-                "AILANG Parse (A2A): fallback to bytes envelope for %s: %s",
-                display_name or "file",
-                parse_err,
-            )
+        # WARNING-level even for fall-through cases — without this we
+        # can't distinguish "parse worked" from "parse skipped because
+        # suffix not deterministic" in production logs. Includes the
+        # suffix-skip case (low cardinality; one log line per A2A turn).
+        logger.warning(
+            "AILANG Parse (A2A): fallback to bytes envelope for %s: %s",
+            display_name or "file",
+            parse_err or "no parse attempted",
+        )
 
     artifact = Part(inline_data=Blob(data=data, mime_type="application/json"))
     # ADK's artifact service stores per (app_name, user_id, session_id, filename)
@@ -415,7 +421,7 @@ def make_file_extraction_interceptor(runner: Runner, *, app_name: str, user_id: 
                     display_name=display_name,
                 )
                 new_doc_ids.append(doc_id)
-                logger.info(
+                logger.warning(
                     "a2a file accepted (bytes): name=%s mime=%s decoded=%d doc_id=%s",
                     display_name,
                     file.mime_type,
@@ -444,7 +450,7 @@ def make_file_extraction_interceptor(runner: Runner, *, app_name: str, user_id: 
                     display_name=display_name,
                 )
                 new_doc_ids.append(doc_id)
-                logger.info(
+                logger.warning(
                     "a2a file accepted (uri): name=%s uri=%s mime=%s doc_id=%s",
                     display_name,
                     file.uri,
