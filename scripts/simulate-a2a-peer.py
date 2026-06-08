@@ -18,9 +18,11 @@ Default AP_URL is the gde-ap-agent live deploy.
 
 from __future__ import annotations
 
+import base64
 import json
 import sys
 import uuid
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -242,6 +244,113 @@ def simulate(ap_url: str) -> int:
     out("•", "Stores it as a tool descriptor in the Agentspace app")
     out("•", "Routes other agents' tool calls to card.url via its internal A2A handler")
     out("•", "Surfaces the skill catalogue in the workspace UI for human discovery")
+
+    # Step 7 — Scenario A: send a FilePart and confirm the doc-loader picks it up
+    step("Step 7 · Attach a real invoice file as A2A FilePart (Scenario A)")
+    demo_file = (
+        Path(__file__).parent.parent
+        / "infrastructure"
+        / "demo-invoices"
+        / "acme-gmbh-invoice-2026-042.docx"
+    )
+    if not demo_file.exists():
+        out("⚠", f"demo file missing: {demo_file}; skipping Step 7")
+    else:
+        file_bytes = demo_file.read_bytes()
+        encoded = base64.b64encode(file_bytes).decode("ascii")
+        out("→", f"POST {card['url']} with FilePart ({len(file_bytes)} bytes, name={demo_file.name})")
+        file_msg_id = str(uuid.uuid4())
+        file_rpc = {
+            "jsonrpc": "2.0",
+            "id": file_msg_id,
+            "method": "message/send",
+            "params": {
+                "message": {
+                    "role": "user",
+                    "parts": [
+                        {"kind": "text", "text": "Please process this invoice."},
+                        {
+                            "kind": "file",
+                            "file": {
+                                "bytes": encoded,
+                                "mimeType": (
+                                    "application/vnd.openxmlformats-officedocument."
+                                    "wordprocessingml.document"
+                                ),
+                                "name": demo_file.name,
+                            },
+                        },
+                    ],
+                    "messageId": file_msg_id,
+                },
+                "configuration": {"acceptedOutputModes": ["text"]},
+            },
+        }
+        file_status, _, file_body = http_post(card["url"], json.dumps(file_rpc))
+        if file_status == 200:
+            try:
+                parsed = json.loads(file_body)
+                result = parsed.get("result") or {}
+                out("✓", f"HTTP 200; Task envelope kind={result.get('kind') or result.get('type') or '?'}")
+                out(
+                    "✓",
+                    "FilePart was accepted (size > text-only baseline). Check Cloud Run logs for"
+                    " 'doc loader: turn start — document_ids=[...]' to confirm pipeline pickup.",
+                )
+            except json.JSONDecodeError:
+                out("⚠", f"non-JSON response: {file_body[:200]}")
+        else:
+            out("⚠", f"HTTP {file_status}: {file_body[:200]}")
+
+    # Step 8 — Scenario B: text-only query about an existing bucket doc
+    step("Step 8 · Ask about existing org-bucket documents (Scenario B)")
+    bucket_msg_id = str(uuid.uuid4())
+    bucket_rpc = {
+        "jsonrpc": "2.0",
+        "id": bucket_msg_id,
+        "method": "message/send",
+        "params": {
+            "message": {
+                "role": "user",
+                "parts": [
+                    {
+                        "kind": "text",
+                        "text": (
+                            "What invoices do we have on file for Acme? "
+                            "List the documents available in the org bucket."
+                        ),
+                    }
+                ],
+                "messageId": bucket_msg_id,
+            },
+            "configuration": {"acceptedOutputModes": ["text"]},
+        },
+    }
+    out("→", f"POST {card['url']} text-only; relies on list_org_documents tool call")
+    bucket_status, _, bucket_body = http_post(card["url"], json.dumps(bucket_rpc))
+    if bucket_status == 200:
+        try:
+            parsed = json.loads(bucket_body)
+            artifacts = (parsed.get("result") or {}).get("artifacts") or []
+            text_chunks = []
+            for art in artifacts:
+                for part in art.get("parts", []):
+                    t = part.get("text") or ""
+                    if t:
+                        text_chunks.append(t)
+            answer = " ".join(text_chunks).lower()
+            if "acme" in answer or "invoice" in answer or "bucket" in answer or "no documents" in answer:
+                out("✓", f"orchestrator referenced bucket context. First 200 chars: {answer[:200]!r}")
+            else:
+                out(
+                    "⚠",
+                    f"orchestrator answered but didn't reference bucket. First 200 chars: {answer[:200]!r}",
+                )
+        except json.JSONDecodeError:
+            out("⚠", f"non-JSON response: {bucket_body[:200]}")
+    else:
+        out("⚠", f"HTTP {bucket_status}: {bucket_body[:200]}")
+
     return 0
 
 

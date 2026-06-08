@@ -246,7 +246,14 @@ def build_a2a_app(
         user_id="a2a-public-peer",
     )
     executor_config = A2aAgentExecutorConfig(execute_interceptors=[file_interceptor])
-    executor = A2aAgentExecutor(runner=runner, config=executor_config)
+    # `force_new_version=True` is REQUIRED for interceptors to actually fire.
+    # ADK's A2aAgentExecutor has two impl paths: NEW (with interceptors) and
+    # LEGACY (no interceptors). It picks NEW only if either the caller sets
+    # force_new_version OR the peer sends a "new-version" extension hint in
+    # the X-A2A-Extensions header. Gemini Enterprise doesn't send that hint
+    # (verified live 2026-06-08), so without force_new_version our file
+    # extraction interceptor silently never runs.
+    executor = A2aAgentExecutor(runner=runner, config=executor_config, force_new_version=True)
     request_handler = DefaultRequestHandler(
         agent_executor=executor,
         task_store=InMemoryTaskStore(),
