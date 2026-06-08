@@ -226,11 +226,36 @@ def _is_enabled() -> bool:
     return os.environ.get("ENABLE_A2A_FILE_INPUT", "false").lower() in ("true", "1", "yes")
 
 
-def make_file_extraction_interceptor(runner: Runner, *, app_name: str, user_id: str) -> Any:
+def _derive_user_id(context: Any) -> str:
+    """Mirror ADK's `_get_user_id` in `a2a/converters/request_converter.py`.
+
+    ADK uses `call_context.user.user_name` when auth populates it, else
+    falls back to `f"A2A_USER_{context.context_id}"`. We MUST match this
+    derivation when injecting state because ADK's downstream session
+    lookup will use the same key. Earlier versions hardcoded
+    `"a2a-public-peer"` which caused a session-ownership ValueError when
+    Vertex's session_service did the user_id check.
+    """
+    call_ctx = getattr(context, "call_context", None)
+    if call_ctx is not None:
+        user = getattr(call_ctx, "user", None)
+        if user is not None:
+            name = getattr(user, "user_name", None)
+            if name:
+                return name
+    return f"A2A_USER_{context.context_id}"
+
+
+def make_file_extraction_interceptor(runner: Runner, *, app_name: str, user_id: str | None = None) -> Any:
     """Build an `ExecuteInterceptor` that extracts FileParts before the agent runs.
 
-    Closure captures the runner (for artifact_service + session_service access)
-    plus the app_name and synthetic A2A user_id used at agent construction.
+    Closure captures the runner (for artifact_service + session_service access).
+    The `user_id` parameter is kept for API back-compat but the actual
+    user_id used for session/artifact writes is derived per-request via
+    `_derive_user_id` so it matches what ADK's request_converter does
+    downstream. Passing a fixed `user_id` here would cause the session
+    Vertex lookup to fail with "does not belong to user" (caught live
+    2026-06-08T04:58 against the production Vertex session_service).
 
     Returns an `ExecuteInterceptor` dataclass instance ready to plug into
     `A2aAgentExecutorConfig(execute_interceptors=[...])`. Disabled at
@@ -238,6 +263,7 @@ def make_file_extraction_interceptor(runner: Runner, *, app_name: str, user_id: 
     the interceptor into a pure pass-through so flag-off behaviour is
     byte-identical to no interceptor at all.
     """
+    _ = user_id  # retained for API back-compat; actual id derived per-request
     from google.adk.a2a.executor.config import ExecuteInterceptor
 
     async def _before_agent(context: RequestContext) -> RequestContext:
@@ -256,6 +282,9 @@ def make_file_extraction_interceptor(runner: Runner, *, app_name: str, user_id: 
         new_doc_ids: list[str] = []
         rejected: list[tuple[str, str]] = []  # (filename, reason)
         session_id = context.context_id or ""
+        # Derive the user_id ADK will use downstream so our session/artifact
+        # writes land under the same key it looks up.
+        request_user_id = _derive_user_id(context)
 
         for part in context.message.parts:
             root = getattr(part, "root", part)
@@ -283,7 +312,7 @@ def make_file_extraction_interceptor(runner: Runner, *, app_name: str, user_id: 
                 await _save_inline_bytes_as_artifact(
                     runner=runner,
                     app_name=app_name,
-                    user_id=user_id,
+                    user_id=request_user_id,
                     session_id=session_id,
                     doc_id=doc_id,
                     decoded=decoded,
@@ -312,7 +341,7 @@ def make_file_extraction_interceptor(runner: Runner, *, app_name: str, user_id: 
                 await _save_uri_pointer_as_artifact(
                     runner=runner,
                     app_name=app_name,
-                    user_id=user_id,
+                    user_id=request_user_id,
                     session_id=session_id,
                     doc_id=doc_id,
                     uri=file.uri,
@@ -347,7 +376,7 @@ def make_file_extraction_interceptor(runner: Runner, *, app_name: str, user_id: 
             await _inject_document_ids(
                 runner=runner,
                 app_name=app_name,
-                user_id=user_id,
+                user_id=request_user_id,
                 session_id=session_id,
                 new_doc_ids=new_doc_ids,
             )

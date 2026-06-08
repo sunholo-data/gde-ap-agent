@@ -127,10 +127,12 @@ def test_a2a_file_with_bytes_extracted_to_document_id(monkeypatch: pytest.Monkey
     parts = new_context.message.parts
     assert len(parts) == 1, f"expected 1 part after strip, got {len(parts)}: {parts!r}"
 
-    # Session created with document_ids
+    # Session created with document_ids — interceptor derives user_id
+    # from the context_id (matches ADK's request_converter convention).
+    expected_user = "A2A_USER_test-session-1"
     session = asyncio.run(
         runner.session_service.get_session(
-            app_name="test_a2a_files", user_id="a2a-public-peer", session_id="test-session-1"
+            app_name="test_a2a_files", user_id=expected_user, session_id="test-session-1"
         )
     )
     assert session is not None, "interceptor must create the session if missing"
@@ -142,7 +144,7 @@ def test_a2a_file_with_bytes_extracted_to_document_id(monkeypatch: pytest.Monkey
     artifact = asyncio.run(
         runner.artifact_service.load_artifact(
             app_name="test_a2a_files",
-            user_id="a2a-public-peer",
+            user_id=expected_user,
             session_id="test-session-1",
             filename=f"doc:{doc_id}.json",
         )
@@ -170,10 +172,11 @@ def test_a2a_file_with_uri_registered(monkeypatch: pytest.MonkeyPatch) -> None:
     # parts list after extraction).
     assert len(new_context.message.parts) == 0
 
+    expected_user = "A2A_USER_test-session-uri"
     session = asyncio.run(
         runner.session_service.get_session(
             app_name="test_a2a_files",
-            user_id="a2a-public-peer",
+            user_id=expected_user,
             session_id="test-session-uri",
         )
     )
@@ -184,7 +187,7 @@ def test_a2a_file_with_uri_registered(monkeypatch: pytest.MonkeyPatch) -> None:
     artifact = asyncio.run(
         runner.artifact_service.load_artifact(
             app_name="test_a2a_files",
-            user_id="a2a-public-peer",
+            user_id=expected_user,
             session_id="test-session-uri",
             filename=f"doc:{doc_ids[0]}.json",
         )
