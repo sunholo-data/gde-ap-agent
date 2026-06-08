@@ -85,6 +85,15 @@ _ALLOWED_URI_SCHEMES: tuple[str, ...] = ("https", "gs")
 # document_ids list (set by AG-UI path or prior A2A turns) so we append
 # rather than clobber.
 _STATE_DOCUMENT_IDS = "document_ids"
+# Mirrors `_STATE_DOCS_LOADED` in `adk.callbacks`. The doc-loader's
+# `to_load` filter is `[d for d in document_ids if d not in loaded_set]`,
+# so adding our minted A2A doc_ids here makes the loader treat them as
+# already-materialised and skip the Firestore lookup that would
+# otherwise fail (A2A artifacts are session-scoped, not Firestore-backed
+# like AG-UI uploads). Caught live 2026-06-08T05:13: without this the
+# loader logs "Document not found" + "TURN-1 INVARIANT VIOLATED" and
+# our pre-saved artifact gets ignored.
+_STATE_DOCS_LOADED = "app:docs_loaded"
 _STATE_A2A_AGENT_RESOURCE_NAME = "a2a:agent_resource_name"
 
 
@@ -431,7 +440,12 @@ async def _inject_document_ids(
                 app_name=app_name,
                 user_id=user_id,
                 session_id=session_id,
-                state={_STATE_DOCUMENT_IDS: list(new_doc_ids)},
+                state={
+                    _STATE_DOCUMENT_IDS: list(new_doc_ids),
+                    # Mark as already-loaded so doc_loader's Firestore
+                    # lookup is skipped (our artifact is pre-materialised).
+                    _STATE_DOCS_LOADED: list(new_doc_ids),
+                },
             )
             logger.info(
                 "a2a interceptor: created session %s with %d document_ids",
@@ -445,6 +459,9 @@ async def _inject_document_ids(
     # Existing session — append an event carrying the state delta.
     existing = list(session.state.get(_STATE_DOCUMENT_IDS) or [])
     merged = existing + [d for d in new_doc_ids if d not in existing]
+    # Same merge logic for docs_loaded so doc_loader skips our pre-saved artifacts.
+    loaded_existing = list(session.state.get(_STATE_DOCS_LOADED) or [])
+    loaded_merged = loaded_existing + [d for d in new_doc_ids if d not in loaded_existing]
 
     try:
         from google.adk.events.event import Event
@@ -452,7 +469,10 @@ async def _inject_document_ids(
         event = Event(
             invocation_id=str(uuid.uuid4()),
             author="a2a_file_extraction",
-            state_delta={_STATE_DOCUMENT_IDS: merged},
+            state_delta={
+                _STATE_DOCUMENT_IDS: merged,
+                _STATE_DOCS_LOADED: loaded_merged,
+            },
         )
         await runner.session_service.append_event(session, event)
         logger.info(
