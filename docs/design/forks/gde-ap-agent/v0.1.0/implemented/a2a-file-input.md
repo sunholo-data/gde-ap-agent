@@ -1,6 +1,6 @@
 # A2A document support — inbound files + org-scoped buckets
 
-**Status**: Planned
+**Status**: Implemented
 **Priority**: P1 (Medium) — file-upload-over-A2A is the natural follow-up to the message/send bridge; closes a real Gemini Enterprise use case that hit production within hours of registration
 **Estimated**: ~1.0 day implementation + tests + verification (was 0.75 — bumped for the org-bucket mode)
 **Scope**: Backend
@@ -9,7 +9,7 @@
 - ADK_ARTIFACT_BUCKET already provisioned (used by the AG-UI surface)
 - `a2a.types.FilePart` / `FileWithBytes` / `FileWithUri` confirmed in installed `a2a-sdk`
 **Created**: 2026-06-08
-**Last Updated**: 2026-06-08
+**Last Updated**: 2026-06-08 (implemented)
 **Upstream-bound**: Yes — every fork accepting documents via A2A hits the same six questions
 
 ## Problem Statement
