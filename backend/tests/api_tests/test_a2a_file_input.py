@@ -104,11 +104,31 @@ def _file_with_uri_part(uri: str, *, mime_type: str | None = None, name: str = "
 
 def test_a2a_file_with_bytes_extracted_to_document_id(monkeypatch: pytest.MonkeyPatch) -> None:
     """A FileWithBytes part is extracted; a document_id is minted; an
-    artifact is saved; state["document_ids"] is populated; the FilePart
-    is removed from message.parts so ADK's native converter doesn't
-    double-inject it into Gemini.
+    artifact is saved with the AG-UI-shape parsed blocks; state["document_ids"]
+    is populated; the FilePart is removed from message.parts so ADK's
+    native converter doesn't double-inject it into Gemini.
+
+    Parse path is monkeypatched to return canned blocks — same fixture
+    pattern as the AG-UI upload tests. Real ailang-parse is not called.
     """
+    import json as _json
+
     monkeypatch.setenv("ENABLE_A2A_FILE_INPUT", "true")
+
+    # Monkeypatch ailang-parse to return canned blocks. The interceptor
+    # detects this is a deterministic MIME (.docx → ailang-parse-supported)
+    # and writes the structured blocks shape as the artifact body.
+    canned_blocks = [
+        {"type": "heading", "level": 1, "text": "Invoice INV-2026-042"},
+        {"type": "paragraph", "text": "Vendor: Acme GmbH (Berlin)"},
+    ]
+    from tools.documents.ailang_parse import ParseOutcome
+
+    def _fake_parse(tmp_path: str, output_format: str) -> ParseOutcome:
+        assert output_format == "blocks"
+        return ParseOutcome(content=canned_blocks, output_format=output_format)
+
+    monkeypatch.setattr("tools.documents.ailang_parse._parse_file_sync", _fake_parse)
 
     from protocols.a2a_file_extraction import make_file_extraction_interceptor
 
@@ -117,7 +137,11 @@ def test_a2a_file_with_bytes_extracted_to_document_id(monkeypatch: pytest.Monkey
     context = _build_context(
         [
             _text_part("Process this invoice"),
-            _file_with_bytes_part(b"%PDF-1.4 fake invoice", mime_type="application/pdf", name="acme.pdf"),
+            _file_with_bytes_part(
+                b"PK\x03\x04 fake docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                name="acme.docx",
+            ),
         ]
     )
 
@@ -139,7 +163,8 @@ def test_a2a_file_with_bytes_extracted_to_document_id(monkeypatch: pytest.Monkey
     doc_ids = session.state.get("document_ids", [])
     assert len(doc_ids) == 1, f"expected 1 document_id, got {doc_ids!r}"
 
-    # Artifact was saved with the deterministic doc:{id}.json filename.
+    # Artifact was saved with the deterministic doc:{id}.json filename
+    # AND the body is the AG-UI-shape parsed blocks (not the bytes envelope).
     doc_id = doc_ids[0]
     artifact = asyncio.run(
         runner.artifact_service.load_artifact(
@@ -150,6 +175,120 @@ def test_a2a_file_with_bytes_extracted_to_document_id(monkeypatch: pytest.Monkey
         )
     )
     assert artifact is not None, "artifact_service must have the doc:{id}.json blob"
+    body = _json.loads(artifact.inline_data.data.decode("utf-8"))
+    assert body == canned_blocks, f"artifact body must be the parsed blocks shape (AG-UI parity), got {body!r}"
+
+
+def test_a2a_file_parse_failure_falls_back_to_bytes_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If ailang-parse returns an error for a deterministic MIME, the
+    interceptor must fall back to the v1 bytes-envelope artifact so the
+    pipeline keeps working (Gemini multimodal can still read the bytes)."""
+    import json as _json
+
+    monkeypatch.setenv("ENABLE_A2A_FILE_INPUT", "true")
+
+    from tools.documents.ailang_parse import ParseOutcome
+
+    def _fake_parse_error(tmp_path: str, output_format: str) -> ParseOutcome:
+        return ParseOutcome(error="corrupt docx structure", error_code="format", output_format=output_format)
+
+    monkeypatch.setattr("tools.documents.ailang_parse._parse_file_sync", _fake_parse_error)
+
+    from protocols.a2a_file_extraction import make_file_extraction_interceptor
+
+    runner = _build_runner()
+    interceptor = make_file_extraction_interceptor(runner, app_name="test_a2a_files", user_id="a2a-public-peer")
+    raw = b"PK\x03\x04 not really a docx"
+    context = _build_context(
+        [
+            _file_with_bytes_part(
+                raw,
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                name="broken.docx",
+            ),
+        ],
+        context_id="test-session-fallback",
+    )
+
+    asyncio.run(interceptor.before_agent(context))
+
+    expected_user = "A2A_USER_test-session-fallback"
+    session = asyncio.run(
+        runner.session_service.get_session(
+            app_name="test_a2a_files", user_id=expected_user, session_id="test-session-fallback"
+        )
+    )
+    doc_ids = session.state.get("document_ids", [])
+    assert len(doc_ids) == 1
+
+    doc_id = doc_ids[0]
+    artifact = asyncio.run(
+        runner.artifact_service.load_artifact(
+            app_name="test_a2a_files",
+            user_id=expected_user,
+            session_id="test-session-fallback",
+            filename=f"doc:{doc_id}.json",
+        )
+    )
+    assert artifact is not None
+    body = _json.loads(artifact.inline_data.data.decode("utf-8"))
+    # bytes envelope: single dict with kind=a2a-inline-file
+    assert isinstance(body, list) and len(body) == 1
+    assert body[0].get("kind") == "a2a-inline-file", f"parse error must fall back to bytes envelope, got {body!r}"
+    assert body[0].get("bytesBase64"), "bytes envelope must preserve raw bytes"
+
+
+def test_a2a_file_unsupported_mime_skips_parse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """For MIMEs outside ailang-parse's deterministic set (e.g. text/plain,
+    application/pdf), the parse step must NOT be attempted — fall straight
+    through to the bytes envelope. Verifies via a sentinel-counting fake
+    parser that's never invoked."""
+    import json as _json
+
+    monkeypatch.setenv("ENABLE_A2A_FILE_INPUT", "true")
+
+    parse_call_count = {"n": 0}
+
+    def _sentinel_parse(tmp_path: str, output_format: str) -> Any:
+        parse_call_count["n"] += 1
+        raise AssertionError("parse must not be called for unsupported MIME")
+
+    monkeypatch.setattr("tools.documents.ailang_parse._parse_file_sync", _sentinel_parse)
+
+    from protocols.a2a_file_extraction import make_file_extraction_interceptor
+
+    runner = _build_runner()
+    interceptor = make_file_extraction_interceptor(runner, app_name="test_a2a_files", user_id="a2a-public-peer")
+    context = _build_context(
+        [
+            _file_with_bytes_part(b"hello world", mime_type="text/plain", name="note.txt"),
+        ],
+        context_id="test-session-skip",
+    )
+
+    asyncio.run(interceptor.before_agent(context))
+    assert parse_call_count["n"] == 0, "parse must be skipped for non-deterministic MIME"
+
+    expected_user = "A2A_USER_test-session-skip"
+    session = asyncio.run(
+        runner.session_service.get_session(
+            app_name="test_a2a_files", user_id=expected_user, session_id="test-session-skip"
+        )
+    )
+    doc_ids = session.state.get("document_ids", [])
+    assert len(doc_ids) == 1
+    doc_id = doc_ids[0]
+    artifact = asyncio.run(
+        runner.artifact_service.load_artifact(
+            app_name="test_a2a_files",
+            user_id=expected_user,
+            session_id="test-session-skip",
+            filename=f"doc:{doc_id}.json",
+        )
+    )
+    assert artifact is not None
+    body = _json.loads(artifact.inline_data.data.decode("utf-8"))
+    assert isinstance(body, list) and body[0].get("kind") == "a2a-inline-file"
 
 
 def test_a2a_file_with_uri_registered(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -81,6 +81,28 @@ _DEFAULT_INPUT_MIME_TYPES: tuple[str, ...] = (
 _DEFAULT_FILE_MAX_BYTES = 26_214_400  # 25 MiB decoded
 _ALLOWED_URI_SCHEMES: tuple[str, ...] = ("https", "gs")
 
+# MIME → file-suffix map used to write the tempfile that ailang-parse's
+# `parse_file` call dispatches on. Only MIMEs whose suffix lands inside
+# `tools.documents.ailang_parse.DETERMINISTIC_EXTENSIONS` actually get
+# the parse step; others fall through to the bytes-envelope artifact
+# and Gemini multimodal reads them natively. The list is a superset of
+# `_DEFAULT_INPUT_MIME_TYPES` for clarity at the suffix-mapping site —
+# the DETERMINISTIC_EXTENSIONS check is what actually gates the parse.
+_MIME_TO_SUFFIX: dict[str, str] = {
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/vnd.oasis.opendocument.text": ".odt",
+    "application/vnd.oasis.opendocument.spreadsheet": ".ods",
+    "application/vnd.oasis.opendocument.presentation": ".odp",
+    "message/rfc822": ".eml",
+    "text/csv": ".csv",
+    "text/plain": ".txt",
+    "text/html": ".html",
+    "text/markdown": ".md",
+}
+
 # Session-state keys the interceptor writes. Reads the existing
 # document_ids list (set by AG-UI path or prior A2A turns) so we append
 # rather than clobber.
@@ -144,6 +166,53 @@ def _validate_file_with_uri(file: Any, mime_allowlist: set[str]) -> str | None:
     return None
 
 
+def _parse_bytes_to_blocks(decoded: bytes, mime_type: str, display_name: str | None) -> tuple[list, int, str | None]:
+    """Try AILANG Parse on inline bytes. Returns (blocks, elapsed_ms, error).
+
+    Empty blocks list signals fall-through to the bytes-envelope artifact.
+    The error string is used purely for logging. Returns quickly without
+    invoking the parser if:
+      - the MIME has no suffix mapping
+      - the suffix is not in `DETERMINISTIC_EXTENSIONS` (Gemini multimodal
+        is the right path for those)
+      - the DOCPARSE_API_KEY secret is unset (client init fails)
+    """
+    import os
+    import tempfile
+    import time
+
+    suffix = _MIME_TO_SUFFIX.get(mime_type)
+    if not suffix:
+        return [], 0, f"no suffix mapping for mime {mime_type!r}"
+    from tools.documents import ailang_parse as _ap
+
+    if suffix not in _ap.DETERMINISTIC_EXTENSIONS:
+        return [], 0, f"suffix {suffix!r} not in deterministic set"
+
+    fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="a2a_parse_")
+    t0 = time.monotonic()
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(decoded)
+        outcome = _ap._parse_file_sync(tmp_path, output_format="blocks")
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+    except Exception as exc:
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        logger.warning("AILANG Parse (A2A): exception parsing %s: %s", display_name or "file", exc)
+        return [], elapsed_ms, f"parse exception: {exc}"
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    content = getattr(outcome, "content", None)
+    if isinstance(content, list) and content:
+        return content, elapsed_ms, None
+    err = getattr(outcome, "error", None) or "parse returned no blocks"
+    return [], elapsed_ms, err
+
+
 async def _save_inline_bytes_as_artifact(
     *,
     runner: Runner,
@@ -157,12 +226,14 @@ async def _save_inline_bytes_as_artifact(
 ) -> None:
     """Save a FileWithBytes payload as a `doc:{id}.json` session artifact.
 
-    Format mirrors what `make_document_loader` produces for AG-UI uploads
-    (an inline_data Blob carrying JSON-encoded blocks) — except for the
-    A2A path v1 we shortcut to a single block of raw text/file_data so
-    the model sees the content directly without round-tripping through
-    ailang-parse + Firestore. Future versions can route through the full
-    upload pipeline if forks need persistence / citation.
+    Happy path: AILANG Parse converts the bytes to a list of structured
+    `Block` dicts (same shape `make_document_loader` writes for AG-UI
+    uploads) — the orchestrator + specialists ground on typed fields
+    instead of base64.
+
+    Fallback path (parse unsupported / fails / client unconfigured): the
+    bytes-envelope shape used pre-2026-06-08. Gemini multimodal still
+    reads the bytes natively; the agent picks them up via load_artifacts.
 
     Awaited (not fire-and-forget) so the artifact is observable before
     the agent runs — important because the next `make_document_loader`
@@ -170,18 +241,33 @@ async def _save_inline_bytes_as_artifact(
     """
     from google.genai.types import Blob, Part
 
-    block = {
-        "kind": "a2a-inline-file",
-        "displayName": display_name or "file",
-        "mimeType": mime_type,
-        "bytesBase64": base64.b64encode(decoded).decode("ascii"),
-    }
-    artifact = Part(
-        inline_data=Blob(
-            data=json.dumps([block]).encode("utf-8"),
-            mime_type="application/json",
+    blocks, parsed_ms, parse_err = _parse_bytes_to_blocks(decoded, mime_type, display_name)
+    if blocks:
+        data = json.dumps(blocks).encode("utf-8")
+        logger.info(
+            "AILANG Parse (A2A): parsed %s in %dms (%d blocks)",
+            display_name or "file",
+            parsed_ms,
+            len(blocks),
         )
-    )
+    else:
+        envelope = {
+            "kind": "a2a-inline-file",
+            "displayName": display_name or "file",
+            "mimeType": mime_type,
+            "bytesBase64": base64.b64encode(decoded).decode("ascii"),
+        }
+        data = json.dumps([envelope]).encode("utf-8")
+        # Only log when parse was actually attempted (skipped cases are
+        # the common path for non-deterministic MIMEs and would be noisy)
+        if parse_err and not parse_err.startswith(("no suffix mapping", "suffix")):
+            logger.info(
+                "AILANG Parse (A2A): fallback to bytes envelope for %s: %s",
+                display_name or "file",
+                parse_err,
+            )
+
+    artifact = Part(inline_data=Blob(data=data, mime_type="application/json"))
     # ADK's artifact service stores per (app_name, user_id, session_id, filename)
     await runner.artifact_service.save_artifact(
         app_name=app_name,
