@@ -236,7 +236,9 @@ steps:
           --set-env-vars=EXTRACTION_MODEL=gemini-3.5-flash \
           --set-env-vars=ENABLE_A2A_INVOCATION=true \
           --set-env-vars=A2A_INVOCATION_REQUIRE_AUTH=false \
-          --set-env-vars=PUBLIC_BASE_URL=https://gde-ap-agent-blqtqfexwa-ew.a.run.app
+          --set-env-vars=PUBLIC_BASE_URL=https://gde-ap-agent-blqtqfexwa-ew.a.run.app \
+          --set-env-vars=ENABLE_A2A_FILE_INPUT=true \
+          --set-env-vars=A2A_AGENT_DOCUMENTS_BUCKET=gs://gde-ap-agent-demo-invoices/
 
   # --- Post-deploy smoke: fail the build if any critical endpoint is not 200 ---
   # Per CLAUDE.md: no feature lands with manual-only verification. This step
