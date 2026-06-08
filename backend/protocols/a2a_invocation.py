@@ -366,15 +366,14 @@ def build_a2a_app(
     # (`/`, `/.well-known/agent.json`, etc.) — the FastAPI mount strips the
     # `/a2a` prefix before delegating.
     a2a_app.add_middleware(A2AAuthMiddleware)
-    # Observation middleware: log JSON-RPC method, message_id, task_id,
-    # User-Agent on every request. Cheap; tells us what GE actually does
-    # (does it poll tasks/get? does it call message/stream?). Add AFTER
-    # auth in the call chain so auth-rejected calls don't log noise; but
-    # because Starlette middleware execution is LIFO, the LAST-added
-    # middleware runs FIRST — so we add observation AFTER auth here, and
-    # at runtime observation runs first, capturing everything including
-    # auth-rejected hits. Documented in a2a-async-task-pattern.md M1.
-    a2a_app.add_middleware(A2AObservationMiddleware)
+    # NB: A2AObservationMiddleware is intentionally NOT wired in — it
+    # subclasses BaseHTTPMiddleware, which is incompatible with the SSE
+    # response path used by message/sendSubscribe (encode/starlette#1012).
+    # The body re-injection breaks sse_starlette's _listen_for_disconnect
+    # receive() loop with "RuntimeError: Unexpected message received:
+    # http.request". M1 observation that GE uses sendSubscribe came from
+    # this failure mode; re-instrumenting must be pure-ASGI (no
+    # BaseHTTPMiddleware) or move inside the A2aAgentExecutor.
     return a2a_app
 
 
