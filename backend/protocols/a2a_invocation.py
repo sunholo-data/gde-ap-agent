@@ -337,7 +337,15 @@ def build_a2a_app(
         app_name=APP_NAME,
         user_id="a2a-public-peer",
     )
-    executor_config = A2aAgentExecutorConfig(execute_interceptors=[file_interceptor])
+    # Second interceptor: filter intermediate AP specialist (invoice-extractor,
+    # ap-validator) text events from the peer-bound A2A wire. Their "thinking
+    # out loud" narration was concatenating into the GE chat bubble alongside
+    # ap-poster's actual verdict. See docs/design/forks/gde-ap-agent/v0.1.0/
+    # a2a-event-filtering.md for the design and trade-offs.
+    from protocols.a2a_event_filter import make_event_filter_interceptor
+
+    event_filter = make_event_filter_interceptor()
+    executor_config = A2aAgentExecutorConfig(execute_interceptors=[file_interceptor, event_filter])
     # `force_new_version=True` is REQUIRED for interceptors to actually fire.
     # ADK's A2aAgentExecutor has two impl paths: NEW (with interceptors) and
     # LEGACY (no interceptors). It picks NEW only if either the caller sets
