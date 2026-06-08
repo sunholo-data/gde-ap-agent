@@ -10,6 +10,7 @@ from __future__ import annotations
 import click
 
 from aiplatform import __version__
+from aiplatform.commands.a2a import a2a
 from aiplatform.commands.access import access
 from aiplatform.commands.bucket import bucket
 from aiplatform.commands.docs import docs
@@ -35,6 +36,7 @@ def main(ctx: click.Context, env: str) -> None:
     ctx.obj["env"] = env
 
 
+main.add_command(a2a)
 main.add_command(bucket)
 main.add_command(docs)
 main.add_command(folder)

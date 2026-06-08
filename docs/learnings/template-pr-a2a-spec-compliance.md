@@ -1175,6 +1175,275 @@ upstream changes.
 
 ---
 
+## §6 (added 2026-06-08) — A2A document support
+
+> Two scenarios that landed in production within hours of the
+> message/send bridge going live. Brief is upstream-bound — every fork
+> that lets peers send or query documents over A2A hits these same
+> patterns.
+>
+> Source: `Aitana-Labs/gde-ap-agent` commits `aaf0315` (M1 file
+> extraction), `10f7a93` (M2 org-scoped bucket), `7687784` (M3
+> force_new_version=True fix on the executor).
+
+### Two failure modes, both observed in production
+
+**Scenario A** — peer sends a fresh file. Real failure
+2026-06-07T22:06:32 UTC: Gemini Enterprise routed a user upload to
+our `/a2a` endpoint with ~2KB extra payload over a text-only call
+(should have been ~37KB for the actual `.docx`). The interceptor was
+not running so the file was stripped at GE's side; agent saw
+`document_ids=[]`.
+
+**Scenario B** — peer asks about existing documents. The agent has
+standing access to a curated GCS corpus (vendor master, historical
+invoices, etc.); a peer wants to query it conversationally without
+uploading anything new. There is no convention for "this deploy is
+bound to this bucket" — workarounds (hardcoded paths in skill
+instructions, per-fork env vars) don't scale across orgs.
+
+### §6a. Card `defaultInputModes` extension
+
+Without this, peers see "this agent only accepts text" on the card
+and silently strip any uploaded file at the peer side BEFORE the
+request reaches us. The 22:06 failure was specifically this:
+
+```diff
+- "defaultInputModes": ["text"],
++ "defaultInputModes": [
++   "text",
++   "application/pdf",
++   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
++   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
++   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
++   "application/vnd.oasis.opendocument.text",
++   "message/rfc822",
++   "text/csv",
++   "text/plain",
++ ],
+```
+
+Override per-fork via `A2A_AGENT_INPUT_MIME_TYPES` env var (matches
+the `A2A_AGENT_NAME` / `_DESCRIPTION` / `_ICON_PATH` pattern from §5).
+
+### §6b. `FileExtractionInterceptor` — the critical lift
+
+Mounted via `A2aAgentExecutorConfig(execute_interceptors=[...])` on
+the executor. Walks `RequestContext.message.parts` for `FilePart`s,
+validates MIME + size + URI scheme, saves each to the session's
+artifact store as `doc:{id}.json`, mints `document_ids`, and STRIPS
+the FileParts from `message.parts` so ADK's native
+`convert_a2a_part_to_genai_part` doesn't ALSO send them to Gemini
+(which would double-inject the file content).
+
+```python
+async def _before_agent(context: RequestContext) -> RequestContext:
+    if not _is_enabled():
+        return context
+    file_parts, other_parts = _partition_parts(context.message.parts)
+    new_doc_ids = []
+    for part in file_parts:
+        if isinstance(part.root.file, FileWithBytes):
+            doc_id = await _persist_bytes(...)
+        elif isinstance(part.root.file, FileWithUri):
+            doc_id = await _persist_uri_pointer(...)
+        new_doc_ids.append(doc_id)
+    context.message.parts = other_parts  # strip!
+    await _inject_into_session_state(context, new_doc_ids)
+    return context
+```
+
+The existing `make_document_loader` `before_agent_callback` then sees
+`state["document_ids"]` populated and runs the standard doc-loader
+pipeline (artifact → context injection) — no skill code change.
+
+### §6c. CRITICAL: `force_new_version=True` on the executor
+
+ADK's `A2aAgentExecutor` has TWO impl paths: NEW (with interceptors)
+and LEGACY (no interceptors). It picks NEW only when **either** the
+caller passes `force_new_version=True` **or** the peer sends a
+"new-version" extension hint via `X-A2A-Extensions`. Gemini Enterprise
+**does not send that hint** (verified live 2026-06-08T04:45 UTC — the
+deployed agent received the FilePart correctly via the new
+defaultInputModes, but the interceptor never ran because ADK fell
+through to the legacy path; the file hit Vertex's strict MIME
+validator and threw 400 INVALID_ARGUMENT).
+
+```python
+executor = A2aAgentExecutor(
+    runner=runner,
+    config=executor_config,
+    force_new_version=True,  # <-- the bit you'll forget and bleed an hour over
+)
+```
+
+**Document this in the template's README**. Without it, the
+interceptor surface is silently inert against the most common peer
+(GE) — exactly the class of footgun the spec-compliance brief exists
+to prevent.
+
+### §6d. Org-scoped GCS bucket (Scenario B)
+
+Per-deploy binding via `A2A_AGENT_DOCUMENTS_BUCKET=gs://...` env var.
+v1 is single-tenant per deploy; multi-tenant per-call binding needs
+peer-identity headers we haven't seen from GE yet (a follow-up sprint
+once the wire shape is known).
+
+Two ADK `FunctionTool`s on the orchestrator's tool list:
+
+```python
+async def list_org_documents(prefix: str = "", tool_context: Any = None) -> list[dict[str, Any]]:
+    """List documents in the bound bucket; returns [] when unbound."""
+    bucket = get_bound_bucket()
+    if bucket is None:
+        return []
+    return await list_documents_in_bucket(bucket, prefix=prefix)
+
+
+async def read_org_document(name: str, tool_context: Any = None) -> dict[str, Any]:
+    """Fetch + save as doc:{id}.json artifact; append to state['document_ids']."""
+    bucket = get_bound_bucket()
+    if bucket is None:
+        return {"ok": False, "doc_id": None, "message": "No bucket bound."}
+    doc_id = await read_document_from_bucket(bucket, name, ...)
+    if doc_id is None:
+        return {"ok": False, ...}
+    state = tool_context.state
+    state["document_ids"] = [*(state.get("document_ids") or []), doc_id]
+    return {"ok": True, "doc_id": doc_id, "message": f"Loaded {name}."}
+```
+
+The orchestrator's instructions get one paragraph:
+
+> If the user asks about existing organisational documents (historical
+> invoices, vendor records, contracts, approval policy), call
+> `list_org_documents` first. If non-empty, pick the most relevant
+> object and call `read_org_document(name)` to load it into session
+> context before answering. If empty, the deploy isn't bound to a
+> bucket — answer from chat history only.
+
+**Both tools degrade gracefully when no bucket is bound** — return
+`[]` / `ok=False` rather than 500ing the agent turn. Single-tenant
+deploys that don't use the feature just don't set the env var.
+
+### §6e. Cloud Build env vars for both scenarios
+
+```yaml
+- '--set-env-vars=ENABLE_A2A_FILE_INPUT=true'
+- '--set-env-vars=A2A_AGENT_DOCUMENTS_BUCKET=gs://<your-bucket>/'
+- '--set-env-vars=A2A_FILE_MAX_BYTES=26214400'  # 25 MB default; optional
+- '--set-env-vars=A2A_ORG_BUCKET_LIST_LIMIT=100' # optional
+```
+
+SA needs `roles/storage.objectViewer` on the bound bucket. No
+wildcard grants.
+
+### §6f. Anti-pattern: Discovery Engine custom metadata for per-registration binding
+
+Original design assumed PATCHing `metadata.gcs_documents_bucket` onto
+the agent record. **Discovery Engine rejected it** with:
+
+```
+Invalid JSON payload received. Unknown name "metadata" at 'agent':
+Cannot find field. INVALID_ARGUMENT
+```
+
+The Agent resource schema has no top-level `metadata` field. We
+pivoted to a per-deploy env var. Forks that need multi-tenant binding
+must wait for a peer-identification header convention or roll their
+own per-call lookup via a header GE/peer sends.
+
+---
+
+### Friction 29 — `force_new_version=True` required on `A2aAgentExecutor`
+
+**Symptom**
+
+You configure `A2aAgentExecutorConfig(execute_interceptors=[...])`,
+deploy, the env vars are set on the running revision, the unit tests
+pass. But against the live deploy with Gemini Enterprise as the
+peer, the interceptor never fires. FileParts pass straight through to
+Gemini and the Vertex API rejects them with INVALID_ARGUMENT on the
+MIME type. Logs show ADK successfully executing the agent — the
+interceptor's logger.info lines just never appear.
+
+**Root cause**
+
+ADK's `A2aAgentExecutor.execute` has a branch:
+
+```python
+should_use_new_impl = not self._use_legacy and (
+    self._force_new_version or self._check_new_version_extension(context)
+)
+```
+
+The new-version path is the one that invokes interceptors. The legacy
+path is used by default unless the peer sends a "new-version" hint
+via `X-A2A-Extensions`. **Gemini Enterprise doesn't send that hint.**
+
+**Fix**
+
+```python
+executor = A2aAgentExecutor(runner=runner, config=..., force_new_version=True)
+```
+
+**Template improvement**
+
+Make `force_new_version=True` the default in the template's
+`build_a2a_app()` factory. Interceptor support is the whole reason
+forks subclass / configure the executor; the legacy path is for
+backwards compatibility, not for new feature work. Add a unit test
+that asserts the executor was constructed with that flag (regression
+guard).
+
+---
+
+### Friction 30 — Discovery Engine rejects custom `metadata` field on Agent resource
+
+**Symptom**
+
+You try to PATCH per-registration metadata onto a registered agent:
+
+```bash
+curl -X PATCH .../agents/<id>?updateMask=metadata \
+  -d '{"metadata": {"gcs_documents_bucket": "gs://..."}}'
+```
+
+Response:
+
+```
+INVALID_ARGUMENT: Unknown name "metadata" at 'agent': Cannot find field.
+```
+
+**Root cause**
+
+Discovery Engine's Agent resource schema is fixed. The `metadata`
+field would have been ideal for tenant-scoped configuration that
+travels with the registration; it doesn't exist.
+
+**Fix**
+
+Two options, pick the one that matches your fork's tenancy model:
+
+1. **Per-deploy env var** (single-tenant deploys): set
+   `A2A_AGENT_DOCUMENTS_BUCKET` in `cloudbuild.yaml`. All registrations
+   pointing at this deploy share the same bucket. This is what we
+   shipped in §6.
+2. **Per-call peer-identity header lookup** (multi-tenant): inspect
+   request headers for a stable peer ID (GE may send one in the
+   future; verify before relying on it), look up bindings in a
+   Firestore collection keyed by that ID. Requires a CLI surface for
+   operators to manage bindings. Not in this design; future sprint.
+
+**Template improvement**
+
+Default the template to Option 1 (env var). Document the multi-tenant
+path as a fork extension point with the Firestore-lookup pattern
+sketched. Don't ship Option 2 as the default — it adds complexity
+that single-tenant deploys don't need.
+
+---
+
 ## Verification
 
 After applying all four changes and deploying:
