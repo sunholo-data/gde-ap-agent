@@ -68,7 +68,24 @@ if TYPE_CHECKING:
 # the A2A peer. Source of truth: `backend/adk/agent.py:305`
 # (`_AP_SPECIALIST_STAGE_LABELS`). `ap-poster` is intentionally absent —
 # it emits the final verdict and must be preserved.
-_INTERMEDIATE_SPECIALIST_AUTHORS: frozenset[str] = frozenset({"invoice-extractor", "ap-validator"})
+#
+# We include BOTH kebab and underscored forms because ADK's LlmAgent
+# name validator requires `^[a-zA-Z_][a-zA-Z0-9_]*$` and
+# `_safe_agent_name()` in `backend/adk/agent.py` substitutes `-` → `_`.
+# At runtime, `event.author` carries the ADK-validated form (e.g.
+# `invoice_extractor`), but tests and external probes often use the
+# canonical SKILL.md name (`invoice-extractor`). Accepting both makes
+# the filter robust to either source. Caught live 2026-06-08T15:59 —
+# first deploy of this filter dropped 0 events because the kebab form
+# never matched the underscored runtime author.
+_INTERMEDIATE_SPECIALIST_AUTHORS: frozenset[str] = frozenset(
+    {
+        "invoice-extractor",
+        "invoice_extractor",
+        "ap-validator",
+        "ap_validator",
+    }
+)
 
 
 def _event_has_visible_text(a2a_event: Any) -> bool:
@@ -129,6 +146,24 @@ async def _after_event(executor_context: Any, a2a_event: Any, adk_event: Any) ->
     case returns None (ADK's executor drops the event from the queue).
     On any exception, returns the event unchanged (fail-open).
     """
+    # Observation log: every event passing through the filter emits one
+    # line capturing author + visible-text flag. Cardinality is bounded
+    # (~20 events per pipeline turn), kept as a permanent debugging
+    # surface for forks: without it, you can't tell what author strings
+    # are flowing or whether the kept/dropped balance matches design.
+    try:
+        author_seen = getattr(adk_event, "author", "?")
+        has_text = _event_has_visible_text(a2a_event)
+        evt_type = type(a2a_event).__name__
+        logger.warning(
+            "a2a event filter: seen author=%s evt=%s text=%s",
+            author_seen,
+            evt_type,
+            has_text,
+        )
+    except Exception:
+        pass
+
     try:
         if _should_drop(a2a_event, adk_event):
             author = getattr(adk_event, "author", "?")
