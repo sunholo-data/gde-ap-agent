@@ -294,10 +294,14 @@ app.include_router(a2ui_surface_action_router)
 # Gated because `to_a2a` is `@a2a_experimental` in google-adk; we want
 # the option to disable instantly on an ADK breakage.
 #
-# Skipped silently in LOCAL_MODE — local dev doesn't need the cross-agent
-# invocation surface, and the ADK lifespan setup pulls Vertex SDKs the
-# local stub doesn't have.
-if os.environ.get("ENABLE_A2A_INVOCATION", "false").lower() in ("true", "1", "yes") and not is_local_mode():
+# The mount is intentionally NOT gated on LOCAL_MODE — that gate was an
+# early-iteration mistake that forced every A2A change through a 10-min
+# Cloud Build cycle. With this lifted, a fork can iterate locally by
+# pairing `LOCAL_MODE=1 ENABLE_A2A_INVOCATION=true` with ADC creds, or
+# can run the backend fully in cloud-mode for parity testing. Pre-2026-06-08
+# the gate was `and not is_local_mode()` (caught + removed during the
+# A2A-FILES sprint M3 after three deploy-cycle iterations).
+if os.environ.get("ENABLE_A2A_INVOCATION", "false").lower() in ("true", "1", "yes"):
     try:
         from auth.access_context import AccessContext
         from auth.firebase_auth import User

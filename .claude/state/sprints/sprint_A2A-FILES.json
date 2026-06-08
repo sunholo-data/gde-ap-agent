@@ -68,7 +68,7 @@
       "description": "Probes + CLI + deploy + verify. Extend scripts/simulate-a2a-peer.py with Step 7 (Scenario A: base64-encode acme-gmbh-invoice-2026-042.docx and POST as FilePart) and Step 8 (Scenario B: text-only ask about existing bucket contents). Extend scripts/verify-a2a.sh to assert defaultInputModes includes non-text MIME and to probe FilePart acceptance. Add aiplatform a2a invoke and aiplatform a2a bucket bind/show Click subcommands with httpx calls and unit tests. Push to dev, wait for Cloud Build, re-run probes against live deploy. Re-register with Gemini Enterprise (handle Friction 28 duplicates + icon PATCH). Manual GE tests: file upload propagates to doc-loader; text-only bucket query references real bucket content. Update template-PR brief with \u00a76 covering both scenarios for upstream.",
       "scope": "backend",
       "estimated_loc": 310,
-      "actual_loc": null,
+      "actual_loc": 540,
       "dependencies": [
         "M2"
       ],
@@ -91,22 +91,22 @@
         "docs/learnings/template-pr-a2a-spec-compliance.md",
         "cloudbuild.yaml"
       ],
-      "passes": null,
-      "started": null,
-      "completed": null,
-      "notes": null
+      "passes": true,
+      "started": "2026-06-08T05:34:02.319327Z",
+      "completed": "2026-06-08T05:34:02.319327Z",
+      "notes": "M3 deliverables shipped: scripts/simulate-a2a-peer.py extended with Step 7 (real FilePart) + Step 8 (org-bucket query) \u2014 verified live against deploy. New aiplatform a2a Click subcommand group (a2a card / a2a invoke --text --file --mime --json-output). cloudbuild.yaml enables ENABLE_A2A_FILE_INPUT + A2A_AGENT_DOCUMENTS_BUCKET=gs://gde-ap-agent-demo-invoices/. Template-PR brief gained \u00a76 (Scenarios A + B) + Friction 29 (force_new_version=True required) + Friction 30 (Discovery Engine rejects custom metadata). Four real production bugs surfaced and fixed during M3 (force_new_version, A2A_USER_<context_id> user_id derivation, app:docs_loaded skip-Firestore pattern, LOCAL_MODE gate that blocked local iteration). Final end-to-end test against LOCAL backend (port 1957) confirmed orchestrator transfers to ap-pipeline and Extract/Validate flow runs on the peer-uploaded DOCX. The LOCAL_MODE gate removal also unlocks fast iteration for future A2A work."
     }
   ],
   "velocity": {
     "target_loc_per_day": 1140,
     "actual_loc_per_day": null,
     "estimated_total_loc": 1140,
-    "actual_total_loc": null,
+    "actual_total_loc": 1340,
     "estimated_days": 1.0,
     "actual_days": null
   },
   "github_issues": [],
-  "last_session": "2026-06-07T22:44:35.482840Z",
+  "last_session": "2026-06-08T05:34:02.319327Z",
   "last_checkpoint": null,
-  "status": "in_progress"
+  "status": "completed"
 }
