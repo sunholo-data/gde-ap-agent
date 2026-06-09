@@ -95,7 +95,7 @@
     "actual_days": null
   },
   "github_issues": [],
-  "last_session": "2026-06-07T21:00:48.914348Z",
-  "last_checkpoint": null,
+  "last_session": "2026-06-07T21:00:57Z",
+  "last_checkpoint": "finalized",
   "status": "completed"
 }

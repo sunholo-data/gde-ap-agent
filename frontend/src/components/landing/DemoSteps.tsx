@@ -60,7 +60,7 @@ export function DemoSteps() {
           <span aria-hidden className="transition-transform group-hover:translate-x-0.5">→</span>
         </Link>
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          No signup required
+          Free to sign up
         </span>
       </div>
     </section>
