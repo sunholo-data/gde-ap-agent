@@ -146,10 +146,9 @@ def list_skills(
 ) -> Any:
     """List skills the caller can access.
 
-    Implementation note: we currently fetch with the user-supplied filters
-    (which may over- or under-return) and then drop anything the evaluator
-    rejects. Correct, not optimally fast — a hot-path fan-out concern for
-    1A.1b. Revisit with composite indexes once the list view becomes slow.
+    Implementation note: we fetch with the user-supplied filters and then
+    drop anything the access evaluator rejects. List results are cached
+    for 60s (invalidated on any write) and warm the per-skill cache.
     """
     access = request.state.access
     configs = skill_config.list_skills(owner_id=owner_id, tag=tag, access_type=access_type, limit=limit)

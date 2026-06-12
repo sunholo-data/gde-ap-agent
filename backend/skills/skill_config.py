@@ -1,7 +1,9 @@
 """Skill configuration — Firestore CRUD for skills collection.
 
 All reads go through an in-memory cache (60s TTL) for hot skills.
-Writes always go to Firestore and invalidate the cache entry.
+List queries are cached at the query level (same TTL) and also warm
+the per-skill cache, so follow-up get_skill() calls after a list are free.
+Writes always go to Firestore and clear all list caches.
 """
 
 from __future__ import annotations
@@ -16,8 +18,14 @@ from db.models import SkillConfig
 COLLECTION = "skills"
 _CACHE_TTL = 60  # seconds
 
-# Simple in-memory cache: skill_id → (timestamp, SkillConfig)
+# Per-skill cache: skill_id → (timestamp, SkillConfig)
 _cache: dict[str, tuple[float, SkillConfig]] = {}
+
+# List-level cache: (owner_id, tag, access_type, limit) → (timestamp, list[SkillConfig])
+_list_cache: dict[tuple, tuple[float, list[SkillConfig]]] = {}
+
+# Marketplace cache: limit → (timestamp, list[SkillConfig])
+_marketplace_cache: dict[int, tuple[float, list[SkillConfig]]] = {}
 
 
 def _to_firestore(config: SkillConfig) -> dict[str, Any]:
@@ -44,8 +52,14 @@ def _cache_set(skill_id: str, config: SkillConfig) -> None:
     _cache[skill_id] = (time.time(), config)
 
 
+def _list_cache_clear() -> None:
+    _list_cache.clear()
+    _marketplace_cache.clear()
+
+
 def _cache_invalidate(skill_id: str) -> None:
     _cache.pop(skill_id, None)
+    _list_cache_clear()
     # Any create/update/delete can flip a skill's public visibility, so
     # drop the A2A card snapshot and re-sync the MCP tool registry.
     # Function-local imports keep the skills package independent of
@@ -84,6 +98,7 @@ def create_skill(
     )
     fs.set_document(COLLECTION, skill_id, _to_firestore(config))
     _cache_set(skill_id, config)
+    _list_cache_clear()
     # New public skills must appear in /.well-known/agent.json and /mcp
     # tools/list immediately — not after the 60s TTL.
     from protocols.a2a import invalidate_cache as _invalidate_a2a_card
@@ -192,8 +207,12 @@ def list_skills(
     limit: int = 50,
 ) -> list[SkillConfig]:
     """List skills with optional filters."""
-    filters: list[tuple[str, str, Any]] = []
+    key = (owner_id, tag, access_type, limit)
+    entry = _list_cache.get(key)
+    if entry and (time.time() - entry[0]) < _CACHE_TTL:
+        return entry[1]
 
+    filters: list[tuple[str, str, Any]] = []
     if owner_id:
         filters.append(("ownerId", "==", owner_id))
     if tag:
@@ -208,11 +227,19 @@ def list_skills(
         order_direction="DESCENDING",
         limit=limit,
     )
-    return [_from_firestore(doc) for doc in docs]
+    configs = [_from_firestore(doc) for doc in docs]
+    for config in configs:
+        _cache_set(config.skill_id, config)
+    _list_cache[key] = (time.time(), configs)
+    return configs
 
 
 def list_marketplace(limit: int = 50) -> list[SkillConfig]:
     """List public skills for the marketplace, ordered by usage."""
+    entry = _marketplace_cache.get(limit)
+    if entry and (time.time() - entry[0]) < _CACHE_TTL:
+        return entry[1]
+
     docs = fs.query_documents(
         COLLECTION,
         filters=[("accessControl.type", "==", "public")],
@@ -220,7 +247,11 @@ def list_marketplace(limit: int = 50) -> list[SkillConfig]:
         order_direction="DESCENDING",
         limit=limit,
     )
-    return [_from_firestore(doc) for doc in docs]
+    configs = [_from_firestore(doc) for doc in docs]
+    for config in configs:
+        _cache_set(config.skill_id, config)
+    _marketplace_cache[limit] = (time.time(), configs)
+    return configs
 
 
 def increment_usage(skill_id: str) -> None:
