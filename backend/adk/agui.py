@@ -3,8 +3,8 @@
 `ag_ui_adk.ADKAgent` already converts ADK events to AG-UI events (its
 1.3kloc `event_translator.py` handles the full mapping). Rolling our own
 translator just to re-emit the same SSE sequence would duplicate that
-work and drift against upstream. Instead this module does the two things
-the library does *not* do:
+work and drift against upstream. Instead this module does the three
+things the library does *not* do:
 
   * `build_agui_adk_agent(agent, ...)` — wraps an ADK agent with platform
     defaults (``app_name``, the three real backing services from
@@ -12,6 +12,17 @@ the library does *not* do:
     a ready-to-run bridge.
   * `stream_agui_events(agui_agent, run_input)` — serializes each AG-UI
     event to a JSON-safe dict (what the SSE layer writes to the wire).
+  * **Terminal-event deduplication (G41 — template-agui-terminal-dedup.md):**
+    when a tool call raises mid-stream, ``ag_ui_adk`` (per its current
+    1.x line) can emit RUN_ERROR via the queue-based background path
+    AND THEN fall through to a RUN_FINISHED emission in the surrounding
+    try-block. @ag-ui/client's state machine correctly rejects the
+    duplicate terminal event with "Cannot send event type 'RUN_FINISHED':
+    The run has already errored". ``stream_agui_events`` enforces the
+    spec invariant — at most ONE terminal event per run — by tracking
+    whether we've already yielded RUN_ERROR/RUN_FINISHED and dropping
+    any subsequent terminal events with a warning log. Surfaced by
+    the gde-ap-agent fork (2026-06-06) during a long tool-throw demo.
 
 Design reconciliation (2026-04-21): the AGENT-FACTORY sprint plan called
 for a `_to_agui_event(adk_event)` helper "moved from the spike". The
@@ -22,6 +33,8 @@ this module integrates instead.
 
 from __future__ import annotations
 
+import logging
+import os
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -32,8 +45,85 @@ from google.adk.artifacts import BaseArtifactService
 from google.adk.memory import BaseMemoryService
 from google.adk.sessions import BaseSessionService
 
+from protocols.stream_poll import IDLE, poll_stream
+
+logger = logging.getLogger(__name__)
+
 APP_NAME = "gde_ap_agent"
 _DEFAULT_APP_NAME = APP_NAME  # backwards-compat alias
+
+# G41 (template-agui-terminal-dedup.md): the two AG-UI event types whose
+# arrival closes a run. The spec mandates at most one per run; the
+# `@ag-ui/client` state machine throws on a second one. We use the
+# string values rather than the enum so this module doesn't have to
+# import `EventType` (kept dep-light for fast test imports).
+_TERMINAL_EVENT_TYPES = frozenset({"RUN_ERROR", "RUN_FINISHED"})
+
+# MODEL-RELIABILITY M1: no-op CUSTOM event emitted during silent phases so
+# (a) idle-timeout intermediaries (undici bodyTimeout, LB idle) see traffic
+# and (b) the frontend mid-stream watchdog has something to reset on. A
+# CUSTOM event — not an SSE comment — because @ag-ui/client's parser only
+# surfaces `data:` lines to subscribers; a comment would keep the pipe warm
+# but leave the watchdog blind. CAUTION: @ag-ui/client's state machine rejects
+# ANY event before RUN_STARTED ("First event must be 'RUN_STARTED'"), so no
+# CUSTOM (heartbeat, STAGE_PROGRESS, MODEL_RESOLVED) may PRECEDE it — pre-agent
+# events are buffered in stream_agui_events and flushed only AFTER RUN_STARTED.
+HEARTBEAT_EVENT_NAME = "HEARTBEAT"
+_DEFAULT_HEARTBEAT_SECONDS = 20.0
+# How often the loop WAKES to flush queued stage events, as opposed to how often
+# it emits a HEARTBEAT. They used to be the same number, and that made every
+# progressive surface a lie for runs shorter than the heartbeat: a tool blocking
+# for 15s enqueued its updates every 2s and the loop did not wake to drain them
+# ONCE, so the whole story arrived in a burst when the tool returned and looked
+# exactly like no streaming at all (reported from the browser, 2026-09-06).
+#
+# Separate knobs because they answer different questions. The heartbeat is a
+# keepalive and a "Thinking…" cadence — 20s is right and more would be noise.
+# The drain is "how stale may a queued update be", where the answer is ~1s.
+_DEFAULT_DRAIN_SECONDS = 1.0
+
+
+def _heartbeat_interval(override: float | None) -> float:
+    if override is not None:
+        return override
+    try:
+        return float(os.environ.get("AGUI_HEARTBEAT_SECONDS", _DEFAULT_HEARTBEAT_SECONDS))
+    except ValueError:
+        return _DEFAULT_HEARTBEAT_SECONDS
+
+
+def _drain_interval(hb_interval: float) -> float:
+    """Wake cadence for flushing queued stage events. Never longer than the
+    heartbeat — a drain that lags the keepalive would be pointless."""
+    try:
+        want = float(os.environ.get("AGUI_DRAIN_SECONDS", _DEFAULT_DRAIN_SECONDS))
+    except ValueError:
+        want = _DEFAULT_DRAIN_SECONDS
+    return max(0.05, min(want, hb_interval))
+
+
+def _heartbeat_event(n: int) -> dict:
+    # Plain dict, same shape CustomEvent.model_dump(by_alias=True) produces —
+    # built by hand to keep the hot path allocation-light.
+    return {"type": "CUSTOM", "name": HEARTBEAT_EVENT_NAME, "value": {"n": n}}
+
+
+def _deployment_app():
+    """The `App` declared in ``backend/app.py``.
+
+    Imported lazily and inside the function, not at module scope: ``app.py``
+    imports from ``adk.*`` (agent factory, artifact tools, session services), so
+    a top-level import here would close a cycle. It also builds the root agent
+    and its whole tool tree at import time, which module-level would put GCP SDK
+    construction on the critical path of anything that merely imports
+    ``adk.agui`` — including the CLI and most unit tests.
+
+    Kept as a seam (rather than inlined) so a test or a fork can substitute an
+    App without monkeypatching a module attribute.
+    """
+    from app import app as deployment_app
+
+    return deployment_app
 
 
 def build_agui_adk_agent(
@@ -100,6 +190,7 @@ def build_agui_adk_agent(
 async def stream_agui_events(
     agui_agent: ADKAgent,
     run_input: RunAgentInput,
+    heartbeat_seconds: float | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Run the agent and yield each AG-UI event as a plain dict.
 
@@ -112,6 +203,13 @@ async def stream_agui_events(
     (see ``observability/timing.py``). ``first_agui_event`` and
     ``first_model_token`` (= first TEXT_MESSAGE_CONTENT) are marked here.
     All instrumentation calls short-circuit when ``AITANA_TTFT_MODE=off``.
+
+    Heartbeats (MODEL-RELIABILITY M1): every ``heartbeat_seconds`` of
+    agent silence a no-op ``CUSTOM {name: HEARTBEAT}`` event is emitted
+    (and any queued STAGE_PROGRESS flushed) so long thinking phases and
+    slow tool calls never present a byte-silent wire. ``heartbeat_seconds``
+    overrides the ``AGUI_HEARTBEAT_SECONDS`` env (default 20); ``<= 0``
+    disables.
     """
     # Lazy import: avoid pulling observability into module-import path of
     # tests that don't exercise the streaming code.
@@ -124,34 +222,174 @@ async def stream_agui_events(
     tracker = get_current_tracker()
     first_agui_event_seen = False
     first_model_token_seen = False
+    # NEVER SILENT (CLAUDE.md #8): did this run yield anything the user can see —
+    # a token or a tool call? If not, RUN_FINISHED is a silent failure and gets
+    # converted to a visible RUN_ERROR at the terminal below.
+    produced_output = False
+    # G41 (template-agui-terminal-dedup.md): the AG-UI spec mandates at
+    # most one terminal event per run (RUN_ERROR XOR RUN_FINISHED). The
+    # vendored ag_ui_adk's queue-based execution path can emit both —
+    # the background task pushes RUN_ERROR onto the event queue (and we
+    # yield it normally), then control returns to the outer try-block
+    # which still falls through to emit RUN_FINISHED because the queue-
+    # delivered error doesn't propagate as a Python exception. The
+    # @ag-ui/client state machine correctly rejects the duplicate with
+    # "Cannot send event type 'RUN_FINISHED': The run has already
+    # errored". We keep the FIRST terminal event we see and drop any
+    # subsequent terminal events with a warning log.
+    terminal_event_yielded: str | None = None
 
-    # Drain any STAGE_PROGRESS that fired before the agent yielded its
-    # first event (the loader runs entirely before ADK emits anything).
-    for stage_event in tracker.drain_stage_events():
-        yield stage_event.model_dump(by_alias=True, exclude_none=True)
+    # Buffer any events already queued before the agent yields its first event
+    # (e.g. MODEL_RESOLVED, enqueued by set_model in skill_processor before this
+    # generator runs). They MUST NOT be yielded before RUN_STARTED: the
+    # @ag-ui/client state machine rejects ANY event preceding RUN_STARTED
+    # ("First event must be 'RUN_STARTED'"), which fails the whole turn on the
+    # client. Flush them immediately AFTER the first real event instead.
+    buffered_pre_agent = [ev.model_dump(by_alias=True, exclude_none=True) for ev in tracker.drain_stage_events()]
 
-    async for event in agui_agent.run(run_input):
-        if not first_agui_event_seen:
-            tracker.mark(STAGE_FIRST_AGUI_EVENT)
-            first_agui_event_seen = True
+    hb_interval = _heartbeat_interval(heartbeat_seconds)
+    drain_interval = _drain_interval(hb_interval)
+    hb_count = 0
+    since_hb = 0.0
+    source = agui_agent.run(run_input).__aiter__()
+    stream = poll_stream(source, drain_interval if hb_interval > 0 else None)
+    try:
+        async for event in stream:
+            if event is IDLE:
+                # Nothing may follow a terminal event — if one has already
+                # gone out, stay silent while draining the tail of `source`.
+                if terminal_event_yielded is not None or not first_agui_event_seen:
+                    continue
+                since_hb += drain_interval
+                # Flush FIRST and unconditionally: this is the whole point
+                # of waking, and it must not be gated behind the heartbeat.
+                drained = False
+                for stage_event in tracker.drain_stage_events():
+                    drained = True
+                    yield stage_event.model_dump(by_alias=True, exclude_none=True)
+                # The keepalive keeps its own, slower cadence. Emitting one
+                # per drain would put ~20x the heartbeats on the wire to buy
+                # nothing — they exist to prove the connection is alive, and
+                # a stage event proves that already.
+                if since_hb + 1e-9 < hb_interval:
+                    continue
+                since_hb = 0.0
+                hb_count += 1
+                yield _heartbeat_event(hb_count)
+                # M4 silent-phase fallback label: no visible token yet and
+                # nothing fresher queued -> keep the user informed that the
+                # model is working (models with omitted thinking display
+                # emit no REASONING traffic at all). Same label repeats ~
+                # every heartbeat; the frontend overwrites in place.
+                if not first_model_token_seen and not drained:
+                    yield {"type": "CUSTOM", "name": "STAGE_PROGRESS", "value": {"label": "Thinking…"}}
+                continue
 
-        # First TEXT_MESSAGE_CONTENT == first model-emitted token reaching
-        # the wire. Earlier signals (RUN_STARTED, TEXT_MESSAGE_START) are
-        # handshake events ag_ui_adk emits before the model speaks.
-        event_type = getattr(event, "type", None)
-        if not first_model_token_seen and event_type is not None:
-            type_value = getattr(event_type, "value", str(event_type))
-            if type_value == "TEXT_MESSAGE_CONTENT":
-                tracker.mark(STAGE_FIRST_MODEL_TOKEN)
-                first_model_token_seen = True
-            elif type_value == "TOOL_CALL_START":
-                tracker.increment_tool_invocations()
+            if not first_agui_event_seen:
+                tracker.mark(STAGE_FIRST_AGUI_EVENT)
+                first_agui_event_seen = True
 
-        yield event.model_dump(by_alias=True, exclude_none=True)
+            # First TEXT_MESSAGE_CONTENT == first model-emitted token reaching
+            # the wire. Earlier signals (RUN_STARTED, TEXT_MESSAGE_START) are
+            # handshake events ag_ui_adk emits before the model speaks.
+            event_type = getattr(event, "type", None)
+            type_value: str | None = None
+            if event_type is not None:
+                type_value = getattr(event_type, "value", str(event_type))
+                # NEVER SILENT (CLAUDE.md #8): track whether this run produced
+                # ANY user-visible outcome — a token, a tool call, or a rendered
+                # A2UI surface (a workbench render with no chat text is still a
+                # real result, and must NOT be mistaken for an empty run).
+                # Reasoning does NOT count: a turn that only thinks and stops is
+                # a failed turn, not an answer.
+                if type_value in ("TEXT_MESSAGE_CONTENT", "TOOL_CALL_START"):
+                    produced_output = True
+                elif type_value == "CUSTOM" and getattr(event, "name", None) == "A2UI_SURFACE":
+                    produced_output = True
+                if not first_model_token_seen:
+                    if type_value == "TEXT_MESSAGE_CONTENT":
+                        tracker.mark(STAGE_FIRST_MODEL_TOKEN)
+                        first_model_token_seen = True
+                    elif type_value == "TOOL_CALL_START":
+                        tracker.increment_tool_invocations()
 
-        # After each ADK event, flush any STAGE_PROGRESS that fired during
-        # callback execution (e.g. before_model_callback marks
-        # ``before_model_done`` with label "Thinking…"). Done in-loop so
-        # the order on the wire matches the order marks fired.
-        for stage_event in tracker.drain_stage_events():
-            yield stage_event.model_dump(by_alias=True, exclude_none=True)
+            # Terminal-event ordering (G41 + the 2026-07-15 ordering crash). A
+            # terminal event (RUN_ERROR / RUN_FINISHED) MUST be the LAST event on
+            # the wire: @ag-ui/client rejects BOTH a duplicate terminal AND any
+            # event that FOLLOWS a terminal ("Cannot send event type 'CUSTOM':
+            # the run has already errored"). Once one has gone out, DROP every
+            # subsequent event (any type) — keep pulling the source only so a
+            # duplicate terminal is logged for upstream-bug frequency.
+            if terminal_event_yielded is not None:
+                if type_value in _TERMINAL_EVENT_TYPES:
+                    logger.warning(
+                        "agui_terminal_dedup: dropped duplicate terminal event "
+                        "(first=%s, dropped=%s, thread_id=%s); see "
+                        "docs/design/template/template-agui-terminal-dedup.md",
+                        terminal_event_yielded,
+                        type_value,
+                        getattr(run_input, "thread_id", "<unknown>"),
+                    )
+                continue
+
+            if type_value in _TERMINAL_EVENT_TYPES:
+                # NEVER SILENT (CLAUDE.md #8): a RUN_FINISHED carrying no text
+                # and no tool call is a SILENT FAILURE — the turn dies and the
+                # UI just stops, with nothing to see and nothing to retry.
+                # Measured on deployed dev 2026-07-17: a lite model intermittently
+                # ends a turn having emitted only reasoning (ADK logs "The last
+                # event is partial, which is not expected"), and the user is left
+                # staring at a dead session. Convert it to a visible, retryable
+                # terminal error. RUN_STARTED has already gone out, so RUN_ERROR
+                # is a legal terminal for the @ag-ui/client state machine.
+                if type_value == "RUN_FINISHED" and not produced_output:
+                    logger.warning(
+                        "agui_empty_run: RUN_FINISHED with no text and no tool call "
+                        "(thread_id=%s) — surfacing as RUN_ERROR so the turn is not "
+                        "a silent no-op",
+                        getattr(run_input, "thread_id", "<unknown>"),
+                    )
+                    terminal_event_yielded = "RUN_ERROR"
+                    yield {
+                        "type": "RUN_ERROR",
+                        # `code` lets the frontend recognise this specific transient
+                        # failure and auto-retry ONCE before showing the user an
+                        # error (a fresh run is protocol-correct; a server-side
+                        # retry here would emit a second RUN_STARTED mid-stream,
+                        # which @ag-ui/client rejects).
+                        "code": "EMPTY_RUN",
+                        "message": (
+                            "The assistant ended the turn without a reply — no answer and no "
+                            "tool call. This is usually a transient model error. Please retry."
+                        ),
+                    }
+                    continue
+                # First terminal — yield it, then suppress everything after
+                # (buffered flush + stage drain + heartbeat are all gated below).
+                terminal_event_yielded = type_value
+                yield event.model_dump(by_alias=True, exclude_none=True)
+                continue
+
+            payload = event.model_dump(by_alias=True, exclude_none=True)
+            if type_value == "STATE_DELTA":
+                # JSON Patch null is a value, not an absent field. Typed AG-UI
+                # 1.0 operations lose `value: null` under exclude_none=True.
+                payload["delta"] = event.model_dump(by_alias=True)["delta"]
+            yield payload
+
+            # Flush the pre-agent events (buffered above) now that the first real
+            # event — RUN_STARTED — is on the wire. One-shot; cleared after.
+            if buffered_pre_agent:
+                for ev in buffered_pre_agent:
+                    yield ev
+                buffered_pre_agent = []
+
+            # After each ADK event, flush any STAGE_PROGRESS that fired during
+            # callback execution (e.g. before_model_callback marks
+            # ``before_model_done`` with label "Thinking…"). Done in-loop so
+            # the order on the wire matches the order marks fired.
+            for stage_event in tracker.drain_stage_events():
+                yield stage_event.model_dump(by_alias=True, exclude_none=True)
+    finally:
+        # This fork writes sessions synchronously; close the producer in its own Context.
+        await stream.aclose()

@@ -107,3 +107,30 @@ jobs:
 
       - name: Test
         run: CI=true npm run test:run
+
+  shared-security:
+    name: Shared dependency security policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: astral-sh/setup-uv@v3
+      - run: make security-check
+
+  adk-wire:
+    name: ADK 2 stream through installed AG-UI client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --project backend --frozen --no-dev
+      - run: npm ci --prefix frontend
+      - working-directory: backend
+        run: |
+          uv run --frozen --no-dev python scripts/capture_agui_wire.py > "$RUNNER_TEMP/agui-wire.jsonl"
+          node ../frontend/scripts/check-agui-wire.mjs "$RUNNER_TEMP/agui-wire.jsonl"

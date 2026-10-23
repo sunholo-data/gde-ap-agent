@@ -7,6 +7,7 @@
 "use client";
 
 import type { Message } from "@ag-ui/client";
+import { contentToText, type ToolCallResultEvent } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAGUIAgent } from "@/providers/AGUIProvider";
 import { useOptionalSurfaceRegistry } from "@/providers/SurfaceRegistry";
@@ -499,11 +500,11 @@ export function useSkillAgent(options?: {
           ),
         );
       },
-      onToolCallResultEvent: ({ event }: { event: { toolCallId: string; content: string } }) => {
+      onToolCallResultEvent: ({ event }: { event: ToolCallResultEvent }) => {
         bumpEvent();
         setToolCalls((prev) =>
           prev.map((tc) =>
-            tc.id === event.toolCallId ? { ...tc, resultContent: event.content } : tc,
+            tc.id === event.toolCallId ? { ...tc, resultContent: contentToText(event.content) } : tc,
           ),
         );
       },

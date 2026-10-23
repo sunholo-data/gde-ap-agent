@@ -207,6 +207,45 @@ app.router.routes.insert(
 )
 
 
+_ADK_NATIVE_PREFIXES = ("/apps/", "/debug/", "/builder/", "/dev-ui", "/dev/", "/agent-identity/")
+_ADK_NATIVE_EXACT = frozenset({"/list-apps", "/run", "/run_sse", "/run_live", "/config/telemetry"})
+
+
+def _is_adk_native_path(path: str) -> bool:
+    """True for a route ADK registered, which therefore has no auth of its own.
+
+    Our own routes all live under `/api/…` (plus `/health`, `/version`, `/mcp/…`,
+    `/.well-known/agent.json`), so none of them match — `/api/debug/slow-stream`
+    is ours and is NOT caught by the `/debug/` prefix.
+    """
+    return path in _ADK_NATIVE_EXACT or path.startswith(_ADK_NATIVE_PREFIXES)
+
+
+# Imports are local to the function body: this module imports `Request`,
+# `HTTPException` and `get_current_user` further down, and annotations here are
+# evaluated eagerly (no `from __future__ import annotations`), so referencing
+# them at def time would NameError on startup.
+@app.middleware("http")
+async def _require_admin_for_adk_native_routes(request, call_next):  # type: ignore[no-untyped-def]
+    from fastapi import HTTPException
+    from fastapi.responses import JSONResponse
+
+    if not _is_adk_native_path(request.url.path):
+        return await call_next(request)
+
+    # Match this fork's existing /api/admin authorization policy.
+    from admin.auth import _assert_caller_is_service_account
+
+    try:
+        _assert_caller_is_service_account(request)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    except Exception:
+        logging.getLogger(__name__).exception("adk-route-guard: auth error on %s", request.url.path)
+        return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+    return await call_next(request)
+
+
 # --- Health ---
 
 

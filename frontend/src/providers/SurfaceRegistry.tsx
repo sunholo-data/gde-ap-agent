@@ -21,6 +21,8 @@
 
 "use client";
 
+import { withBasicCatalogAliases } from "@/components/protocols/basicCatalogAliases";
+
 import {
   createContext,
   type ReactNode,
@@ -165,7 +167,7 @@ interface SurfaceEntry {
 }
 
 function makeProcessor(): MessageProcessor<ReactComponentImplementation> {
-  return new MessageProcessor<ReactComponentImplementation>([basicCatalog]);
+  return new MessageProcessor<ReactComponentImplementation>(withBasicCatalogAliases(basicCatalog));
 }
 
 class SurfaceStore {
