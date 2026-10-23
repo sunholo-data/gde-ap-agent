@@ -36,6 +36,8 @@ const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:1956";
 // Headers that must not be forwarded upstream: hop-by-hop, Next-internal, or
 // ones that would confuse the upstream server (host rewriting).
 const BLOCKED_REQUEST_HEADERS = new Set([
+  // The authenticated frontend is the public origin; the sidecar is loopback.
+  "origin",
   "host",
   "connection",
   "content-length",

@@ -27,10 +27,12 @@ unparseable response just leaves ``has_ui_resource`` unset.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Callable
 from typing import Any
 
+from google.adk.tools.base_tool import BaseTool
 from opentelemetry import trace
 
 from tools.mcp.registry import SERVER_ID_ATTR
@@ -164,14 +166,17 @@ def compose_before_tool_callbacks(
     short-circuit pattern — override the tool call), respect that and skip
     the MCP callback. Otherwise run ``mcp`` for its side effects only.
 
-    ``existing`` may be None (no existing callback configured) — then this
-    returns ``mcp`` unchanged.
+    ADK 2 supplies a bare BaseTool placeholder for unresolved names, runs the
+    before-chain, then skips the after-chain. Reject that exact placeholder
+    before side effects: callbacks stay balanced and the user gets a named
+    RUN_ERROR, preserving our fail-fast policy instead of relying on the model
+    to explain its own hallucinated tool. Concrete tools/subclasses are allowed.
     """
-    if existing is None:
-        return mcp
 
     def _composed(tool: Any, args: dict, tool_context: Any) -> Any:
-        result = existing(tool=tool, args=args, tool_context=tool_context)
+        if type(tool) is BaseTool and tool.description == "Tool not found":
+            raise ValueError(f"Tool '{tool.name}' not found.")
+        result = existing(tool=tool, args=args, tool_context=tool_context) if existing else None
         if result is not None:
             return result
         return mcp(tool=tool, args=args, tool_context=tool_context)
@@ -179,37 +184,88 @@ def compose_before_tool_callbacks(
     return _composed
 
 
+def chain_mutators(*mutators: Callable[..., Any]) -> Callable[..., Any]:
+    """Compose after-tool callbacks that MAY REWRITE the response, in order.
+
+    ``compose_after_tool_callbacks`` takes exactly one mutating callback (its
+    ``existing`` slot) and treats everything else as an observer whose return
+    value is discarded. That is the right shape for OTel tagging and A2UI
+    emission, and the wrong shape the moment a second callback needs to rewrite
+    — which is what converting MCP image blocks into artefact references needs.
+
+    Order is load-bearing, not stylistic. ``_convert_media_results`` must run
+    BEFORE ``_handle_large_output``: composed the other way round the offload
+    has already replaced a screenshot with a pointer string, the converter finds
+    no image, and the failure is silent — no exception, nothing logged, and a
+    screenshot the user is never shown. `tests/unit/test_media_results.py` pins
+    both orders so the wrong one cannot return unnoticed.
+
+    Each mutator sees the previous one's rewrite. Returns ``None`` when no
+    mutator rewrote anything, preserving ADK's "is not None means use this"
+    contract so a chain of decliners stays a decline.
+    """
+
+    async def _chained(tool: Any, args: dict, tool_context: Any, tool_response: Any) -> Any:
+        effective = tool_response
+        rewritten = False
+        for mutator in mutators:
+            result = mutator(tool=tool, args=args, tool_context=tool_context, tool_response=effective)
+            if inspect.isawaitable(result):
+                result = await result
+            if result is not None:
+                effective = result
+                rewritten = True
+        return effective if rewritten else None
+
+    return _chained
+
+
 def compose_after_tool_callbacks(
     existing: Callable[..., Any] | None,
-    mcp: Callable[..., Any],
+    *observers: Callable[..., Any],
 ) -> Callable[..., Any]:
     """Run ``existing`` first; if it returns a value, use that as the new
     response (existing semantics — e.g. ``_handle_large_output`` returning
-    a pointer string). Then run ``mcp`` against the (possibly rewritten)
-    response. The MCP callback's return value is ignored — observability
-    must not mutate the response.
+    a pointer string). Then run each of ``observers`` against the (possibly
+    rewritten) response. Observers' return values are ignored — observation
+    (OTel tagging, A2UI surface emission) must not mutate the response.
+
+    ``observers`` is variadic so additional purely-observational after-tool
+    hooks (the MCP span tagger, the result→A2UI emitter) can be composed
+    without nesting. They run in the order given, each seeing the effective
+    (post-``existing``) response.
     """
     if existing is None:
-        # Adapt mcp's "return None always" to also return the original
+        # Adapt the observers' "return None always" to also return the original
         # response so the caller's contract is preserved.
         def _just_observe(tool: Any, args: dict, tool_context: Any, tool_response: Any) -> Any:
-            mcp(tool=tool, args=args, tool_context=tool_context, tool_response=tool_response)
+            for observer in observers:
+                observer(tool=tool, args=args, tool_context=tool_context, tool_response=tool_response)
             return tool_response
 
         return _just_observe
 
-    def _composed(tool: Any, args: dict, tool_context: Any, tool_response: Any) -> Any:
+    # ASYNC (v6.10.0): `existing` may be a coroutine (e.g. `_handle_large_output`
+    # awaits `save_artifact`). The wrapper awaits it if awaitable, so the artifact
+    # offload actually runs; observers are sync (OTel tagging, A2UI emission).
+    async def _composed(tool: Any, args: dict, tool_context: Any, tool_response: Any) -> Any:
         rewritten = existing(tool=tool, args=args, tool_context=tool_context, tool_response=tool_response)
+        if inspect.isawaitable(rewritten):
+            rewritten = await rewritten
         # Existing callbacks return either the new response or the original;
         # ADK treats "is not None" as "use this". Mirror that contract.
         effective = rewritten if rewritten is not None else tool_response
-        mcp(tool=tool, args=args, tool_context=tool_context, tool_response=effective)
+        for observer in observers:
+            result = observer(tool=tool, args=args, tool_context=tool_context, tool_response=effective)
+            if inspect.isawaitable(result):
+                await result
         return rewritten
 
     return _composed
 
 
 __all__ = [
+    "chain_mutators",
     "compose_after_tool_callbacks",
     "compose_before_tool_callbacks",
     "make_mcp_after_tool_callback",

@@ -7,6 +7,7 @@ authors = [{ name = "Holosun ApS" }]
 dependencies = [
     "click>=8.1.7",
     "httpx>=0.28.0",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
@@ -19,6 +20,9 @@ dev = [
     "respx>=0.22.0",
     "ruff>=0.8.0",
 ]
+
+[tool.uv]
+constraint-dependencies = ["anyio>=4.14.2", "certifi>=2026.10.19", "idna>=3.15"]
 
 [build-system]
 requires = ["hatchling"]

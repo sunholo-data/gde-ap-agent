@@ -253,7 +253,7 @@ class TestCallbackComposition:
         existing.assert_called_once()
         mcp.assert_not_called()
 
-    def test_compose_after_runs_existing_then_mcp(self):
+    async def test_compose_after_runs_existing_then_mcp(self):
         """The after composer should let the existing callback potentially
         REWRITE the response (e.g. ``_handle_large_output`` returns a
         pointer string), then pass the rewritten value to the MCP callback."""
@@ -263,7 +263,7 @@ class TestCallbackComposition:
         mcp = MagicMock(return_value=None)
         composed = compose_after_tool_callbacks(existing, mcp)
 
-        result = composed(
+        result = await composed(
             tool=_mcp_tool(),
             args={},
             tool_context=MagicMock(),

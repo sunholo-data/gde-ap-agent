@@ -20,6 +20,8 @@
 
 "use client";
 
+import { withBasicCatalogAliases } from "@/components/protocols/basicCatalogAliases";
+
 import {
   A2uiSurface,
   basicCatalog,
@@ -88,7 +90,7 @@ export function A2UIRenderer({ messages, fallbackSurfaceId, onAction }: A2UIRend
   const [error, setError] = useState<string | null>(null);
 
   const processor = useMemo(
-    () => new MessageProcessor<ReactComponentImplementation>([basicCatalog]),
+    () => new MessageProcessor<ReactComponentImplementation>(withBasicCatalogAliases(basicCatalog)),
     // One processor per renderer instance; the bubble keys the renderer.
     // We intentionally do NOT depend on `messages` here.
     [],

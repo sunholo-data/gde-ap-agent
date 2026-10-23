@@ -31,7 +31,7 @@ describe("UploadDropZone", () => {
       status: 200,
       responseText: JSON.stringify({ docId: "new-doc", status: "parsed", blocksCount: 5 }),
     };
-    vi.spyOn(globalThis, "XMLHttpRequest").mockImplementation(() => xhrMock as unknown as XMLHttpRequest);
+    vi.spyOn(globalThis, "XMLHttpRequest").mockImplementation(function () { return xhrMock as unknown as XMLHttpRequest; });
   });
 
   afterEach(() => {

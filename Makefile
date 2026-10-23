@@ -131,3 +131,8 @@ help:
 	@echo "make create-logs-bucket     — create the OTEL GenAI completions bucket + grant SA write"
 	@echo "make create-search-datastore — create the AP-validator Vertex AI Search datastore (eu)"
 	@echo "make load-vendor-master     — import demo vendors/POs/policies into the datastore"
+
+# Shared runtime dependency security policy.
+.PHONY: security-check
+security-check:
+	@scripts/security-check.sh
